@@ -1,3 +1,4 @@
+import { downloadJSON } from "./download";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -74,16 +75,7 @@ export default function App() {
       })),
       note: "Geometric fit only. Index/middle targets lie on the rendered seam curve. Coordinates describe the canonical right hand; mirror X for a left hand.",
     };
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(payload, null, 2)], {
-        type: "application/json",
-      }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gripit-${pitch.id}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadJSON(`gripit-${pitch.id}.json`, payload);
     setToast("Grip configuration downloaded.");
     setTimeout(() => setToast(""), 3500);
   };

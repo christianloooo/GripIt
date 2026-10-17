@@ -2,6 +2,10 @@
 
 A browser-based grip studio with automatic hand measurement from a baseball reference, a rigged 3D hand, and a regulation-scale textured baseball.
 
+## iOS app
+
+The `feat/ios-swift-app` branch includes a SwiftUI iPhone/iPad app with the studio bundled in WebKit, camera authorization, and native JSON sharing. Run `npm run ios:prepare`, then `npm run ios:open`. Select your signing team and device in Xcode. See [iOS setup and architecture](ios/README.md).
+
 ## Run
 
 Requires Node.js 22.12+ or Node.js 24.
