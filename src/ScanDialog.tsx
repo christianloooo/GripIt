@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Check, LoaderCircle, Upload, X } from "lucide-react";
+import { Camera, Check, LoaderCircle, Upload, X, Hand } from "lucide-react";
 import { scanVideo } from "./scan";
+import { FINGERS, LANDMARK_CHAINS } from "./grip";
 import type { Measurements } from "./grip";
+import type { ScanFeedback } from "./scanQuality";
 export function ScanDialog({
   onClose,
   onComplete,
@@ -10,9 +12,60 @@ export function ScanDialog({
   onComplete: (m: Measurements, left: boolean) => void;
 }) {
   const [width, setWidth] = useState(82);
+  const [middleLength, setMiddleLength] = useState(89);
   const [mode, setMode] = useState<"idle" | "camera" | "file">("idle");
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [feedback, setFeedback] = useState<ScanFeedback>({
+    progress: 0,
+    accepted: 0,
+    message: "",
+  });
+  const [selectedHand, setSelectedHand] = useState("Right");
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [mirroredFile, setMirroredFile] = useState(false);
+  const overlay = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = overlay.current,
+      v = video.current;
+    if (!canvas || !v) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    canvas.width = canvas.clientWidth * 2;
+    canvas.height = canvas.clientHeight * 2;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (!feedback.landmarks) return;
+    const fit = Math.min(
+      canvas.width / v.videoWidth,
+      canvas.height / v.videoHeight,
+    );
+    const width = v.videoWidth * fit,
+      height = v.videoHeight * fit;
+    const ox = (canvas.width - width) / 2,
+      oy = (canvas.height - height) / 2;
+    const point = (i: number) => [
+      ox + feedback.landmarks![i].x * width,
+      oy + feedback.landmarks![i].y * height,
+    ];
+    context.strokeStyle = feedback.hand ? "#d8ff72" : "#f6bc79";
+    context.lineWidth = 3;
+    for (const chain of Object.values(LANDMARK_CHAINS)) {
+      context.beginPath();
+      const start = point(0);
+      context.moveTo(start[0], start[1]);
+      for (const index of chain) {
+        const p = point(index);
+        context.lineTo(p[0], p[1]);
+      }
+      context.stroke();
+    }
+    for (let i = 0; i < 21; i++) {
+      const p = point(i);
+      context.beginPath();
+      context.arc(p[0], p[1], 4, 0, Math.PI * 2);
+      context.fillStyle = "#f7ffe9";
+      context.fill();
+    }
+  }, [feedback]);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof scanVideo>
@@ -36,6 +89,8 @@ export function ScanDialog({
   const camera = async () => {
     if (cameraPending.current) return;
     cameraPending.current = true;
+    setCameraLoading(true);
+    setFeedback({ progress: 0, accepted: 0, message: "" });
     setError("");
     try {
       if (!navigator.mediaDevices?.getUserMedia)
@@ -52,6 +107,7 @@ export function ScanDialog({
       }
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = media;
+      setResult(null);
       if (video.current) {
         video.current.srcObject = media;
         await video.current.play();
@@ -65,12 +121,14 @@ export function ScanDialog({
       );
     } finally {
       cameraPending.current = false;
+      if (!controller.current.signal.aborted) setCameraLoading(false);
     }
   };
   const upload = (file?: File) => {
     if (!file) return;
     setError("");
     setResult(null);
+    setFeedback({ progress: 0, accepted: 0, message: "" });
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
     if (url.current) URL.revokeObjectURL(url.current);
@@ -86,10 +144,18 @@ export function ScanDialog({
     if (!video.current) return;
     setBusy(true);
     setError("");
-    setProgress(0);
+    setFeedback({ progress: 0, accepted: 0, message: "Preparing scan…" });
     try {
       if (!Number.isFinite(width) || width < 55 || width > 115)
         throw new Error("Enter a palm width between 55 and 115 mm.");
+      if (
+        !Number.isFinite(middleLength) ||
+        middleLength < 45 ||
+        middleLength > 120
+      )
+        throw new Error(
+          "Enter a measured middle finger length between 45 and 120 mm.",
+        );
       if (
         video.current.readyState < 2 ||
         (mode === "file" &&
@@ -102,12 +168,20 @@ export function ScanDialog({
       const output = await scanVideo(
         video.current,
         width,
-        setProgress,
+        setFeedback,
         controller.current.signal,
         mode === "camera",
+        middleLength,
       );
       if (controller.current.signal.aborted) return;
       setResult(output);
+      setSelectedHand(
+        mode === "file" && mirroredFile
+          ? output.hand === "Left"
+            ? "Right"
+            : "Left"
+          : output.hand,
+      );
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = null;
     } catch (e) {
@@ -139,7 +213,9 @@ export function ScanDialog({
         Show one open hand, fingers spread, in good light. Use a short
         palm-facing video or scan with your camera.
       </p>
-      <div className="scan-preview">
+      <div
+        className={`scan-preview ${mode === "camera" ? "camera-preview" : ""}`}
+      >
         <video
           ref={video}
           muted
@@ -151,41 +227,65 @@ export function ScanDialog({
             )
           }
         />
+        <canvas ref={overlay} className="scan-landmarks" aria-hidden="true" />
+        {mode !== "idle" && !result && (
+          <div className="hand-guide" aria-hidden="true" />
+        )}
         {mode === "idle" && (
           <div className="preview-placeholder">
-            <Camera size={36} />
+            <Hand size={54} strokeWidth={1} />
             <span>Your hand, your grip.</span>
           </div>
         )}
         {busy && (
           <div className="scan-progress">
             <LoaderCircle className="spin" />
-            {progress === 0
-              ? "Loading hand detector…"
-              : `Reading your hand… ${progress}%`}
+            {feedback.progress === 0
+              ? "Loading detector…"
+              : `${feedback.accepted} clear frames · ${feedback.progress}%`}
           </div>
         )}
       </div>
+      {busy && (
+        <p className="scan-feedback" role="status">
+          {feedback.message}
+        </p>
+      )}
       {!result ? (
         <>
           <div className="scan-actions">
-            <button className="secondary" onClick={camera} disabled={busy}>
+            <button
+              className="secondary"
+              onClick={camera}
+              disabled={busy || cameraLoading}
+            >
               <Camera size={16} />
-              Use camera
+              {cameraLoading ? "Opening camera…" : "Use camera"}
             </button>
             <label
-              className={`secondary file-button ${busy ? "disabled" : ""}`}
+              className={`secondary file-button ${busy || cameraLoading ? "disabled" : ""}`}
             >
               <Upload size={16} />
               Upload video
               <input
                 type="file"
                 accept="video/*"
-                disabled={busy}
+                disabled={busy || cameraLoading}
                 onChange={(e) => upload(e.target.files?.[0])}
               />
             </label>
           </div>
+          {mode === "file" && (
+            <label className="mirror-option">
+              <input
+                type="checkbox"
+                checked={mirroredFile}
+                disabled={busy}
+                onChange={(e) => setMirroredFile(e.target.checked)}
+              />
+              This video was recorded with a mirror filter
+            </label>
+          )}
           <label className="calibration">
             Palm width <span>mm</span>
             <input
@@ -197,9 +297,22 @@ export function ScanDialog({
               onChange={(e) => setWidth(Number(e.target.value))}
             />
           </label>
+          <label className="calibration finger-calibration">
+            Middle finger length <span>mm</span>
+            <input
+              type="number"
+              min={45}
+              max={120}
+              value={middleLength}
+              disabled={busy}
+              onChange={(e) => setMiddleLength(Number(e.target.value))}
+            />
+          </label>
           <p className="small">
-            Measure across the knuckles, from the index to pinky joint,
-            excluding the thumb. This sets the model’s real-world scale.
+            Measure palm width across the knuckles, excluding the thumb. Measure
+            the middle finger from its base knuckle to the tip. The finger
+            measurement sets scale; palm width sets the hand’s width. Enter your
+            measurements before scanning.
           </p>
           {error && (
             <p className="error" role="alert">
@@ -208,13 +321,13 @@ export function ScanDialog({
           )}
           <button
             className="primary wide"
-            disabled={mode === "idle" || busy}
+            disabled={mode === "idle" || busy || cameraLoading}
             onClick={analyze}
           >
             {busy
               ? "Scanning…"
               : mode === "camera"
-                ? "Scan for 4 seconds"
+                ? "Start guided scan"
                 : "Analyze video"}
           </button>
         </>
@@ -223,13 +336,55 @@ export function ScanDialog({
           <Check size={28} />
           <h3>Your proportions are ready.</h3>
           <p>
-            {result.frames} clear frames · {result.hand.toLowerCase()} hand ·{" "}
+            {result.frames} stable frames · {selectedHand.toLowerCase()} hand ·{" "}
             {result.measurements.palmWidth} mm palm
           </p>
+          <div className="hand-review">
+            <span>Confirm your throwing hand</span>
+            <div>
+              {["Right", "Left"].map((hand) => (
+                <button
+                  key={hand}
+                  className={selectedHand === hand ? "active" : ""}
+                  aria-pressed={selectedHand === hand}
+                  onClick={() => setSelectedHand(hand)}
+                >
+                  {hand}
+                </button>
+              ))}
+            </div>
+          </div>
+          <dl className="measurement-review">
+            {FINGERS.map((f) => (
+              <div key={f}>
+                <dt>{f}</dt>
+                <dd>
+                  {result.measurements.segments[f]
+                    .reduce((a, b) => a + b, 0)
+                    .toFixed(0)}{" "}
+                  mm
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="small">
+            Check these lengths against your hand. You can refine them in Your
+            hand after applying.
+          </p>
+          <button
+            className="secondary wide"
+            onClick={() => {
+              setResult(null);
+              setMode("idle");
+              setFeedback({ progress: 0, accepted: 0, message: "" });
+            }}
+          >
+            Try another scan
+          </button>
           <button
             className="primary wide"
             onClick={() =>
-              onComplete(result.measurements, result.hand === "Left")
+              onComplete(result.measurements, selectedHand === "Left")
             }
           >
             Use my hand
@@ -238,7 +393,7 @@ export function ScanDialog({
       )}
       <p className="privacy">
         Video is processed in your browser and is never uploaded. First use
-        downloads the MediaPipe model. Landmark proportions are approximate;
+        loads the bundled MediaPipe model. Landmark proportions are approximate;
         skin shape and finger thickness are modeled.
       </p>
     </dialog>

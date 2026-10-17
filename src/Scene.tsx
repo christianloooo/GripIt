@@ -13,32 +13,92 @@ import { BALL_RADIUS, handScale, seamPoint, solveGrip } from "./grip";
 import { createHandSurface } from "./handSurface";
 import type { FingerRig, Measurements, Pitch } from "./grip";
 
-const SKIN = '#cc9c81';
-function HandSkin({ rigs, measurements }: { rigs: FingerRig[]; measurements: Measurements }) {
-  const geometry=useMemo(()=>createHandSurface(rigs,measurements),[rigs,measurements]);
-  useEffect(()=>()=>geometry.dispose(),[geometry]);
-  return <group>
-    <mesh geometry={geometry} castShadow receiveShadow><meshPhysicalMaterial color={SKIN} roughness={0.66} clearcoat={0.08} clearcoatRoughness={0.7} /></mesh>
-    {rigs.map(rig=>{
-      const bend=rig.angles.reduce((sum,a)=>sum+a,0);
-      const rotation=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),rig.yaw).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),bend));
-      const dorsal=new THREE.Vector3(0,0,-1).applyQuaternion(rotation);
-      const direction=rig.points[3].clone().sub(rig.points[2]).normalize();
-      const position=rig.points[3].clone().addScaledVector(direction,-rig.radius*.55).addScaledVector(dorsal,rig.radius*.72);
-      return <mesh key={rig.name} position={position} quaternion={rotation} scale={[rig.radius*.58,rig.radius*.88,0.7]}><sphereGeometry args={[1,24,16]} /><meshPhysicalMaterial color="#e7c4b1" roughness={0.36} clearcoat={0.35} /></mesh>;
-    })}
-  </group>;
+const SKIN = "#cc9c81";
+function HandSkin({
+  rigs,
+  measurements,
+}: {
+  rigs: FingerRig[];
+  measurements: Measurements;
+}) {
+  const geometry = useMemo(
+    () => createHandSurface(rigs, measurements),
+    [rigs, measurements],
+  );
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <group>
+      <mesh geometry={geometry} castShadow receiveShadow>
+        <meshPhysicalMaterial
+          color={SKIN}
+          roughness={0.66}
+          clearcoat={0.08}
+          clearcoatRoughness={0.7}
+        />
+      </mesh>
+      {rigs.map((rig) => {
+        const bend = rig.angles.reduce((sum, a) => sum + a, 0);
+        const rotation = new THREE.Quaternion()
+          .setFromAxisAngle(new THREE.Vector3(0, 0, 1), rig.yaw)
+          .multiply(
+            new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(1, 0, 0),
+              bend,
+            ),
+          );
+        const dorsal = new THREE.Vector3(0, 0, -1).applyQuaternion(rotation);
+        const direction = rig.points[3].clone().sub(rig.points[2]).normalize();
+        const position = rig.points[3]
+          .clone()
+          .addScaledVector(direction, -rig.radius * 0.55)
+          .addScaledVector(dorsal, rig.radius * 0.72);
+        return (
+          <mesh
+            key={rig.name}
+            position={position}
+            quaternion={rotation}
+            scale={[rig.radius * 0.58, rig.radius * 0.88, 0.7]}
+          >
+            <sphereGeometry args={[1, 24, 16]} />
+            <meshPhysicalMaterial
+              color="#e7c4b1"
+              roughness={0.36}
+              clearcoat={0.35}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
 }
-function Baseball({ ball }: { ball: ReturnType<typeof solveGrip>['ball'] }) {
-  const { seam, stitches }=useMemo(()=>({
-    seam:Array.from({length:361},(_,i)=>seamPoint(i/360*Math.PI*2,0,BALL_RADIUS+.22)),
-    stitches:Array.from({length:108},(_,i)=>{const t=i/108*Math.PI*2;return [seamPoint(t-.018,-.035,BALL_RADIUS+.3),seamPoint(t+.018,.035,BALL_RADIUS+.3)];})
-  }),[]);
-  return <group position={ball.position} rotation={ball.rotation}>
-    <mesh castShadow receiveShadow><sphereGeometry args={[BALL_RADIUS,80,64]} /><meshStandardMaterial color="#f2eee3" roughness={0.88} /></mesh>
-    <Line points={seam} color="#a9463e" lineWidth={1.1} />
-    {stitches.map((points,i)=><Line key={i} points={points} color="#af413a" lineWidth={1.7} />)}
-  </group>;
+function Baseball({ ball }: { ball: ReturnType<typeof solveGrip>["ball"] }) {
+  const { seam, stitches } = useMemo(
+    () => ({
+      seam: Array.from({ length: 361 }, (_, i) =>
+        seamPoint((i / 360) * Math.PI * 2, 0, BALL_RADIUS + 0.22),
+      ),
+      stitches: Array.from({ length: 108 }, (_, i) => {
+        const t = (i / 108) * Math.PI * 2;
+        return [
+          seamPoint(t - 0.018, -0.035, BALL_RADIUS + 0.3),
+          seamPoint(t + 0.018, 0.035, BALL_RADIUS + 0.3),
+        ];
+      }),
+    }),
+    [],
+  );
+  return (
+    <group position={ball.position} rotation={ball.rotation}>
+      <mesh castShadow receiveShadow>
+        <sphereGeometry args={[BALL_RADIUS, 80, 64]} />
+        <meshStandardMaterial color="#f2eee3" roughness={0.88} />
+      </mesh>
+      <Line points={seam} color="#a9463e" lineWidth={1.1} />
+      {stitches.map((points, i) => (
+        <Line key={i} points={points} color="#af413a" lineWidth={1.7} />
+      ))}
+    </group>
+  );
 }
 function Contact({
   rig,
@@ -55,7 +115,7 @@ function Contact({
     .add(
       new THREE.Vector3(
         number === 3 ? 58 : number === 1 ? 52 : -53,
-        number === 3 ? -20 : number===1 ? 22 : 32,
+        number === 3 ? -20 : number === 1 ? 22 : 32,
         10,
       ),
     );
@@ -95,16 +155,35 @@ function Model({
   left: boolean;
   exploded: boolean;
 }) {
-  const solution=useMemo(()=>solveGrip(measurements,pitch),[measurements,pitch]);
-  const rigs=solution.fingers;
-  return <group scale={[handScale(left),1,1]}>
-    <group position={[0,exploded?-32:0,exploded?-25:0]}>
-      <HandSkin rigs={rigs} measurements={measurements} />
-      {annotations && [rigs[0],rigs[1],rigs[4]].map((rig,i)=><Contact key={rig.name} rig={rig} number={i+1} text={pitch.cues[i]} />)}
+  const solution = useMemo(
+    () => solveGrip(measurements, pitch),
+    [measurements, pitch],
+  );
+  const rigs = solution.fingers;
+  return (
+    <group scale={[handScale(left), 1, 1]}>
+      <group position={[0, exploded ? -32 : 0, exploded ? -25 : 0]}>
+        <HandSkin rigs={rigs} measurements={measurements} />
+        {annotations &&
+          [rigs[0], rigs[1], rigs[4]].map((rig, i) => (
+            <Contact
+              key={rig.name}
+              rig={rig}
+              number={i + 1}
+              text={pitch.cues[i]}
+            />
+          ))}
+      </group>
+      <Baseball ball={solution.ball} />
+      {annotations &&
+        rigs.slice(0, 2).map((r) => (
+          <mesh key={r.name} position={r.target}>
+            <sphereGeometry args={[1.5, 16, 16]} />
+            <meshBasicMaterial color="#637c38" />
+          </mesh>
+        ))}
     </group>
-    <Baseball ball={solution.ball} />
-    {annotations && rigs.slice(0,2).map(r=><mesh key={r.name} position={r.target}><sphereGeometry args={[1.5,16,16]} /><meshBasicMaterial color="#637c38" /></mesh>)}
-  </group>;
+  );
 }
 
 class SceneBoundary extends Component<
@@ -151,7 +230,12 @@ export function Scene(props: {
       >
         <color attach="background" args={["#e9ece5"]} />
         <PerspectiveCamera makeDefault position={[-145, 95, 275]} fov={39} />
-        <ambientLight intensity={1.2} />
+        <ambientLight intensity={1.4} />
+        <hemisphereLight
+          color="#fff7e9"
+          groundColor="#8d9a87"
+          intensity={0.6}
+        />
         <directionalLight
           position={[-100, 180, 150]}
           intensity={2.3}

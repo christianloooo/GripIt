@@ -30,8 +30,16 @@ describe("calibrated hand measurements", () => {
       for (let i = 0; i < 3; i++)
         expect(b.segments[f][i] / a.segments[f][i]).toBeCloseTo(1.5);
   });
+  it("calibrates against a measured middle finger without inflating all fingers from a narrow palm estimate", () => {
+    const p = points();
+    const result = measureLandmarks(p, 82, 89);
+    expect(result.segments.middle.reduce((a, b) => a + b, 0)).toBeCloseTo(89);
+    expect(result.palmWidth).toBe(82);
+    expect(() => measureLandmarks(p, 82, NaN)).toThrow();
+  });
   it("rejects degenerate and invalid landmark data", () => {
     expect(() => measureLandmarks([], 82)).toThrow();
+    expect(() => measureLandmarks(points(), NaN)).toThrow();
     expect(() =>
       measureLandmarks(Array(21).fill({ x: 0, y: 0, z: 0 }), 82),
     ).toThrow();

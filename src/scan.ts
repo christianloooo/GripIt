@@ -1,38 +1,105 @@
-import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
-import { measureLandmarks, medianMeasurements } from "./grip";
+import { medianMeasurements } from "./grip";
 import type { Measurements } from "./grip";
-export async function createDetector() {
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm",
+import { assessDetection, stableMeasurements } from "./scanQuality";
+import type { Detection, ScanFeedback } from "./scanQuality";
+
+function detectorClient(signal: AbortSignal) {
+  // Classic worker: MediaPipe's WASM loader uses importScripts, which module workers reject.
+  const worker = new Worker(
+    new URL(
+      `${import.meta.env.BASE_URL}mediapipe/scan-worker.js`,
+      location.origin,
+    ),
   );
-  return HandLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-      delegate: "CPU",
+  let nextId = 0;
+  const pending = new Map<
+    number,
+    {
+      resolve: (value: Detection) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  const fail = (error: Error) => {
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(error);
+    }
+    pending.clear();
+  };
+  worker.onmessage = (event) => {
+    const entry = pending.get(event.data.id);
+    if (!entry) return;
+    pending.delete(event.data.id);
+    clearTimeout(entry.timer);
+    if (event.data.error) entry.reject(new Error(event.data.error));
+    else entry.resolve(event.data.result);
+  };
+  worker.onerror = () =>
+    fail(
+      new Error(
+        "The hand detector could not start. Reload the page, or try another browser.",
+      ),
+    );
+  const abort = () => {
+    fail(new Error("Scan cancelled."));
+    worker.terminate();
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  const call = (data: Record<string, unknown>, transfer: Transferable[] = []) =>
+    new Promise<Detection>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new Error("Scan cancelled."));
+        return;
+      }
+      const id = nextId++;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(
+          new Error(
+            "Hand detection timed out. Check that the local model files loaded, then try again.",
+          ),
+        );
+      }, 30000);
+      pending.set(id, { resolve, reject, timer });
+      worker.postMessage({ ...data, id }, transfer);
+    });
+  return {
+    call,
+    close: () => {
+      signal.removeEventListener("abort", abort);
+      abort();
     },
-    runningMode: "VIDEO",
-    numHands: 1,
-    minHandDetectionConfidence: 0.65,
-    minHandPresenceConfidence: 0.65,
-  });
+  };
 }
 export async function scanVideo(
   video: HTMLVideoElement,
   palmWidth: number,
-  onProgress: (n: number) => void,
+  onFeedback: (feedback: ScanFeedback) => void,
   signal: AbortSignal,
   live: boolean,
+  middleLength?: number,
 ) {
   if (!live) video.pause();
-  const detector = await createDetector();
+  const client = detectorClient(signal);
   const samples: { measurements: Measurements; hand: string }[] = [];
   const total = live
-    ? 32
-    : Math.min(40, Math.max(8, Math.floor(video.duration * 5)));
+    ? 60
+    : Math.min(60, Math.max(20, Math.floor(video.duration * 6)));
   const sleep = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
   try {
+    onFeedback({
+      progress: 0,
+      accepted: 0,
+      message: "Loading the hand detector on your device…",
+    });
+    await client.call({
+      type: "init",
+      baseUrl: new URL(import.meta.env.BASE_URL, location.href).href,
+    });
+    let lastTime = -1;
+    let frozenFrames = 0;
     for (let i = 0; i < total; i++) {
       if (signal.aborted) throw new Error("Scan cancelled.");
       if (!live) {
@@ -40,63 +107,94 @@ export async function scanVideo(
           video.duration - 0.02,
           ((i + 0.5) / total) * Math.min(video.duration, 12),
         );
-        await new Promise<void>((resolve, reject) => {
-          const done = () => {
-            clearTimeout(timer);
-            video.removeEventListener("seeked", done);
-            resolve();
-          };
-          const timer = setTimeout(() => {
-            video.removeEventListener("seeked", done);
-            reject(
-              new Error("Could not read this video. Try an MP4 or WebM file."),
+        if (Math.abs(video.currentTime - time) > 0.001)
+          await new Promise<void>((resolve, reject) => {
+            const cleanup = () => {
+              clearTimeout(timer);
+              video.removeEventListener("seeked", done);
+              signal.removeEventListener("abort", cancel);
+            };
+            const done = () => {
+              cleanup();
+              resolve();
+            };
+            const cancel = () => {
+              cleanup();
+              reject(new Error("Scan cancelled."));
+            };
+            const timer = setTimeout(() => {
+              cleanup();
+              reject(
+                new Error("Could not decode this video. Try MP4 or WebM."),
+              );
+            }, 4000);
+            video.addEventListener("seeked", done, { once: true });
+            signal.addEventListener("abort", cancel, { once: true });
+            video.currentTime = time;
+          });
+      } else {
+        await sleep(100);
+        if (video.currentTime === lastTime) {
+          if (++frozenFrames > 30)
+            throw new Error(
+              "Camera frames stopped. Restart the camera and try again.",
             );
-          }, 4000);
-          video.addEventListener("seeked", done);
-          video.currentTime = time;
-        });
-      } else await sleep(125);
-      if (signal.aborted) throw new Error("Scan cancelled.");
-      const result = detector.detectForVideo(video, performance.now());
-      if (result.worldLandmarks[0]) {
-        // Reject visibly folded fingers: calibration needs an open, relaxed hand.
-        const p = result.worldLandmarks[0];
-        const distance = (a: number, b: number) =>
-          Math.hypot(p[a].x - p[b].x, p[a].y - p[b].y, p[a].z - p[b].z);
-        const open = [5, 9, 13, 17].every(
-          (base) =>
-            distance(base, base + 3) >
-            (distance(base, base + 1) +
-              distance(base + 1, base + 2) +
-              distance(base + 2, base + 3)) *
-              0.8,
-        );
-        if (open)
-          try {
-            samples.push({
-              measurements: measureLandmarks(p, palmWidth),
-              hand: result.handedness[0]?.[0]?.categoryName ?? "Right",
-            });
-          } catch {
-            /* Skip poor detections rather than corrupting the median. */
-          }
+          i--;
+          continue;
+        }
+        frozenFrames = 0;
+        lastTime = video.currentTime;
       }
-      onProgress(Math.round(((i + 1) / total) * 100));
-      await sleep(0);
+      if (signal.aborted) throw new Error("Scan cancelled.");
+      const bitmap = await createImageBitmap(video);
+      const result = await client.call(
+        { type: "frame", bitmap, timestamp: performance.now() },
+        [bitmap],
+      );
+      const assessment = assessDetection(
+        result,
+        palmWidth,
+        middleLength,
+        video.videoHeight / video.videoWidth,
+      );
+      if (assessment.measurements && assessment.hand)
+        samples.push({
+          measurements: assessment.measurements,
+          hand: assessment.hand,
+        });
+      onFeedback({
+        progress: Math.round(((i + 1) / total) * 100),
+        accepted: samples.length,
+        message: assessment.message,
+        landmarks: assessment.landmarks,
+        hand: assessment.hand,
+      });
+      if (
+        live &&
+        samples.length >= 25 &&
+        stableMeasurements(samples.slice(-20).map((s) => s.measurements))
+      )
+        break;
     }
     const rightCount = samples.filter((s) => s.hand === "Right").length;
     const hand = rightCount >= samples.length / 2 ? "Right" : "Left";
-    const consistent = samples.filter((s) => s.hand === hand);
-    if (consistent.length < 5)
+    const consistent = samples
+      .filter((s) => s.hand === hand)
+      .map((s) => s.measurements);
+    if (consistent.length < 8)
       throw new Error(
-        "Not enough clear frames. Show one open hand, keep it still, and try brighter lighting.",
+        `Only ${consistent.length} usable frames. Keep one open hand in view, fingers straight, with the palm facing the camera.`,
+      );
+    if (!stableMeasurements(consistent))
+      throw new Error(
+        "The measurements changed too much during the scan. Hold your palm still and face the camera.",
       );
     return {
-      measurements: medianMeasurements(consistent.map((s) => s.measurements)),
+      measurements: medianMeasurements(consistent),
       hand,
       frames: consistent.length,
     };
   } finally {
-    detector.close();
+    client.close();
   }
 }

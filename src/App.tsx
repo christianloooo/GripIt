@@ -37,14 +37,17 @@ export default function App() {
     [help, setHelp] = useState(false),
     [toast, setToast] = useState("");
   const pitch = PITCHES[pitchIndex];
-  const solution = useMemo(() => solveGrip(measurements, pitch), [measurements,pitch]);
+  const solution = useMemo(
+    () => solveGrip(measurements, pitch),
+    [measurements, pitch],
+  );
   const rigs = solution.fingers;
   const unresolved = rigs.filter((r) => r.error > 8 || r.clearance < -1).length;
   const updatePalm = (value: number) => {
     setMeasurements((m) => ({
       ...m,
       palmWidth: value,
-      palmLength: (m.palmLength ?? 72) * value / m.palmWidth,
+      palmLength: ((m.palmLength ?? 72) * value) / m.palmWidth,
       radii: undefined,
       segments: Object.fromEntries(
         FINGERS.map((f) => [
@@ -62,7 +65,11 @@ export default function App() {
       pitch: pitch.id,
       handedness: left ? "Left" : "Right",
       measurements,
-      ball: { radius: 36.5, position: solution.ball.position.toArray(), rotation: solution.ball.rotation },
+      ball: {
+        radius: 36.5,
+        position: solution.ball.position.toArray(),
+        rotation: solution.ball.rotation,
+      },
       objective: solution.objective,
       canonicalHand: "Right",
       mirrorX: left,
@@ -406,7 +413,9 @@ export default function App() {
               {unresolved
                 ? `${unresolved} finger target${unresolved > 1 ? "s" : ""} need manual refinement`
                 : "Targets within 8 mm"}{" "}
-              · Landmark-based proportions, modeled skin geometry.
+              · Largest target gap:{" "}
+              {Math.max(...rigs.map((r) => r.error)).toFixed(1)} mm. Hand
+              thickness is modeled.
             </p>
           </div>
           <button className="export-button" onClick={download}>

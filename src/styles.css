@@ -1190,3 +1190,128 @@ footer > span:first-child {
     animation: none;
   }
 }
+/* Guided hand scanning */
+.scan-preview {
+  height: 270px;
+  background: #17261f;
+  border: 0;
+}
+.scan-preview video {
+  position: relative;
+}
+.camera-preview video,
+.camera-preview .scan-landmarks {
+  transform: scaleX(-1);
+}
+.scan-landmarks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+.hand-guide {
+  position: absolute;
+  inset: 20px 25%;
+  border: 1px dashed #e2f2c348;
+  border-radius: 45% 45% 30% 30%;
+  pointer-events: none;
+}
+.scan-progress {
+  inset: auto 0 0;
+  height: 37px;
+  z-index: 3;
+  font-size: 10px;
+  background: #16271ed9;
+}
+.scan-progress svg {
+  width: 16px;
+}
+.scan-feedback {
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: #edf2e3;
+  color: #5b7444 !important;
+  font-size: 11px !important;
+  margin: 8px 0;
+}
+.preview-placeholder {
+  color: #b2c99b;
+}
+.hand-review {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  margin: 15px 0;
+  text-align: left;
+}
+.hand-review > div {
+  display: flex;
+  border: 1px solid #d5dfc7;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.hand-review button {
+  padding: 8px 15px;
+  background: #f1f4eb;
+  color: #839373;
+}
+.hand-review button.active {
+  background: #2c4431;
+  color: #fbfff2;
+}
+.measurement-review {
+  display: flex;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 13px 0;
+  border-block: 1px solid #e2e8d8;
+}
+.measurement-review div {
+  flex: 1;
+}
+.measurement-review dt {
+  font-size: 9px;
+  text-transform: capitalize;
+  color: #879777;
+}
+.measurement-review dd {
+  margin: 5px 0 0;
+  font-size: 12px;
+}
+.mirror-option {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 10px;
+  color: #7c8d6d;
+  margin: 0 0 16px;
+}
+.mirror-option input {
+  accent-color: #6f8a4e;
+}
+.scan-success .secondary.wide {
+  margin-top: 12px;
+  flex: initial;
+  width: 100%;
+}
+.scan-dialog {
+  max-height: calc(100dvh - 30px);
+  overflow: auto;
+}
+@media (max-width: 760px) {
+  .scan-preview {
+    height: 230px;
+  }
+  .measurement-review {
+    gap: 4px;
+  }
+  .hand-review {
+    font-size: 10px;
+  }
+}
+.finger-calibration {
+  margin-top: 12px;
+}

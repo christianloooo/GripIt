@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
-    "format": "prettier --write src README.md index.html vite.config.ts tsconfig.json package.json"
+    "format": "prettier --write src README.md index.html vite.config.ts tsconfig.json package.json",
+    "postinstall": "node scripts/copy-mediapipe.mjs",
+    "predev": "node scripts/prepare-mediapipe.mjs",
+    "prebuild": "node scripts/prepare-mediapipe.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.32",
@@ -24,6 +27,7 @@
     "@types/react-dom": "^19.2.0",
     "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "esbuild": "^0.28.2",
     "prettier": "^3.9.10",
     "typescript": "~5.9.3",
     "vite": "^7.1.7",
