@@ -43,21 +43,6 @@ export default function App() {
   );
   const rigs = solution.fingers;
   const unresolved = rigs.filter((r) => r.error > 8 || r.clearance < -1).length;
-  const updatePalm = (value: number) => {
-    setMeasurements((m) => ({
-      ...m,
-      palmWidth: value,
-      palmLength: ((m.palmLength ?? 72) * value) / m.palmWidth,
-      radii: undefined,
-      segments: Object.fromEntries(
-        FINGERS.map((f) => [
-          f,
-          m.segments[f].map((n) => (n * value) / m.palmWidth),
-        ]),
-      ) as Measurements["segments"],
-    }));
-    setPersonalized(true);
-  };
   const download = () => {
     const payload = {
       version: 1,
@@ -229,53 +214,31 @@ export default function App() {
                   <span>02</span>
                   <h2>Shape your hand</h2>
                 </div>
-                <p className="muted">Use a scan or adjust dimensions below.</p>
-                <label className="range-label">
-                  Palm width{" "}
+                <p className="muted">
+                  {personalized
+                    ? "Measured automatically from your baseball scan."
+                    : "Sample dimensions. Scan to measure your hand."}
+                </p>
+                <div className="scan-dimension">
+                  <span>Palm width</span>
                   <strong>{measurements.palmWidth.toFixed(0)} mm</strong>
-                  <input
-                    type="range"
-                    min={55}
-                    max={115}
-                    value={measurements.palmWidth}
-                    onChange={(e) => updatePalm(Number(e.target.value))}
-                  />
-                </label>
+                </div>
                 {FINGERS.map((f) => (
-                  <label className="range-label" key={f}>
-                    <span className="capitalize">{f} length</span>
+                  <div className="scan-dimension" key={f}>
+                    <span className="capitalize">{f}</span>
                     <strong>
                       {measurements.segments[f]
                         .reduce((a, b) => a + b, 0)
                         .toFixed(0)}{" "}
                       mm
                     </strong>
-                    <input
-                      type="range"
-                      min={f === "pinky" ? 40 : 45}
-                      max={f === "thumb" ? 100 : 120}
-                      value={measurements.segments[f].reduce(
-                        (a, b) => a + b,
-                        0,
-                      )}
-                      onChange={(e) => {
-                        const length = Number(e.target.value);
-                        setMeasurements((m) => ({
-                          ...m,
-                          segments: {
-                            ...m.segments,
-                            [f]: m.segments[f].map(
-                              (n) =>
-                                (n * length) /
-                                m.segments[f].reduce((a, b) => a + b, 0),
-                            ),
-                          },
-                        }));
-                        setPersonalized(true);
-                      }}
-                    />
-                  </label>
+                  </div>
                 ))}
+                <p className="small">
+                  {personalized
+                    ? "73 mm baseball reference · Estimated geometry"
+                    : "Place a baseball beside your open hand. No manual measurements needed."}
+                </p>
                 <button
                   className="text-button"
                   onClick={() => {
@@ -283,7 +246,7 @@ export default function App() {
                     setPersonalized(false);
                   }}
                 >
-                  Reset sample dimensions
+                  Use sample hand
                 </button>
               </div>
             )}
@@ -293,7 +256,10 @@ export default function App() {
               </div>
               <span className="tag">PERSONALIZE YOUR GRIP</span>
               <h3>A hand like yours.</h3>
-              <p>Scan your hand to bring your proportions into the picture.</p>
+              <p>
+                Scan your open hand beside a baseball. We’ll measure the
+                proportions.
+              </p>
               <button onClick={() => setScan(true)} className="primary">
                 {personalized ? "Rescan my hand" : "Scan my hand"}
                 <ArrowRight size={16} />
@@ -409,10 +375,10 @@ export default function App() {
               ))}
             </div>
             <p className="model-note">
-              Illustrative grip template ·{" "}
+              Approximate geometric fit ·{" "}
               {unresolved
-                ? `${unresolved} finger target${unresolved > 1 ? "s" : ""} need manual refinement`
-                : "Targets within 8 mm"}{" "}
+                ? `${unresolved} contact${unresolved > 1 ? "s" : ""} unresolved`
+                : "Contact fit estimated"}{" "}
               · Largest target gap:{" "}
               {Math.max(...rigs.map((r) => r.error)).toFixed(1)} mm. Hand
               thickness is modeled.
@@ -424,6 +390,18 @@ export default function App() {
             <ArrowRight size={16} />
           </button>
         </section>
+        <div className="asset-credit">
+          Ball:{" "}
+          <a
+            href="https://sketchfab.com/3d-models/worn-baseball-ball-fdf3de6ae225421ea78961b897b9608a"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Worn Baseball Ball by Alex Bes
+          </a>{" "}
+          · CC BY 4.0 · Rescaled to 73 mm. Hand positions are approximate
+          geometric fits.
+        </div>
         <footer>
           <span>MADE FOR THE FEEL OF THE GAME.</span>
           <span>
@@ -465,15 +443,15 @@ export default function App() {
           <h2 id="help-title">Find your feel.</h2>
           <p>1. Choose a pitch to explore its illustrative grip.</p>
           <p>
-            2. Scan an open hand or adjust your dimensions in “Your hand.” A
-            measured palm width calibrates the scale.
+            2. Scan one open hand with a regulation baseball beside it. The ball
+            sets the scale automatically; no measurements to type.
           </p>
           <p>
             3. Rotate, zoom, and pan to inspect the finger positions. Export the
             dimensions and joint angles as JSON.
           </p>
           <p className="small">
-            This prototype uses a smooth procedural hand surface and constrained
+            This prototype uses an authored, rigged hand mesh and constrained
             numerical finger positioning. It does not reconstruct exact skin
             geometry, predict pitch movement, or optimize performance. Some
             proportions cannot reach every target; the studio reports these fits

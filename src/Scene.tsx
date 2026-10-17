@@ -7,13 +7,29 @@ import {
   Line,
   OrbitControls,
   PerspectiveCamera,
+  useGLTF,
 } from "@react-three/drei";
 import * as THREE from "three";
-import { BALL_RADIUS, handScale, seamPoint, solveGrip } from "./grip";
+import { BALL_RADIUS, handScale, solveGrip } from "./grip";
+import { retargetHand } from "./riggedHand";
 import { createHandSurface } from "./handSurface";
 import type { FingerRig, Measurements, Pitch } from "./grip";
 
-const SKIN = "#cc9c81";
+const SKIN = "#c9987d";
+function skinTexture() {
+  let seed = 8423;
+  const pixels = new Uint8Array(256 * 256 * 4);
+  for (let i = 0; i < 256 * 256; i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const value = 118 + (seed % 35);
+    pixels.set([value, value, value, 255], i * 4);
+  }
+  const texture = new THREE.DataTexture(pixels, 256, 256);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(3, 3);
+  texture.needsUpdate = true;
+  return texture;
+}
 function HandSkin({
   rigs,
   measurements,
@@ -25,13 +41,17 @@ function HandSkin({
     () => createHandSurface(rigs, measurements),
     [rigs, measurements],
   );
+  const pores = useMemo(skinTexture, []);
+  useEffect(() => () => pores.dispose(), [pores]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <group>
       <mesh geometry={geometry} castShadow receiveShadow>
         <meshPhysicalMaterial
           color={SKIN}
-          roughness={0.66}
+          roughness={0.6}
+          bumpMap={pores}
+          bumpScale={0.12}
           clearcoat={0.08}
           clearcoatRoughness={0.7}
         />
@@ -71,32 +91,103 @@ function HandSkin({
     </group>
   );
 }
-function Baseball({ ball }: { ball: ReturnType<typeof solveGrip>["ball"] }) {
-  const { seam, stitches } = useMemo(
-    () => ({
-      seam: Array.from({ length: 361 }, (_, i) =>
-        seamPoint((i / 360) * Math.PI * 2, 0, BALL_RADIUS + 0.22),
-      ),
-      stitches: Array.from({ length: 108 }, (_, i) => {
-        const t = (i / 108) * Math.PI * 2;
-        return [
-          seamPoint(t - 0.018, -0.035, BALL_RADIUS + 0.3),
-          seamPoint(t + 0.018, 0.035, BALL_RADIUS + 0.3),
-        ];
-      }),
-    }),
-    [],
+class HandAssetBoundary extends Component<
+  { children: ReactNode; rigs: FingerRig[]; measurements: Measurements },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? (
+      <>
+        <HandSkin
+          rigs={this.props.rigs}
+          measurements={this.props.measurements}
+        />
+        <Html position={[0, -100, 0]} center>
+          <div className="scene-label">
+            Fallback hand · reload to retry the rigged asset
+          </div>
+        </Html>
+      </>
+    ) : (
+      this.props.children
+    );
+  }
+}
+function AnatomicalHand({
+  rigs,
+  measurements,
+}: {
+  rigs: FingerRig[];
+  measurements: Measurements;
+}) {
+  const { scene } = useGLTF(`${import.meta.env.BASE_URL}models/right-hand.glb`);
+  const hand = useMemo(() => {
+    let source: THREE.SkinnedMesh | undefined;
+    scene.traverse((o) => {
+      if ((o as THREE.SkinnedMesh).isSkinnedMesh)
+        source = o as THREE.SkinnedMesh;
+    });
+    if (!source) throw new Error("Hand asset has no skeleton");
+    return retargetHand(source, rigs, measurements);
+  }, [scene, rigs, measurements]);
+  useEffect(
+    () => () => {
+      hand.mesh.geometry.dispose();
+      (hand.mesh.material as THREE.Material).dispose();
+      hand.mesh.skeleton.dispose();
+    },
+    [hand],
   );
+  return <primitive object={hand.mesh} dispose={null} />;
+}
+function BaseballAsset() {
+  const { scene } = useGLTF(`${import.meta.env.BASE_URL}models/baseball.glb`);
+  return <primitive object={scene} dispose={null} />;
+}
+class BallAssetBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? (
+      <>
+        <mesh>
+          <sphereGeometry args={[BALL_RADIUS, 32, 24]} />
+          <meshStandardMaterial wireframe color="#b16c50" />
+        </mesh>
+        <Html center>
+          <div className="scene-label">
+            Ball asset failed to load. Refresh to retry.
+          </div>
+        </Html>
+      </>
+    ) : (
+      this.props.children
+    );
+  }
+}
+function Baseball({ ball }: { ball: ReturnType<typeof solveGrip>["ball"] }) {
   return (
     <group position={ball.position} rotation={ball.rotation}>
-      <mesh castShadow receiveShadow>
-        <sphereGeometry args={[BALL_RADIUS, 80, 64]} />
-        <meshStandardMaterial color="#f2eee3" roughness={0.88} />
-      </mesh>
-      <Line points={seam} color="#a9463e" lineWidth={1.1} />
-      {stitches.map((points, i) => (
-        <Line key={i} points={points} color="#af413a" lineWidth={1.7} />
-      ))}
+      <BallAssetBoundary>
+        <Suspense
+          fallback={
+            <Html center>
+              <div className="scene-label">Loading baseball…</div>
+            </Html>
+          }
+        >
+          <BaseballAsset />
+        </Suspense>
+      </BallAssetBoundary>
     </group>
   );
 }
@@ -104,12 +195,15 @@ function Contact({
   rig,
   text,
   number,
+  ball,
 }: {
   rig: FingerRig;
   text: string;
   number: number;
+  ball: ReturnType<typeof solveGrip>["ball"];
 }) {
-  const end = rig.points[3];
+  const outward = rig.target.clone().sub(ball.position).normalize();
+  const end = rig.target.clone().addScaledVector(outward, -rig.radius + 0.9);
   const label = end
     .clone()
     .add(
@@ -163,7 +257,17 @@ function Model({
   return (
     <group scale={[handScale(left), 1, 1]}>
       <group position={[0, exploded ? -32 : 0, exploded ? -25 : 0]}>
-        <HandSkin rigs={rigs} measurements={measurements} />
+        <HandAssetBoundary rigs={rigs} measurements={measurements}>
+          <Suspense
+            fallback={
+              <Html center>
+                <div className="scene-label">Loading anatomical hand…</div>
+              </Html>
+            }
+          >
+            <AnatomicalHand rigs={rigs} measurements={measurements} />
+          </Suspense>
+        </HandAssetBoundary>
         {annotations &&
           [rigs[0], rigs[1], rigs[4]].map((rig, i) => (
             <Contact
@@ -171,6 +275,7 @@ function Model({
               rig={rig}
               number={i + 1}
               text={pitch.cues[i]}
+              ball={solution.ball}
             />
           ))}
       </group>

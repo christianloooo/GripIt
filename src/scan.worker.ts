@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
+import { detectBaseball } from "./ballReference";
 let detector: HandLandmarker | null = null;
 self.onmessage = async (event: MessageEvent) => {
   const { type, id, bitmap, baseUrl } = event.data;
@@ -23,8 +24,19 @@ self.onmessage = async (event: MessageEvent) => {
     } else if (type === "frame") {
       if (!detector) throw new Error("The hand detector has not loaded.");
       const result = detector.detectForVideo(bitmap, event.data.timestamp);
+      const width = Math.min(480, bitmap.width),
+        height = Math.round((bitmap.height * width) / bitmap.width);
+      const canvas = new OffscreenCanvas(width, height),
+        context = canvas.getContext("2d", { willReadFrequently: true })!;
+      context.drawImage(bitmap, 0, 0, width, height);
+      const ball = detectBaseball(
+        context.getImageData(0, 0, width, height).data,
+        width,
+        height,
+        result.landmarks[0] ?? [],
+      );
       bitmap.close();
-      self.postMessage({ id, result });
+      self.postMessage({ id, result: { ...result, ball } });
     }
   } catch (error) {
     bitmap?.close();

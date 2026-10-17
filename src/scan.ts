@@ -74,11 +74,9 @@ function detectorClient(signal: AbortSignal) {
 }
 export async function scanVideo(
   video: HTMLVideoElement,
-  palmWidth: number,
   onFeedback: (feedback: ScanFeedback) => void,
   signal: AbortSignal,
   live: boolean,
-  middleLength?: number,
 ) {
   if (!live) video.pause();
   const client = detectorClient(signal);
@@ -151,12 +149,7 @@ export async function scanVideo(
         { type: "frame", bitmap, timestamp: performance.now() },
         [bitmap],
       );
-      const assessment = assessDetection(
-        result,
-        palmWidth,
-        middleLength,
-        video.videoHeight / video.videoWidth,
-      );
+      const assessment = assessDetection(result);
       if (assessment.measurements && assessment.hand)
         samples.push({
           measurements: assessment.measurements,
@@ -168,6 +161,7 @@ export async function scanVideo(
         message: assessment.message,
         landmarks: assessment.landmarks,
         hand: assessment.hand,
+        ball: result.ball,
       });
       if (
         live &&
@@ -183,7 +177,7 @@ export async function scanVideo(
       .map((s) => s.measurements);
     if (consistent.length < 8)
       throw new Error(
-        `Only ${consistent.length} usable frames. Keep one open hand in view, fingers straight, with the palm facing the camera.`,
+        `Only ${consistent.length} usable frames. Show one open hand and a complete baseball side by side, against a dark background.`,
       );
     if (!stableMeasurements(consistent))
       throw new Error(

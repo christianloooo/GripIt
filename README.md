@@ -1,17 +1,17 @@
 # GripIt
 
-A browser-based baseball grip studio: choose a pitch, personalize a procedural rigged hand, and rotate, zoom, or pan around a regulation-scale baseball.
+A browser-based grip studio with automatic hand measurement from a baseball reference, a rigged 3D hand, and a regulation-scale textured baseball.
 
-## Run locally
+## Run
 
-Requires Node.js 22.12+ (Node.js 24 LTS recommended).
+Requires Node.js 22.12+ or Node.js 24.
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. Camera access requires localhost or HTTPS.
+Open the URL printed by Vite. Camera access requires localhost or HTTPS. Restart the server after changing scan worker code; `predev` and `prebuild` prepare its classic-worker bundle and the local MediaPipe WASM files.
 
 ```sh
 npm test
@@ -19,59 +19,70 @@ npm run build
 npm run preview
 ```
 
-## The studio
+## Scan: no measurements to type
 
-The viewer uses a smooth, continuous implicit hand surface (palm, wrist, thumb pad, tapered finger capsules, and nails), with finger positions driven by measured segment lengths. The canonical model is a **right hand**: palm faces +Z, fingers point +Y, thumb lies on +X. Left hands mirror X once. Preview mirroring does not alter detection coordinates.
+1. Put a **regulation baseball** beside one open hand against a dark, uncluttered background. Do not hold the ball inside the scanning hand.
+2. Keep the entire ball and all fingertips visible, with space between the ball and hand. Face the palm toward the camera, fingers straight and comfortably spread.
+3. Keep the palm and ball center at approximately the **same camera distance**. Use a straight-on view, step back enough to reduce perspective differences, and hold still.
+4. Start the camera scan or upload a short video. A green circle should outline the baseball; landmarks outline the hand. Rescan if the reference circle is wrong.
+5. Review the detected throwing hand and apply the scan. Dimensions are displayed automatically; there are no numeric scan inputs.
 
-The baseball is 73 mm in diameter. Its seam curve is shared between drawing and optimization. Index and middle targets are sampled on that seam, offset outward by fingertip radius so the finger pad can meet the ball surface. Four pitch templates provide starting regions and orientations; they are illustrative, not validated coaching recommendations.
+The reference diameter is **73 mm**. A gradient/circle detector locates the ball, checks its outline/brightness and separation from the hand, and derives millimeters per pixel. It rejects missing, cropped, poorly contrasted, or overlapping references. This is geometric detection, not a trained semantic baseball classifier: another bright circular object can be mistaken for a ball. Use one baseball and check the overlay.
 
-## Optimization equations
+MediaPipe supplies joint landmarks. Aspect-corrected image coordinates and estimated depth determine segment distances. Palm width includes an estimated skin margin around the measured knuckle span. Knuckle X/Y positions personalize finger attachment points. Root depth and finger thickness remain modeled. Accepted frames must contain one open hand and a usable ball, and per-segment measurements must remain stable across frames.
 
-Segment measurements use the requested Euclidean distance:
+All video processing happens locally in a Web Worker. The model, runtime, hand, and baseball assets are bundled locally. Optional Google Fonts may download fonts; the interface falls back to system fonts offline. Measurements stay in memory unless exported.
+
+## Measurement equations
 
 ```text
-L = sqrt((x2-x1)^2 + (y2-y1)^2 + (z2-z1)^2)
+mm_per_pixel = 73 / detected_ball_diameter_pixels
+L = sqrt((x2-x1)^2 + (y2-y1)^2 + (z2-z1)^2) * calibrated_scale
 L_index = d(5,6) + d(6,7) + d(7,8)
-scale = measured middle length / (d(9,10)+d(10,11)+d(11,12))
-# measureLandmarks also supports palm-width-only calibration: width / d(5,17)
 ```
 
-The browser optimizer minimizes the requested weighted geometric objective:
+Normalized landmark Y is multiplied by image height/width; normalized Z shares X units. This preserves the aspect ratio before applying the distance formula. Medians aggregate segment lengths and knuckle positions across consistent-handedness frames.
+
+A single camera does not establish the absolute depth difference between the ball and palm. Perspective, the real ball's diameter, lighting, and landmark error affect scale. These are approximate measurements, not a precision skin scan or a guarantee of millimeter accuracy.
+
+## Rendering and position accuracy
+
+The default hand is the authored, rigged `generic-hand/right.glb` from the MIT-licensed Immersive Web WebXR Input Profiles assets. It is cloned, transformed to a canonical right-hand coordinate frame, proportioned, and retargeted to the solver's FK anchors. The original artist topology stays connected as fingers move. Tests verify that all 20 finger joint/tip anchors agree with solver positions and that the actual skinned vertices remain finite. The canonical hand has palm +Z, fingers +Y, and thumb +X; left-handed rendering mirrors X once.
+
+This establishes **renderer/solver agreement**, not anatomical or biomechanical correctness. A generic mesh is not the user's exact skin. Soft-tissue deformation, contact pressure, tendon coupling, release motion, and full thumb opposition are not reconstructed. Some fits remain unresolved; the viewer shows the largest target gap and flags those configurations.
+
+A repaired procedural surface is available as an asset-load fallback. Its bounding volume adapts to the hand and pose, preventing the old fixed-box clipping. Its scalar-field workspace is reused to reduce memory churn, and only valid generated triangles are uploaded. A regression test checks that a large-hand fallback has no open boundary edges.
+
+## The supplied baseball asset
+
+The viewer uses **[Worn Baseball Ball by Alex Bes](https://sketchfab.com/3d-models/worn-baseball-ball-fdf3de6ae225421ea78961b897b9608a)**, licensed **CC BY 4.0**. The matching source was retrieved from a public redistribution whose embedded USD metadata identifies the same author, title, source URL, and license.
+
+It was converted to GLB, recentered, radially normalized to a **73 mm sphere**, and packaged with its albedo, normal, roughness, and occlusion maps. Visible red stitch pixels were sampled through the original mesh UVs into contact-reference coordinates. The optimizer targets those coordinates, rather than the previous unrelated procedural seam curve. Radial normalization removes the source mesh’s slight shape irregularity; textured wear remains. The triangulated surface approximates a sphere, and collision checks use its analytic 36.5 mm radius.
+
+Attribution and changes: `public/models/ATTRIBUTION.md`. Hand license: `public/models/HAND-LICENSE.md`. `scripts/convert-baseball.py` documents conversion (Pillow plus an ASCII USD export from `usdcat`); running the app does not require Python or USD tools.
+
+## Geometric optimizer
 
 ```text
 p_i = FK(theta_i, L_i)
-E_position = sum_i ||p_i - t_i||^2
-E_joint = sum_j ((theta_j - theta_neutral_j) / theta_range_j)^2
+E_position = sum_i ||p_i - t_i||²
+E_joint = sum_j ((theta_j - theta_neutral_j) / theta_range_j)²
 E_collision = squared capsule/ball and capsule/capsule penetrations
-E = w1 E_position + w2 E_joint + w3 E_collision
+E = 1 * E_position + 6 * E_joint + 80 * E_collision
 ```
 
-`solveGrip` uses bounded, multi-start coordinate descent, alternating finger flexion/knuckle spread with ball position and orientation. Targets follow the transformed seam. Weights are 1 / 6 / 80. Each finger has three flexion angles and a knuckle spread angle. Ball translation is bounded within 10 mm of its initial pose; rotation is bounded around the pitch template. The exported objective contains the unweighted components and weighted total.
+Bounded multi-start coordinate descent searches finger flexion, knuckle spread, ball translation, and orientation. A coarse orientation search accommodates the imported ball's seam layout. Index and middle targets follow the same transformed asset used in the viewer. The remaining finger targets support the lower/side surface. Finger-segment lengths are preserved by FK. JSON exports contain dimensions, ball transform, angles, target errors, clearance, calibration metadata, and objective values. Left hands use canonical right-hand coordinates with `mirrorX: true`.
 
-This implements the equations in TypeScript to keep the app running with `npm run dev`; Python/SciPy and an API server are not required. It finds a local geometric fit and does not guarantee a global optimum or a collision-free solution. Finger/palm attachments are intentionally blended; inter-finger capsule collision excludes the merged base/base region. Soft tissue, pressure, release dynamics, and palm collision are not modeled. Unresolved target fits are reported below the viewer.
+This is a local geometric fit, not proven pitch-performance optimization. Sphere/capsule collision terms do not guarantee a collision-free skin mesh, and palm collision is not modeled. Pitch templates are illustrative. CSV feedback and performance experiments remain outside this revision.
 
-## Guided scan
+## Main files
 
-Show **one open hand**, fingers straight and spread, in bright light. Enter your measured palm width across the knuckles (excluding the thumb) and middle finger length from its base knuckle to the tip, in millimeters. The middle-finger reference calibrates segment scale; palm width sets the palm mesh directly. This avoids letting an unreliable short MediaPipe palm span inflate every finger. The scan shows 21 tracked landmarks and feedback for missing hands, multiple hands, cropped fingertips, folded fingers, edge-on palms, and unstable measurements. Lengths use aspect-corrected normalized image landmarks with their estimated depth (Y is multiplied by video height/width; Z shares X units). The Euclidean distance equation is applied to these 3D coordinates, calibrated against measured middle-finger length. World landmarks check open-hand pose. It requires at least eight stable frames with consistent handedness and takes median segment lengths. Live scans finish early after 25 stable frames; video scans sample up to 60 frames.
+- `src/ballReference.ts`: automatic circle detection and ball-calibrated hand measurements.
+- `src/scan.ts`, `src/scan.worker.ts`, `src/scanQuality.ts`: capture sampling, worker inference, quality checks, aggregation.
+- `src/ScanDialog.tsx`: camera/upload scan, reference overlay, result review.
+- `src/grip.ts`: FK, imported seam targets, bounded optimizer, fit diagnostics.
+- `src/riggedHand.ts`: authored hand retargeting to FK anchors.
+- `src/Scene.tsx`: hand, supplied baseball, camera, lights, and contact labels.
+- `src/handSurface.ts`: adaptive procedural fallback.
 
-Camera previews behave like a mirror, but the detector receives the original frames. For a video recorded with a mirror filter, select the mirror option. Review and correct the throwing hand before applying a scan. Finger and palm dimensions remain editable afterward.
-
-Inference runs in a classic Web Worker so the interface stays responsive. The model is included at `public/mediapipe/hand_landmarker.task`; `npm install`, `npm run dev`, and `npm run build` prepare the matching WASM runtime and bundled worker locally. Camera/video frames stay on the device; scanning makes no model/CDN requests. Optional Google Fonts still downloads fonts and falls back to system fonts offline.
-
-Landmarks estimate proportions, not exact skin geometry. Palm length is inferred from wrist-to-middle-knuckle distance. Finger thickness is a scaled anatomical proxy, not measured from images. Check scan measurements against a ruler. No scan is stored unless exported; reloading resets the sample hand.
-
-## Export and scope
-
-JSON exports include measured dimensions, ball transform, finger angles in radians, target coordinates, target errors, clearance, and objective values. Coordinates are canonical right-hand coordinates; `mirrorX: true` identifies left-handed rendering.
-
-CSV feedback, pitching-performance optimization, and the experimental `G_next = G + delta_G` loop are not implemented in this revision. This revision addresses handedness, hand visualization, scan quality, and the geometric fitting equations.
-
-## Code map
-
-- `src/grip.ts`: hand dimensions, pitch templates, kinematics, collision diagnostics, and landmark calibration.
-- `src/Scene.tsx` and `src/handSurface.ts`: continuous hand skin, nails, shared baseball seams, labels, lights, and orbit controls.
-- `src/scan.ts`, `src/scan.worker.ts`, and `src/scanQuality.ts`: worker inference, frame sampling, quality filters, and median measurements.
-- `src/ScanDialog.tsx`: camera/upload lifecycle, calibration, progress, errors, and scan review.
-- `src/App.tsx`: studio controls and configuration export.
-
-MediaPipe implementation reference: [Hand Landmarker for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js).
+MediaPipe reference: [Hand Landmarker for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js).

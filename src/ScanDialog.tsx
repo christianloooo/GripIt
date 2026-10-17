@@ -11,8 +11,6 @@ export function ScanDialog({
   onClose: () => void;
   onComplete: (m: Measurements, left: boolean) => void;
 }) {
-  const [width, setWidth] = useState(82);
-  const [middleLength, setMiddleLength] = useState(89);
   const [mode, setMode] = useState<"idle" | "camera" | "file">("idle");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ScanFeedback>({
@@ -22,6 +20,7 @@ export function ScanDialog({
   });
   const [selectedHand, setSelectedHand] = useState("Right");
   const [cameraLoading, setCameraLoading] = useState(false);
+  const [mirrorPreview, setMirrorPreview] = useState(true);
   const [mirroredFile, setMirroredFile] = useState(false);
   const overlay = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -33,6 +32,34 @@ export function ScanDialog({
     canvas.width = canvas.clientWidth * 2;
     canvas.height = canvas.clientHeight * 2;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    if (feedback.ball) {
+      const b = feedback.ball;
+      context.strokeStyle = "#d8ff72";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.arc(
+        oxForBall(canvas, v) +
+          b.x *
+            v.videoWidth *
+            Math.min(
+              canvas.width / v.videoWidth,
+              canvas.height / v.videoHeight,
+            ),
+        oyForBall(canvas, v) +
+          b.y *
+            v.videoHeight *
+            Math.min(
+              canvas.width / v.videoWidth,
+              canvas.height / v.videoHeight,
+            ),
+        b.radius *
+          v.videoWidth *
+          Math.min(canvas.width / v.videoWidth, canvas.height / v.videoHeight),
+        0,
+        Math.PI * 2,
+      );
+      context.stroke();
+    }
     if (!feedback.landmarks) return;
     const fit = Math.min(
       canvas.width / v.videoWidth,
@@ -98,7 +125,11 @@ export function ScanDialog({
           "Camera access needs localhost or HTTPS. You can upload a video instead.",
         );
       const media = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 720 },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
       if (controller.current.signal.aborted) {
@@ -107,6 +138,9 @@ export function ScanDialog({
       }
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = media;
+      setMirrorPreview(
+        media.getVideoTracks()[0]?.getSettings().facingMode !== "environment",
+      );
       setResult(null);
       if (video.current) {
         video.current.srcObject = media;
@@ -146,16 +180,6 @@ export function ScanDialog({
     setError("");
     setFeedback({ progress: 0, accepted: 0, message: "Preparing scan…" });
     try {
-      if (!Number.isFinite(width) || width < 55 || width > 115)
-        throw new Error("Enter a palm width between 55 and 115 mm.");
-      if (
-        !Number.isFinite(middleLength) ||
-        middleLength < 45 ||
-        middleLength > 120
-      )
-        throw new Error(
-          "Enter a measured middle finger length between 45 and 120 mm.",
-        );
       if (
         video.current.readyState < 2 ||
         (mode === "file" &&
@@ -167,11 +191,9 @@ export function ScanDialog({
         );
       const output = await scanVideo(
         video.current,
-        width,
         setFeedback,
         controller.current.signal,
         mode === "camera",
-        middleLength,
       );
       if (controller.current.signal.aborted) return;
       setResult(output);
@@ -210,11 +232,11 @@ export function ScanDialog({
       <div className="eyebrow">MAKE IT YOURS</div>
       <h2 id="scan-title">Every hand has a story.</h2>
       <p>
-        Show one open hand, fingers spread, in good light. Use a short
-        palm-facing video or scan with your camera.
+        Show your open hand with a regulation baseball beside it. The ball sets
+        the scale automatically.
       </p>
       <div
-        className={`scan-preview ${mode === "camera" ? "camera-preview" : ""}`}
+        className={`scan-preview ${mode === "camera" && mirrorPreview ? "camera-preview" : ""}`}
       >
         <video
           ref={video}
@@ -234,7 +256,7 @@ export function ScanDialog({
         {mode === "idle" && (
           <div className="preview-placeholder">
             <Hand size={54} strokeWidth={1} />
-            <span>Your hand, your grip.</span>
+            <span>Your open hand + a baseball, side by side.</span>
           </div>
         )}
         {busy && (
@@ -286,34 +308,15 @@ export function ScanDialog({
               This video was recorded with a mirror filter
             </label>
           )}
-          <label className="calibration">
-            Palm width <span>mm</span>
-            <input
-              type="number"
-              min={55}
-              max={115}
-              value={width}
-              disabled={busy}
-              onChange={(e) => setWidth(Number(e.target.value))}
-            />
-          </label>
-          <label className="calibration finger-calibration">
-            Middle finger length <span>mm</span>
-            <input
-              type="number"
-              min={45}
-              max={120}
-              value={middleLength}
-              disabled={busy}
-              onChange={(e) => setMiddleLength(Number(e.target.value))}
-            />
-          </label>
-          <p className="small">
-            Measure palm width across the knuckles, excluding the thumb. Measure
-            the middle finger from its base knuckle to the tip. The finger
-            measurement sets scale; palm width sets the hand’s width. Enter your
-            measurements before scanning.
-          </p>
+          <div className="reference-instructions">
+            <strong>No ruler. No measurements to enter.</strong>
+            <p>
+              Place a regulation baseball (73 mm diameter) beside your open palm
+              on a dark background. Keep the whole ball visible and your palm at
+              the same distance from the camera. Keep both still and face the
+              camera straight on.
+            </p>
+          </div>
           {error && (
             <p className="error" role="alert">
               {error}
@@ -337,7 +340,7 @@ export function ScanDialog({
           <h3>Your proportions are ready.</h3>
           <p>
             {result.frames} stable frames · {selectedHand.toLowerCase()} hand ·{" "}
-            {result.measurements.palmWidth} mm palm
+            {result.measurements.palmWidth.toFixed(0)} mm estimated palm
           </p>
           <div className="hand-review">
             <span>Confirm your throwing hand</span>
@@ -368,8 +371,8 @@ export function ScanDialog({
             ))}
           </dl>
           <p className="small">
-            Check these lengths against your hand. You can refine them in Your
-            hand after applying.
+            Estimated from the baseball reference. Perspective and landmark
+            detection can affect these measurements. Rescan if they look wrong.
           </p>
           <button
             className="secondary wide"
@@ -398,4 +401,13 @@ export function ScanDialog({
       </p>
     </dialog>
   );
+}
+
+function oxForBall(c: HTMLCanvasElement, v: HTMLVideoElement) {
+  const s = Math.min(c.width / v.videoWidth, c.height / v.videoHeight);
+  return (c.width - v.videoWidth * s) / 2;
+}
+function oyForBall(c: HTMLCanvasElement, v: HTMLVideoElement) {
+  const s = Math.min(c.width / v.videoWidth, c.height / v.videoHeight);
+  return (c.height - v.videoHeight * s) / 2;
 }

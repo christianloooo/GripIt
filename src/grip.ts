@@ -1,10 +1,13 @@
 import { Euler, Vector3 } from "three";
+import assetSeams from "./baseballSeams.json";
 
 export const FINGERS = ["index", "middle", "ring", "pinky", "thumb"] as const;
 export type Finger = (typeof FINGERS)[number];
 export type Measurements = {
   palmWidth: number;
   palmLength?: number;
+  knuckles?: Record<Finger, [number, number, number]>;
+  calibration?: { method: "baseball"; diameterMm: number; pixelsPerMm: number };
   radii?: Partial<Record<Finger, number>>;
   segments: Record<Finger, [number, number, number]>;
 };
@@ -155,13 +158,18 @@ export function fingerRadius(name: Finger, m: Measurements) {
   );
 }
 // Shared by the rendered stitching and optimization targets. Points lie on the sphere.
-export function seamPoint(t: number, offset = 0, radius = BALL_RADIUS) {
-  const latitude = 0.52 * Math.cos(2 * t) + offset;
-  return new Vector3(
-    Math.cos(latitude) * Math.cos(t),
-    Math.sin(latitude),
-    Math.cos(latitude) * Math.sin(t),
-  ).multiplyScalar(radius);
+export function seamPoint(t: number, _offset = 0, radius = BALL_RADIUS) {
+  const fraction = (((t / (Math.PI * 2)) % 1) + 1) % 1;
+  const point =
+    assetSeams[
+      Math.min(assetSeams.length - 1, Math.floor(fraction * assetSeams.length))
+    ];
+  const surface = new Vector3(point[0], point[1], point[2]).multiplyScalar(
+    BALL_RADIUS,
+  );
+  return surface
+    .clone()
+    .addScaledVector(surface.clone().normalize(), radius - BALL_RADIUS);
 }
 export function worldSeamPoint(
   t: number,
@@ -239,11 +247,13 @@ function baseRig(name: Finger, m: Measurements): FingerRig {
   const palmScale = (m.palmLength ?? 72) / 72;
   return {
     name,
-    root: new Vector3(
-      m.palmWidth * bases[name],
-      (name === "thumb" ? -28 : name === "pinky" ? -8 : 0) * palmScale,
-      -24,
-    ),
+    root: m.knuckles?.[name]
+      ? new Vector3(...m.knuckles[name])
+      : new Vector3(
+          m.palmWidth * bases[name],
+          (name === "thumb" ? -28 : name === "pinky" ? -8 : 0) * palmScale,
+          -24,
+        ),
     yaw: name === "thumb" ? 1.05 : 0,
     lengths: m.segments[name],
     radius: fingerRadius(name, m),
@@ -463,10 +473,37 @@ export function solveGrip(m: Measurements, pitch: Pitch): GripSolution {
       updateRig(r, ball.position);
     });
   };
+  // Coarse ball-orientation multi-start is essential for an imported seam texture:
+  // its authoring orientation need not match the old procedural baseball.
+  let initialCost = Infinity,
+    initialRotation: [number, number, number] = [1.6, pitch.seam, -0.2];
+  let initialFingers: { angles: number[]; yaw: number }[] = [];
+  for (const x of [-1.2, 0.3, 1.6])
+    for (const y of [
+      pitch.seam,
+      pitch.seam + Math.PI / 2,
+      pitch.seam + Math.PI,
+    ]) {
+      ball.rotation = [x, y, -0.2];
+      assignTargets();
+      fingers.forEach((r) => optimizeFinger(r, [], ball, true));
+      const score = gripObjective(fingers, ball).total;
+      if (score < initialCost) {
+        initialCost = score;
+        initialRotation = [...ball.rotation];
+        initialFingers = fingers.map((r) => ({
+          angles: [...r.angles],
+          yaw: r.yaw,
+        }));
+      }
+    }
+  ball.rotation = [...initialRotation];
+  fingers.forEach((r, i) => {
+    r.angles = initialFingers[i].angles;
+    r.yaw = initialFingers[i].yaw;
+  });
   assignTargets();
-  // Bounded block coordinate descent over theta AND ball translation/orientation.
-  // Each ball trial recomputes seam-attached targets, preserving renderer/solver agreement.
-  fingers.forEach((r) => optimizeFinger(r, [], ball, true));
+  // Bounded block descent over theta, ball translation and orientation.
   for (let pass = 0; pass < 3; pass++) {
     fingers.forEach((r) => optimizeFinger(r, fingers, ball, false));
     for (let axis = 0; axis < 6; axis++) {
@@ -479,11 +516,11 @@ export function solveGrip(m: Measurements, pitch: Pitch): GripSolution {
         const lo =
           axis < 3
             ? BALL_CENTER.getComponent(axis) - 10
-            : [1.1, pitch.seam - 0.5, -0.6][axis - 3];
+            : initialRotation[axis - 3] - 0.5;
         const hi =
           axis < 3
             ? BALL_CENTER.getComponent(axis) + 10
-            : [2.1, pitch.seam + 0.5, 0.2][axis - 3];
+            : initialRotation[axis - 3] + 0.5;
         const trial = Math.max(lo, Math.min(hi, original + sign * step));
         if (axis < 3) ball.position.setComponent(axis, trial);
         else ball.rotation[axis - 3] = trial;
@@ -591,7 +628,21 @@ export function medianMeasurements(samples: Measurements[]): Measurements {
   const median = (values: number[]) =>
     values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
   return {
-    palmWidth: samples[0].palmWidth,
+    palmWidth: median(samples.map((s) => s.palmWidth)),
+    calibration: samples[0].calibration
+      ? {
+          ...samples[0].calibration,
+          pixelsPerMm: median(samples.map((s) => s.calibration!.pixelsPerMm)),
+        }
+      : undefined,
+    knuckles: samples.every((s) => s.knuckles)
+      ? (Object.fromEntries(
+          FINGERS.map((f) => [
+            f,
+            [0, 1, 2].map((i) => median(samples.map((s) => s.knuckles![f][i]))),
+          ]),
+        ) as Measurements["knuckles"])
+      : undefined,
     palmLength: median(samples.map((s) => s.palmLength ?? 72)),
     radii: samples[0].radii,
     segments: Object.fromEntries(

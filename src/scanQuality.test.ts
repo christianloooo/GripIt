@@ -3,14 +3,15 @@ import { assessDetection, stableMeasurements } from "./scanQuality";
 import { DEFAULT_MEASUREMENTS } from "./grip";
 it("gives specific feedback for missing and multiple hands", () => {
   expect(
-    assessDetection({ landmarks: [], worldLandmarks: [], handedness: [] }, 82)
+    assessDetection({ landmarks: [], worldLandmarks: [], handedness: [] })
       .message,
   ).toMatch("No hand");
   expect(
-    assessDetection(
-      { landmarks: [[], []], worldLandmarks: [[], []], handedness: [] },
-      82,
-    ).message,
+    assessDetection({
+      landmarks: [[], []],
+      worldLandmarks: [[], []],
+      handedness: [],
+    }).message,
   ).toMatch("only one");
 });
 it("requires enough stable measurements instead of accepting a noisy scan", () => {

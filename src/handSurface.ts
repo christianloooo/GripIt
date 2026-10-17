@@ -2,22 +2,39 @@ import * as THREE from "three";
 import { MarchingCubes } from "three/examples/jsm/objects/MarchingCubes.js";
 import type { FingerRig, Measurements } from "./grip";
 
+// Reuse the scalar-field workspace across poses. Only the trimmed output is
+// uploaded to WebGL, avoiding repeated large allocations during pitch switches.
+let workspace: MarchingCubes | undefined;
 // A continuous implicit skin surface. Smooth unions connect the palm, thumb pad,
 // wrist, and tapered finger capsules without cylinder caps or disconnected joints.
 export function createHandSurface(
   rigs: FingerRig[],
   measurements: Measurements,
 ) {
-  const resolution = 84,
-    size = 220,
-    center = new THREE.Vector3(0, -8, 8);
-  const mc = new MarchingCubes(
-    resolution,
-    new THREE.MeshStandardMaterial(),
-    false,
-    false,
-    150000,
-  );
+  const bounds = new THREE.Box3();
+  for (const rig of rigs)
+    for (const point of rig.points) {
+      bounds.expandByPoint(point.clone().addScalar(rig.radius + 8));
+      bounds.expandByPoint(point.clone().addScalar(-rig.radius - 8));
+    }
+  const palmLength = measurements.palmLength ?? 72;
+  const width = measurements.palmWidth;
+  bounds.expandByPoint(new THREE.Vector3(-width * 0.6, -palmLength - 45, -48));
+  bounds.expandByPoint(new THREE.Vector3(width * 0.6, 12, 0));
+  const extent = bounds.getSize(new THREE.Vector3());
+  const size = Math.max(extent.x, extent.y, extent.z) + 20;
+  const center = bounds.getCenter(new THREE.Vector3());
+  const resolution = 104;
+  if (!workspace)
+    workspace = new MarchingCubes(
+      resolution,
+      new THREE.MeshStandardMaterial(),
+      false,
+      false,
+      100000,
+    );
+  const mc = workspace;
+  mc.normal_cache.fill(0);
   mc.isolation = 0;
   const capsules = rigs.flatMap((r) =>
     r.points.slice(0, -1).map((a, i) => {
@@ -39,8 +56,7 @@ export function createHandSurface(
     const h = Math.max(k - Math.abs(a - b), 0) / k;
     return Math.min(a, b) - h * h * k * 0.25;
   };
-  const width = measurements.palmWidth,
-    palmLength = measurements.palmLength ?? 72;
+
   const ellipsoid = (
     x: number,
     y: number,
@@ -135,11 +151,34 @@ export function createHandSurface(
         mc.field[index++] = -sdf;
       }
   mc.update();
-  const geometry = mc.geometry.clone();
-  // MarchingCubes uses normalized [-1,+1] coordinates.
+  // Trim unused buffer capacity. Bounds/culling must describe the generated skin,
+  // not zero-filled allocation space; reject over-budget output rather than cuts.
+  const count = mc.geometry.drawRange.count;
+  if (count >= mc.geometry.attributes.position.count)
+    throw new Error("Hand surface exceeded its mesh budget.");
+  const geometry = new THREE.BufferGeometry();
+  for (const name of ["position", "normal"]) {
+    const source = mc.geometry.getAttribute(name);
+    geometry.setAttribute(
+      name,
+      new THREE.Float32BufferAttribute(
+        (source.array as Float32Array).slice(0, count * 3),
+        3,
+      ),
+    );
+  }
+  geometry.setDrawRange(0, count);
   geometry.scale(size / 2, size / 2, size / 2);
   geometry.translate(center.x, center.y, center.z);
-  mc.geometry.dispose();
-  (mc.material as THREE.Material).dispose();
+  // Stable UVs for fine skin pores. No scan photo is retained or projected.
+  const pos = geometry.getAttribute("position"),
+    uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = pos.getX(i) / 100;
+    uv[i * 2 + 1] = pos.getY(i) / 100;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
   return geometry;
 }

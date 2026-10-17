@@ -1,23 +1,22 @@
-import { FINGERS, LANDMARK_CHAINS, measureLandmarks } from "./grip";
+import { FINGERS, LANDMARK_CHAINS } from "./grip";
 import type { Landmark, Measurements } from "./grip";
+import { measureWithBaseball } from "./ballReference";
+import type { BallReference } from "./ballReference";
 export type ScanFeedback = {
   progress: number;
   accepted: number;
   message: string;
   landmarks?: Landmark[];
   hand?: string;
+  ball?: BallReference | null;
 };
 export type Detection = {
   worldLandmarks: Landmark[][];
   landmarks: Landmark[][];
+  ball?: BallReference | null;
   handedness: { categoryName: string; score: number }[][];
 };
-export function assessDetection(
-  result: Detection,
-  palmWidth: number,
-  middleLength?: number,
-  imageAspect = 1,
-): {
+export function assessDetection(result: Detection): {
   message: string;
   measurements?: Measurements;
   hand?: string;
@@ -88,21 +87,15 @@ export function assessDetection(
         "Face the palm toward the camera instead of turning it sideways.",
       landmarks: image,
     };
-  // Normalized Z has the same scale as image X; correct image Y for video aspect.
-  // For a front-facing hand these coordinates preserve visible joint proportions
-  // better than the world model's sometimes foreshortened palm estimate.
-  const measurementPoints = image.map((p) => ({
-    x: p.x,
-    y: p.y * imageAspect,
-    z: p.z,
-  }));
+  if (!result.ball || result.ball.confidence < 0.78)
+    return {
+      message:
+        "Baseball not clear. Place a regulation baseball beside your hand on a dark background, fully in view.",
+      landmarks: image,
+    };
   try {
     return {
-      measurements: measureLandmarks(
-        measurementPoints,
-        palmWidth,
-        middleLength,
-      ),
+      measurements: measureWithBaseball(image, result.ball),
       hand: category.categoryName,
       landmarks: image,
       message: "Good view. Hold steady while the measurements settle.",
