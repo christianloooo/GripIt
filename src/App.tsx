@@ -5,6 +5,7 @@ import {
   Check,
   CircleHelp,
   Fingerprint,
+  FileWarning,
   Hand,
   Layers3,
   Maximize2,
@@ -16,6 +17,9 @@ import {
   X,
   ZoomIn,
 } from "lucide-react";
+import { FailureLogDialog } from "./FailureLogDialog";
+import { preflightHand } from "./preflightHand";
+import { recordFailure } from "./failureLog";
 import { Scene } from "./Scene";
 const ScanDialog = lazy(() =>
   import("./ScanDialog").then((module) => ({ default: module.ScanDialog })),
@@ -31,6 +35,7 @@ export default function App() {
     [annotations, setAnnotations] = useState(true),
     [exploded, setExploded] = useState(false),
     [reset, setReset] = useState(0);
+  const [showFailures, setShowFailures] = useState(false);
   const [scan, setScan] = useState(false),
     [tab, setTab] = useState<"grip" | "hand">("grip"),
     [personalized, setPersonalized] = useState(false),
@@ -91,6 +96,13 @@ export default function App() {
         </a>
         <nav aria-label="Main navigation">
           <span className="nav-active">Grip studio</span>
+          <button
+            onClick={() => setShowFailures(true)}
+            aria-label="Open failure log"
+          >
+            <FileWarning size={16} />
+            Failure log
+          </button>
           <button onClick={() => setHelp(true)}>
             How it works <ArrowRight size={14} />
           </button>
@@ -410,6 +422,9 @@ export default function App() {
           </span>
         </footer>
       </main>
+      {showFailures && (
+        <FailureLogDialog onClose={() => setShowFailures(false)} />
+      )}
       {scan && (
         <Suspense
           fallback={
@@ -420,7 +435,19 @@ export default function App() {
         >
           <ScanDialog
             onClose={() => setScan(false)}
-            onComplete={(m, isLeft) => {
+            onComplete={async (m, isLeft, signal) => {
+              try {
+                await preflightHand(m);
+              } catch (error) {
+                if (signal.aborted) return;
+                recordFailure("model", error, {
+                  diagnostics: error instanceof Error ? error.cause : undefined,
+                  measurements: m,
+                  handedness: isLeft ? "Left" : "Right",
+                });
+                throw error;
+              }
+              if (signal.aborted) return;
               setMeasurements(m);
               setLeft(isLeft);
               setPersonalized(true);

@@ -80,6 +80,7 @@ export async function scanVideo(
 ) {
   if (!live) video.pause();
   const client = detectorClient(signal);
+  const rejections: Record<string, number> = {};
   const samples: { measurements: Measurements; hand: string }[] = [];
   const total = live
     ? 60
@@ -155,6 +156,9 @@ export async function scanVideo(
           measurements: assessment.measurements,
           hand: assessment.hand,
         });
+      if (!assessment.measurements)
+        rejections[assessment.message] =
+          (rejections[assessment.message] ?? 0) + 1;
       onFeedback({
         progress: Math.round(((i + 1) / total) * 100),
         accepted: samples.length,
@@ -188,6 +192,10 @@ export async function scanVideo(
       hand,
       frames: consistent.length,
     };
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Scan failed", {
+      cause: { acceptedFrames: samples.length, rejections },
+    });
   } finally {
     client.close();
   }
