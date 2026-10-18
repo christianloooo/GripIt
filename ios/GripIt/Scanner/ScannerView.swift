@@ -29,7 +29,9 @@ struct ScannerView: View {
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.2), value: model.phase)
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active {
+            // Permission and share dialogs can make the scene temporarily inactive.
+            // End capture only when the app actually moves to the background.
+            if phase == .background {
                 model.stop()
             }
         }

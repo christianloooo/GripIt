@@ -61,7 +61,11 @@ final class ScannerViewModel: ObservableObject {
                     guard let self, self.generation == token else { return }
                     self.message = error
                     self.phase = .failed
+                    self.generation = UUID()
+                    self.capture.onFrame = nil
+                    self.capture.onError = nil
                     self.capture.stop()
+                    self.points = []
                 }
             }
             phase = .scanning
@@ -138,6 +142,14 @@ final class ScannerViewModel: ObservableObject {
         jointFractions = update.jointFractions
         message = update.message
         diagnostics = update.diagnostics
+        if update.initializationFailed {
+            generation = UUID()
+            capture.onFrame = nil
+            capture.onError = nil
+            capture.stop()
+            phase = .failed
+            return
+        }
         if let result = update.profile {
             profile = result
             phase = .complete
@@ -160,6 +172,7 @@ private struct ScannerFrameUpdate: Sendable {
     let message: String
     let diagnostics: String
     let profile: HandProfile?
+    let initializationFailed: Bool
 }
 
 /// All mutable processing state is confined to the capture service's serial queue.
@@ -183,8 +196,12 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
         var result: HandProfile?
         var message = "Show your whole hand with fingers comfortably spread."
         var diagnostics = ""
+        var initializationFailed = false
         do {
-            if landmarker == nil { landmarker = try HandLandmarkerService() }
+            if landmarker == nil {
+                do { landmarker = try HandLandmarkerService() }
+                catch { initializationFailed = true; throw error }
+            }
             let timestamp = max(lastTimestamp + 1, Int(CMTimeGetSeconds(frame.timestamp) * 1000))
             lastTimestamp = timestamp
             guard let detection = try landmarker?.detect(
@@ -272,7 +289,8 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
         return ScannerFrameUpdate(
             points: points, validDepthCount: depthCount, distanceMeters: distance,
             coverage: session.coverage.snapshot, jointFractions: fractions,
-            message: message, diagnostics: diagnostics, profile: result
+            message: message, diagnostics: diagnostics, profile: result,
+            initializationFailed: initializationFailed
         )
     }
 

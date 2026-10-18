@@ -272,7 +272,7 @@ final class TrueDepthCaptureService: NSObject {
 
     @objc private func sessionWasInterrupted(_ notification: Notification) {
         captureQueue.async { [weak self] in
-            self?.reportError("Camera capture was interrupted. It will resume when available.")
+            self?.reportError("Camera capture was interrupted. Tap Try again to resume.")
         }
     }
 
