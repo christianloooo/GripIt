@@ -29,6 +29,11 @@ function makeThrow(
       spinDirectionClock: 12.5,
       spinEfficiencyPercent: 72,
       gyroDegree: null,
+      // Required and nullable since break became part of the measurement
+      // contract. Null, not a number: the Maya acceptance case carries no
+      // break reading and inventing one would change what the fixture means.
+      horizontalBreakInches: null,
+      verticalBreakInches: null,
       releaseHeightFeet: 5.8,
       rapsodoScore: null,
       ...measurementOverrides,
