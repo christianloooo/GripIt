@@ -1,6 +1,7 @@
 node_modules/
 .worktrees/
 dist/
+.build/
 *.tsbuildinfo
 .DS_Store
 public/mediapipe/wasm/

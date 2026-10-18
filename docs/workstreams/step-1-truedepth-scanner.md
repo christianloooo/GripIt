@@ -28,6 +28,7 @@ The scanner must not expose AVFoundation, MediaPipe, Core Video, or Metal types 
 
 ## Recommended implementation
 
+- Reusable core package at `ios/GripItScannerCore`.
 - SwiftUI scan flow.
 - AVFoundation `builtInTrueDepthCamera`.
 - `AVCaptureDataOutputSynchronizer` for RGB and depth.
@@ -36,6 +37,9 @@ The scanner must not expose AVFoundation, MediaPipe, Core Video, or Metal types 
 - Coverage states: palm, back, thumb side, pinky side.
 - A fixture-driven simulator mode because TrueDepth is unavailable in Simulator.
 - JSON export using Swift `Codable`.
+- Optional Perceptron scan-QA sidecar through a server proxy.
+
+The Xcode app shell is owned separately. Follow `docs/integration/ios-scanner-host.md` for the boundary. Perceptron guidance is described in `docs/integration/perceptron.md` and never replaces metric depth or landmark measurements.
 
 ## Scope
 
