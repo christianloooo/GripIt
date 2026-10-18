@@ -351,7 +351,8 @@ private struct ThrowPhotoReview: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var draft: ThrowDraft
   @State private var scanning = true
-  @State private var scanPosition: CGFloat = 0
+  @State private var scanStartedAt: ContinuousClock.Instant?
+  private let scanDuration: Duration = .seconds(2)
   @State private var preparing = true
   @State private var revealed = 0
   @State private var errors: [String: String] = [:]
@@ -452,10 +453,17 @@ private struct ThrowPhotoReview: View {
           ThrowPhotoZoomView(image: photo.image)
             .accessibilityLabel(photo.title + ". Pinch to zoom and drag to inspect the photo.")
           if scanning {
-            scanBeam(height: bounds.size.height)
-              .offset(x: scanPosition * max(0, bounds.size.width - 48))
-              .allowsHitTesting(false)
-              .accessibilityHidden(true)
+            TimelineView(.animation) { _ in
+              // Read the same clock used to reveal the values. This avoids
+              // restarting an implicit animation whenever a field updates.
+              let elapsed = scanStartedAt?.duration(to: .now) ?? .zero
+              let progress = min(max(elapsed / scanDuration, 0), 1)
+              let position = progress <= 0.5 ? progress * 2 : (1 - progress) * 2
+              scanBeam(height: bounds.size.height)
+                .offset(x: position * max(0, bounds.size.width - 48))
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
             Label("SCANNING RAPSODO PHOTO", systemImage: "viewfinder")
               .font(.system(size: 9, weight: .bold, design: .monospaced))
               .tracking(0.6)
@@ -527,27 +535,35 @@ private struct ThrowPhotoReview: View {
 
   @MainActor private func prepareReadings() async {
     do {
-      if !reduceMotion {
-        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: true)) { scanPosition = 1 }
-        try await Task.sleep(for: .milliseconds(300))
-      } else {
+      try Task.checkCancellation()
+      guard let fixture = photo.fixture else {
+        // Unrecognized photos remain manual entry, with no invented readings.
         scanning = false
+        preparing = false
+        return
       }
-      if let fixture = photo.fixture {
-        let values = fixture.makeDraft()
-        let readings: [(WritableKeyPath<ThrowDraft, String>, String)] = [
-          (\.velocityMph, values.velocityMph), (\.totalSpinRpm, values.totalSpinRpm),
-          (\.spinDirectionClock, values.spinDirectionClock),
-          (\.spinEfficiencyPercent, values.spinEfficiencyPercent), (\.gyroDegree, values.gyroDegree),
-          (\.horizontalBreakInches, values.horizontalBreakInches),
-          (\.verticalBreakInches, values.verticalBreakInches),
-        ]
-        for (key, value) in readings where !value.isEmpty {
-          try Task.checkCancellation()
-          if !reduceMotion { try await Task.sleep(for: .milliseconds(380)) }
-          draft[keyPath: key] = value
-          revealed += 1
+      let values = fixture.makeDraft()
+      let readings: [(WritableKeyPath<ThrowDraft, String>, String)] = [
+        (\.velocityMph, values.velocityMph), (\.totalSpinRpm, values.totalSpinRpm),
+        (\.spinDirectionClock, values.spinDirectionClock),
+        (\.spinEfficiencyPercent, values.spinEfficiencyPercent), (\.gyroDegree, values.gyroDegree),
+        (\.horizontalBreakInches, values.horizontalBreakInches),
+        (\.verticalBreakInches, values.verticalBreakInches),
+      ].filter { !$0.1.isEmpty }
+      let clock = ContinuousClock()
+      let startedAt = clock.now
+      scanStartedAt = startedAt
+      scanning = !reduceMotion
+      for (index, reading) in readings.enumerated() {
+        if !reduceMotion {
+          // Absolute deadlines keep six or seven readings within the same
+          // two-second scan instead of accumulating a delay for each field.
+          let deadline = startedAt.advanced(by: scanDuration * (Double(index + 1) / Double(readings.count)))
+          try await clock.sleep(until: deadline, tolerance: .zero)
         }
+        try Task.checkCancellation()
+        draft[keyPath: reading.0] = reading.1
+        revealed += 1
       }
       scanning = false
       preparing = false
