@@ -70,9 +70,13 @@ every finger visible. Do not turn fully edge-on. All original metric stability
 and bone-length checks remain active. The app distinguishes overlapping fingers,
 motion, and fluctuating depth instead of calling every rejection “hold still.”
 
-View orientation is resolved in the hand's own basis: the radial axis from the
-pinky MCP to the index MCP, and the distal axis from the wrist to the middle
-MCP. It reports how much of the palm, the thumb side, and the fingertips point
+View orientation is resolved from the TrueDepth measurements, in the hand's own
+basis: the radial axis from the pinky MCP to the index MCP, and the distal axis
+from the wrist to the middle MCP. Measured depth is what fixes the sign of
+“toward the camera”. MediaPipe's world landmarks are a single-image estimate
+whose depth scale and sign Google documents as unreliable, and a side view
+depends on exactly that quantity, so they are not used for orientation. The four
+palm anchors therefore need valid depth before a view can be judged. It reports how much of the palm, the thumb side, and the fingertips point
 at the camera. Those three cosines are invariant to image-plane roll, so tilting
 the hand in frame, or an analysis buffer that is not upright, cannot change which
 view the scanner believes it sees. Reading a side view off the palm normal's x

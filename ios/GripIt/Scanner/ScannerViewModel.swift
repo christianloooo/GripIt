@@ -4,7 +4,7 @@ import OSLog
 import GripItScannerCore
 import SwiftUI
 import UIKit
-import simd
+
 
 enum ScannerPhase: String { case chooseHand, requestingPermission, scanning, complete, failed }
 
@@ -309,12 +309,22 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             if meters < 0.20 { throw Guidance("Move farther away.", gate: "too close (\(Int((meters * 100).rounded())) cm)") }
             if meters > 0.65 { throw Guidance("Move closer.", gate: "too far (\(Int((meters * 100).rounded())) cm)") }
 
-            // Orientation is read in the hand's own basis, so tilting the hand in
-            // the frame cannot change which view the scanner thinks it sees.
-            let facing = handFacing(detection.worldPoints)
+            // Orientation comes from the TrueDepth measurements, in the hand's
+            // own basis. Measured depth fixes the sign of "toward the camera";
+            // MediaPipe's world landmarks only guess it from one image, and the
+            // side views are precisely the poses that guess gets wrong.
+            let facing = ScannerAdapterGeometry.handFacing(
+                measured: mapped.landmarks.mapValues(\.point), handedness: hand
+            )
             gate.facing = facing.map {
                 String(format: "palm %+.2f · thumb %+.2f · tips %+.2f", $0.palm, $0.thumb, $0.fingers)
-            } ?? "no hand basis"
+            } ?? "palm anchors lack depth"
+            guard facing != nil else {
+                throw Guidance(
+                    "Show your whole palm squarely for a moment so we can measure its angle.",
+                    gate: "orientation: no depth at wrist or knuckles"
+                )
+            }
 
             let identityScore: Double
             switch identity.update(
@@ -480,20 +490,6 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             parts.append(String(format: "min bone %.0f mm", shortest))
         }
         return parts.joined(separator: " · ")
-    }
-
-    /// Reads orientation from the hand's own axes rather than from image axes.
-    /// MediaPipe landmark 0 is the wrist, 5 the index MCP, 9 the middle MCP and
-    /// 17 the pinky MCP.
-    private func handFacing(_ world: [SIMD3<Double>]) -> HandFacing? {
-        guard world.count == 21 else { return nil }
-        func vector(_ from: Int, _ to: Int) -> Vector3D {
-            let delta = world[to] - world[from]
-            return Vector3D(x: delta.x, y: delta.y, z: delta.z)
-        }
-        return ScannerAdapterGeometry.handFacing(
-            radial: vector(17, 5), distal: vector(0, 9), handedness: hand
-        )
     }
 
     private func classify(_ facing: HandFacing?, requested: ScanView? = nil) -> ScanView? {

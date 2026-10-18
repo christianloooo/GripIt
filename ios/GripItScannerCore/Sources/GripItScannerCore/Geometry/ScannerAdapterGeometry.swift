@@ -147,6 +147,35 @@ public enum ScannerAdapterGeometry {
         )
     }
 
+    /// Resolves facing from TrueDepth measurements.
+    ///
+    /// Prefer this over any monocular estimate. `DepthProjector` places these
+    /// points in camera space with x right, y down and z the measured distance
+    /// from the lens, so the direction toward the camera is negative z by
+    /// construction rather than by a convention this package does not control.
+    /// MediaPipe's own world landmarks are a single-image guess whose depth
+    /// scale and sign Google documents as unreliable, which is exactly the
+    /// quantity a side view depends on.
+    ///
+    /// Needs the four palm anchors: wrist, index MCP, middle MCP and pinky MCP.
+    public static func handFacing(
+        measured landmarks: [HandLandmarkName: MetricPoint3D], handedness: Handedness
+    ) -> HandFacing? {
+        guard let wrist = landmarks[.wrist], let middle = landmarks[.middleMCP],
+              let index = landmarks[.indexMCP], let pinky = landmarks[.pinkyMCP]
+        else { return nil }
+        func vector(from start: MetricPoint3D, to end: MetricPoint3D) -> Vector3D {
+            Vector3D(
+                x: end.xMm - start.xMm, y: end.yMm - start.yMm, z: end.zMm - start.zMm
+            )
+        }
+        return handFacing(
+            radial: vector(from: pinky, to: index),
+            distal: vector(from: wrist, to: middle),
+            handedness: handedness
+        )
+    }
+
     /// The nearest canonical view, or nil when the hand sits between views.
     public static func classifyView(_ facing: HandFacing) -> ScanView? {
         guard [facing.palm, facing.thumb, facing.fingers].allSatisfy(\.isFinite) else { return nil }

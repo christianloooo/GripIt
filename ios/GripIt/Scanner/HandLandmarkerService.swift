@@ -8,7 +8,6 @@ import UIKit
 struct HandDetection {
     /// Normalized coordinates in the orientation-corrected MediaPipe model image.
     let points: [CGPoint]
-    let worldPoints: [SIMD3<Double>]
     let label: String
     let confidence: Double
     let handCount: Int
@@ -87,9 +86,7 @@ final class HandLandmarkerService {
         let handCount = result.landmarks.count
         guard handCount > 0,
               let normalizedLandmarks = result.landmarks.first,
-              let worldLandmarks = result.worldLandmarks.first,
               normalizedLandmarks.count == 21,
-              worldLandmarks.count == 21,
               let category = result.handedness.first?.max(by: { $0.score < $1.score })
         else {
             return nil
@@ -98,9 +95,6 @@ final class HandLandmarkerService {
         return HandDetection(
             points: normalizedLandmarks.map {
                 CGPoint(x: CGFloat($0.x), y: CGFloat($0.y))
-            },
-            worldPoints: worldLandmarks.map {
-                SIMD3<Double>(Double($0.x), Double($0.y), Double($0.z))
             },
             label: category.categoryName ?? "Unknown",
             confidence: Double(category.score),
