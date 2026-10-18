@@ -209,6 +209,32 @@ from `PRODUCT.md`, not `handInstructions.md`. Everything else comes from
 `handInstructions.md`. All of it needs coach review before it is presented as
 validated advice, which the product brief already requires.
 
+## Finger thickness
+
+`HandProfile` reports `diameterMm: null` for every finger and
+`thicknessMm: null` for the palm. That is deliberate for v1, not an oversight,
+and it is not arriving during this build.
+
+Keep deriving it the way `grip.ts` already does:
+
+```ts
+m.radii?.[name] ?? (thumb 8 : pinky 5.5 : middle 7.1 : 6.6) * m.palmWidth / 82
+```
+
+This matters to you because finger radius drives both the ball collision term
+and the finger-to-finger collision term, so it decides whether two fingers fit
+side by side. That is the four-seam's comfortable separation and the slider's
+fingers touching lightly, and it feeds `reach`.
+
+The reason to derive rather than measure, for now: the scanner's palm width is
+currently about 24% low, and every derived radius scales off palm width.
+Thickness for a given palm width varies roughly ten percent between people, so
+a measured thickness combined with a bad palm width would be less accurate than
+deriving both from one corrected number. Palm width accuracy comes first.
+
+`Measurements.radii` is already optional, so measured values drop in later with
+no contract change. Do not design around their absence.
+
 ## Out of scope
 
 Camera frames, scan worker messages, MediaPipe results, native iOS types,
