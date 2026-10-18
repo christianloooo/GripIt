@@ -31,6 +31,14 @@ var GripItFocus = (() => {
     const match = /^(0?[1-9]|1[0-2]):([0-5]\d)$/.exec(value.trim());
     return match ? Number(match[1]) + Number(match[2]) / 60 : null;
   }
+  function completeSpinMeasurements(spinEfficiencyPercent, gyroDegree) {
+    if (spinEfficiencyPercent === null && gyroDegree !== null) {
+      spinEfficiencyPercent = Math.cos(gyroDegree * Math.PI / 180) * 100;
+    } else if (gyroDegree === null && spinEfficiencyPercent !== null) {
+      gyroDegree = Math.acos(spinEfficiencyPercent / 100) * 180 / Math.PI;
+    }
+    return { spinEfficiencyPercent, gyroDegree };
+  }
   function validateThrow(row) {
     const errors = {};
     const number = (field, label, min, max, optional = false) => {
@@ -55,11 +63,27 @@ var GripItFocus = (() => {
       0,
       10
     );
-    const spinValue = number(
-      "spinValue",
-      row.spinMode === "efficiency" ? "spin efficiency" : "gyro degree",
-      row.spinMode === "efficiency" ? 0 : -90,
-      row.spinMode === "efficiency" ? 100 : 90
+    const enteredSpinEfficiency = number(
+      "spinEfficiencyPercent",
+      "spin efficiency",
+      0,
+      100,
+      true
+    );
+    const enteredGyroDegree = number("gyroDegree", "gyro degree", -90, 90, true);
+    const horizontalBreakInches = number(
+      "horizontalBreakInches",
+      "horizontal break",
+      -30,
+      30,
+      true
+    );
+    const verticalBreakInches = number(
+      "verticalBreakInches",
+      "vertical break",
+      -30,
+      30,
+      true
     );
     const rapsodoScore = number(
       "rapsodoScore",
@@ -71,14 +95,20 @@ var GripItFocus = (() => {
     const spinDirectionClock = parseClock(row.spinDirectionClock);
     if (spinDirectionClock === null)
       errors.spinDirectionClock = "Use clock time, e.g. 12:30 (1:00 to 12:59).";
+    const { spinEfficiencyPercent, gyroDegree } = completeSpinMeasurements(
+      enteredSpinEfficiency,
+      enteredGyroDegree
+    );
     return {
       errors,
       measurements: Object.keys(errors).length ? null : {
         velocityMph,
         totalSpinRpm,
         spinDirectionClock,
-        spinEfficiencyPercent: row.spinMode === "efficiency" ? spinValue : null,
-        gyroDegree: row.spinMode === "gyro" ? spinValue : null,
+        spinEfficiencyPercent,
+        gyroDegree,
+        horizontalBreakInches,
+        verticalBreakInches,
         releaseHeightFeet,
         rapsodoScore
       }

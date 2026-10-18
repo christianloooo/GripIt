@@ -82,8 +82,9 @@ final class TrainingFlowModel: ObservableObject {
   var hasEntries: Bool {
     draft.rows.contains {
       ![
-        $0.velocityMph, $0.totalSpinRpm, $0.spinDirectionClock, $0.spinValue,
-        $0.releaseHeightFeet, $0.rapsodoScore,
+        $0.velocityMph, $0.totalSpinRpm, $0.spinDirectionClock,
+        $0.spinEfficiencyPercent, $0.gyroDegree, $0.horizontalBreakInches,
+        $0.verticalBreakInches, $0.releaseHeightFeet, $0.rapsodoScore,
       ].allSatisfy(\.isEmpty)
     }
   }

@@ -11,12 +11,12 @@ final class TrainingFlowTests: XCTestCase {
     XCTAssertEqual(valid.measurements?.spinDirectionClock, 12.5)
     row.velocityMph = "900"
     row.spinDirectionClock = "13:60"
-    row.spinValue = "101"
+    row.spinEfficiencyPercent = "101"
     let invalid = try NativeFocusEngine.validate(row)
     XCTAssertNil(invalid.measurements)
     XCTAssertNotNil(invalid.errors["velocityMph"])
     XCTAssertNotNil(invalid.errors["spinDirectionClock"])
-    XCTAssertNotNil(invalid.errors["spinValue"])
+    XCTAssertNotNil(invalid.errors["spinEfficiencyPercent"])
   }
 
   func testSampleEditsRemainSampleAndNullsAreExplicit() throws {
@@ -28,7 +28,9 @@ final class TrainingFlowTests: XCTestCase {
     let encoded = try JSONEncoder().encode(records[0])
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
     let measures = try XCTUnwrap(object["measurements"] as? [String: Any])
-    XCTAssertTrue(measures["gyroDegree"] is NSNull)
+    XCTAssertNotNil(measures["gyroDegree"] as? Double)
+    XCTAssertEqual(measures["horizontalBreakInches"] as? Double, 18.6)
+    XCTAssertEqual(measures["verticalBreakInches"] as? Double, 13.8)
     XCTAssertTrue(measures["rapsodoScore"] is NSNull)
     XCTAssertEqual(
       records[0].extensions["gripit.throwEntry"], .object(["handProfileId": .string("my-hand")]))
@@ -38,21 +40,28 @@ final class TrainingFlowTests: XCTestCase {
     XCTAssertTrue(real.rows[0].velocityMph.isEmpty)
   }
 
-  func testGyroAlternativeAndZeroScore() throws {
+  func testIndependentSpinReadingsDeriveMissingValueAndPreserveBoth() throws {
     var row = ThrowSessionDraft.sample().rows[0]
-    row.spinMode = .gyro
-    row.spinValue = "-45"
+    row.spinEfficiencyPercent = ""
+    row.gyroDegree = "-45"
     row.rapsodoScore = "0"
     let values = try XCTUnwrap(NativeFocusEngine.validate(row).measurements)
-    XCTAssertNil(values.spinEfficiencyPercent)
+    XCTAssertEqual(try XCTUnwrap(values.spinEfficiencyPercent), cos(.pi / 4) * 100, accuracy: 0.000_001)
     XCTAssertEqual(values.gyroDegree, -45)
     XCTAssertEqual(values.rapsodoScore, 0)
+
+    row.spinEfficiencyPercent = "95"
+    row.gyroDegree = "-18.2"
+    let both = try XCTUnwrap(NativeFocusEngine.validate(row).measurements)
+    XCTAssertEqual(both.spinEfficiencyPercent, 95)
+    XCTAssertEqual(both.gyroDegree, -18.2)
   }
 
   func testMayaExampleAndUntintedZones() throws {
     var draft = ThrowSessionDraft.sample()
     draft.rows = [draft.rows[0]]
-    draft.rows[0].spinValue = "72"
+    draft.rows[0].spinEfficiencyPercent = "72"
+    draft.rows[0].gyroDegree = ""
     let records = try NativeFocusEngine.records(draft, pitch: .fourSeam, profileId: "my-hand")
     let assessment = try NativeFocusEngine.assess(
       pitch: .fourSeam, records: records,

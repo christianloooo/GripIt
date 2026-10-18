@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../docs/contracts/v1/fixtures/throw-record-four-seam.json";
 import {
+  completeSpinMeasurements,
   emptyThrow,
   makeThrowRecords,
   newThrowSession,
@@ -35,28 +36,85 @@ describe("v1 throw entry boundary", () => {
   it("keeps missing optionals null and preserves zero", () => {
     const row = sampleThrowSession().rows[0];
     expect(
-      validateThrow({ ...row, spinValue: "0", rapsodoScore: "0" }).measurements,
+      validateThrow({
+        ...row,
+        spinEfficiencyPercent: "0",
+        gyroDegree: "",
+        horizontalBreakInches: "",
+        verticalBreakInches: "",
+        rapsodoScore: "0",
+      }).measurements,
     ).toMatchObject({
       spinEfficiencyPercent: 0,
-      gyroDegree: null,
+      gyroDegree: 90,
+      horizontalBreakInches: null,
+      verticalBreakInches: null,
       rapsodoScore: 0,
     });
-    expect(
-      validateThrow({ ...row, spinMode: "gyro", spinValue: "-90" })
-        .measurements,
-    ).toMatchObject({
+    const gyroOnly = validateThrow({
+      ...row,
+      spinEfficiencyPercent: "",
+      gyroDegree: "-90",
+    }).measurements;
+    expect(gyroOnly).toMatchObject({ gyroDegree: -90, rapsodoScore: null });
+    expect(gyroOnly?.spinEfficiencyPercent).toBeCloseTo(0, 10);
+  });
+  it("accepts both, either, or neither spin reading and derives the missing value", () => {
+    expect(completeSpinMeasurements(null, null)).toEqual({
       spinEfficiencyPercent: null,
-      gyroDegree: -90,
-      rapsodoScore: null,
+      gyroDegree: null,
     });
+    expect(completeSpinMeasurements(95, -18.2)).toEqual({
+      spinEfficiencyPercent: 95,
+      gyroDegree: -18.2,
+    });
+    expect(
+      completeSpinMeasurements(null, -18.2).spinEfficiencyPercent,
+    ).toBeCloseTo(95, 2);
+    expect(completeSpinMeasurements(95, null).gyroDegree).toBeCloseTo(18.2, 1);
+
+    const row = sampleThrowSession().rows[0];
+    expect(
+      validateThrow({
+        ...row,
+        spinEfficiencyPercent: "",
+        gyroDegree: "",
+      }).measurements,
+    ).toMatchObject({ spinEfficiencyPercent: null, gyroDegree: null });
+    expect(
+      validateThrow({
+        ...row,
+        spinEfficiencyPercent: "95",
+        gyroDegree: "-18.2",
+      }).measurements,
+    ).toMatchObject({ spinEfficiencyPercent: 95, gyroDegree: -18.2 });
+  });
+  it("accepts nullable break readings from -30 to 30 inches", () => {
+    const row = sampleThrowSession().rows[0];
+    expect(
+      validateThrow({
+        ...row,
+        horizontalBreakInches: "-30",
+        verticalBreakInches: "30",
+      }).measurements,
+    ).toMatchObject({
+      horizontalBreakInches: -30,
+      verticalBreakInches: 30,
+    });
+    expect(
+      validateThrow({ ...row, horizontalBreakInches: "-30.1" }).errors,
+    ).toHaveProperty("horizontalBreakInches");
+    expect(
+      validateThrow({ ...row, verticalBreakInches: "30.1" }).errors,
+    ).toHaveProperty("verticalBreakInches");
   });
   it("rejects blanks, non-numbers and likely unit mistakes without changing drafts", () => {
-    expect(Object.keys(validateThrow(emptyThrow()).errors)).toHaveLength(5);
+    expect(Object.keys(validateThrow(emptyThrow()).errors)).toHaveLength(4);
     const row = {
       ...sampleThrowSession().rows[0],
       velocityMph: "900",
       totalSpinRpm: "Infinity",
-      spinValue: "101",
+      spinEfficiencyPercent: "101",
       releaseHeightFeet: "165",
       rapsodoScore: "-1",
     };

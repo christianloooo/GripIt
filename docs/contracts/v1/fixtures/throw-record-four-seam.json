@@ -9,7 +9,9 @@
     "totalSpinRpm": 2180,
     "spinDirectionClock": 12.5,
     "spinEfficiencyPercent": 84,
-    "gyroDegree": null,
+    "gyroDegree": 32.85988037888911,
+    "horizontalBreakInches": 18.6,
+    "verticalBreakInches": 13.8,
     "releaseHeightFeet": 5.8,
     "rapsodoScore": null
   },
