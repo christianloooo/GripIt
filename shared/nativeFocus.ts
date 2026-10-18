@@ -2,7 +2,6 @@
 // same sources used by the web Step 3/4 implementation.
 import { validateThrow, makeThrowRecords } from "./throwEntry";
 import { assess } from "./focus/assess";
-import { DEFAULT_RULE_SET } from "./focus/rules";
 
 export function validateJSON(json: string): string {
   return JSON.stringify(validateThrow(JSON.parse(json)));
@@ -13,6 +12,9 @@ export function recordsJSON(json: string): string {
   return JSON.stringify(makeThrowRecords(input.session, input.pitchId, input.options));
 }
 
+// The payload now carries the rules with it: assess() reads GRIP_RULES, so
+// there is no rule set to inject here. `baseline` and `handedness` ride in on
+// the same object when the caller sends them.
 export function assessJSON(json: string): string {
-  return JSON.stringify(assess({ ...JSON.parse(json), ruleSet: DEFAULT_RULE_SET }));
+  return JSON.stringify(assess(JSON.parse(json)));
 }

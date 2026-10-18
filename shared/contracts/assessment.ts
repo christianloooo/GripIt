@@ -1,4 +1,5 @@
-import type { FocusZone, InstructionZone, Severity, ZoneId } from "./zones";
+import type { FocusZone, InstructionZone, ZoneId } from "./zones";
+import type { Handedness } from "./handProfile";
 import type { ThrowRecord } from "../throwEntry";
 
 /**
@@ -14,71 +15,32 @@ import type { ThrowRecord } from "../throwEntry";
 /** Whether the throw data justifies grip advice at all. */
 export type AssessmentClassification = "grip-focus" | "not-grip";
 
-/** Keys in `ThrowRecord["measurements"]` that rules may inspect. */
-export type ThrowMeasurementKey = keyof ThrowRecord["measurements"];
-
-/** Numeric threshold bounds for a data-driven rule. */
-export interface RuleCondition {
-  below?: number;
-  atLeast?: number;
-  above?: number;
-  atMost?: number;
-  /** Optional target reference for `{target}` interpolation when distinct from the trigger bound. */
-  target?: number;
-}
-
-/** A zone implicated by a rule, with its severity explicitly stated in the rule data. */
-export interface RuleZone {
-  zoneId: ZoneId;
-  severity: Severity;
-  /** Optional per-zone confidence; defaults to a severity-adjusted share of the rule's confidence. */
-  confidence?: number;
-  /** Optional per-zone reason template; defaults to the parent rule's reason. */
-  reason?: string;
-}
-
-/** The deterministic coaching action attached to a rule. */
-export interface RuleNextAction {
-  zoneId: ZoneId | null;
-  summary: string;
-  detail: string;
-}
-
-/** A single data-driven assessment rule. */
-export interface AssessmentRule {
-  id: string;
-  pitchIds: readonly string[];
-  measurement: ThrowMeasurementKey;
-  when: RuleCondition;
-  zones: readonly RuleZone[];
-  reason: string;
-  nextAction: RuleNextAction;
-  confidence: number;
-  classification: AssessmentClassification;
-}
-
-/** A versioned collection of assessment rules and consistency thresholds. */
-export interface RuleSet {
-  /** Version string recorded in `FocusAssessment.ruleVersion` (alias `ruleVersion` also accepted). */
-  version?: string;
-  ruleVersion?: string;
-  /** Defaults to `true` until a pitching coach signs off on the rule set. */
-  prototypeAdvice?: boolean;
-  /** Release-height spread (in feet, across 3+ throws) that reclassifies the finding as `not-grip`. */
-  releaseHeightDriftFeet?: number;
-  /** Velocity spread (in mph, across 3+ throws) that marks `consistency.inconsistent = true`. */
-  velocitySpreadThresholdMph?: number;
-  /** Total-spin spread (in rpm, across 3+ throws) that marks `consistency.inconsistent = true`. */
-  totalSpinSpreadThresholdRpm?: number;
-  rules: readonly AssessmentRule[];
-}
-
-/** Input to the pure `assess()` rule engine. */
+/**
+ * Input to the pure `assess()` rule engine.
+ *
+ * There is no `ruleSet` any more. The rules used to be a data table passed in
+ * here, and nothing but `DEFAULT_RULE_SET` was ever passed; the engine in
+ * `shared/focus/gripRules.ts` replaces it and carries its own version. A
+ * `ruleSet` left on this type would have been a field the engine ignores, so
+ * it is gone along with the `AssessmentRule` and `RuleSet` shapes that
+ * described it.
+ */
 export interface AssessInput {
   pitchId: string;
   throws: readonly ThrowRecord[];
   zones: readonly InstructionZone[];
-  ruleSet: RuleSet;
+  /**
+   * The same pitcher's fastball throws from the same session. A changeup is
+   * judged only against this, so without it a changeup can only report that
+   * it has nothing to compare against.
+   */
+  baseline?: readonly ThrowRecord[];
+  /**
+   * Defaults to `"right"`, which is how the targets are stored. Axis and
+   * horizontal-break targets are mirrored for a left-hander, so omitting this
+   * for a lefty inverts the advice rather than merely weakening it.
+   */
+  handedness?: Handedness;
   /** Optional gripPlanId; defaults deterministically when omitted. */
   gripPlanId?: string;
   /** Optional assessmentId; defaults deterministically when omitted. */

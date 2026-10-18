@@ -1,15 +1,9 @@
 import { describe, expect, it } from "vitest";
-import fixture from "../contracts/fixtures/focus-assessment-four-seam.json";
-import type { AssessmentRule, FocusAssessment, RuleSet } from "../contracts/assessment";
-import { toSeverityMap } from "../contracts/zones";
+import type { AssessInput, FocusAssessment } from "../contracts/assessment";
+import type { GripFeedback } from "./gripFeedback";
 import type { ThrowRecord } from "../throwEntry";
 import { assess } from "./assess";
-import { isUsableRewrite } from "./coachPrompt";
-import {
-  FOUR_SEAM_INSTRUCTION_ZONES,
-  SAMPLE_RULE_SET,
-  instructionZonesForPitch,
-} from "./rules";
+import { FOUR_SEAM_INSTRUCTION_ZONES, instructionZonesForPitch } from "./rules";
 
 function makeThrow(
   overrides: Omit<Partial<ThrowRecord>, "measurements"> & {
@@ -44,420 +38,289 @@ function makeThrow(
   };
 }
 
-describe("Step 4 deterministic rule engine (assess)", () => {
-  it("reproduces the Maya 72% four-seam acceptance fixture exactly", () => {
-    const mayaThrow = makeThrow({
-      throwId: "sample-throw-1",
-      pitchId: "four-seam",
-      measurements: {
-        velocityMph: 82.4,
-        totalSpinRpm: 2180,
-        spinDirectionClock: 12.5,
-        spinEfficiencyPercent: 72,
-        gyroDegree: null,
-        releaseHeightFeet: 5.8,
-        rapsodoScore: null,
-      },
+/** The structured result assess() parks under `extensions` for phase two. */
+function feedbackOf(result: FocusAssessment): GripFeedback {
+  return result.extensions.gripFeedback as GripFeedback;
+}
+
+const mayaFourSeam: AssessInput = {
+  pitchId: "four-seam",
+  throws: [makeThrow()],
+  zones: FOUR_SEAM_INSTRUCTION_ZONES,
+};
+
+describe("assess packs one grip change into the FocusAssessment wire type", () => {
+  it("takes its next action and its rule version from the grip rule engine", () => {
+    const result = assess(mayaFourSeam);
+
+    // 72 percent against the 95 to 100 four-seam band, with the axis inside
+    // its range so the axis rule does not own the reading.
+    expect(result.ruleVersion).toBe("demo-rules-1");
+    expect(result.classification).toBe("grip-focus");
+    expect(result.nextAction.summary).toBe(
+      "Spin efficiency reads 72 percent, below target.",
+    );
+    expect(result.nextAction.rewritten).toBe(false);
+    expect(feedbackOf(result).ruleId).toBe("four-seam-efficiency");
+  });
+
+  it("writes the measured line, the change and the expectation into the detail", () => {
+    const { nextAction } = assess(mayaFourSeam);
+    const feedback = feedbackOf(assess(mayaFourSeam));
+
+    expect(nextAction.detail).toBe(
+      `${feedback.measured} ${feedback.change} ${feedback.expect}`,
+    );
+    // The arithmetic, so the player can see the reading the advice came from.
+    expect(nextAction.detail).toContain("72 percent spin efficiency");
+    // The change, in handInstructions wording.
+    expect(nextAction.detail).toContain("stitching crosses underneath");
+    // The number expected to move.
+    expect(nextAction.detail).toContain("Spin efficiency rises.");
+  });
+
+  it("points nextAction.zoneId at the primary zone of the chosen change", () => {
+    const result = assess(mayaFourSeam);
+    const feedback = feedbackOf(result);
+
+    expect(feedback.zones).toEqual(["index-pad", "middle-pad"]);
+    expect(result.nextAction.zoneId).toBe("index-pad");
+    expect(result.nextAction.zoneId).toBe(feedback.zones[0]);
+  });
+
+  it("carries the whole structured result under extensions", () => {
+    const feedback = feedbackOf(assess(mayaFourSeam));
+
+    expect(feedback).toEqual({
+      kind: "change",
+      measured: expect.stringContaining("1 throw:"),
+      headline: "Spin efficiency reads 72 percent, below target.",
+      change:
+        "Rotate the ball so the stitching crosses underneath both pads rather than running along them.",
+      expect: "Spin efficiency rises.",
+      zones: ["index-pad", "middle-pad"],
+      ruleId: "four-seam-efficiency",
+      ruleVersion: "demo-rules-1",
+      source: expect.stringContaining("handInstructions.md"),
+    });
+  });
+
+  it("leaves the tinted zone list empty, because the engine scores no severity", () => {
+    // FocusZone demands a severity and a confidence per zone and the rule
+    // engine produces neither. The zones ride in nextAction.zoneId and in
+    // extensions instead; phase two promotes them to a first-class field.
+    expect(assess(mayaFourSeam).zones).toEqual([]);
+  });
+});
+
+describe("assess handedness and baseline", () => {
+  it("judges a left-hander against the mirrored axis target", () => {
+    // 12:30 sits inside the right-handed 12:00 to 12:30 band and outside the
+    // mirrored 11:30 to 12:00 one, so the same reading changes which rule
+    // owns it. Dropping handedness would silently judge every lefty right.
+    const right = assess(mayaFourSeam);
+    const left = assess({ ...mayaFourSeam, handedness: "left" });
+
+    expect(feedbackOf(right).ruleId).toBe("four-seam-efficiency");
+    expect(feedbackOf(left).ruleId).toBe("four-seam-axis");
+    expect(left.nextAction.summary).toBe(
+      "Spin axis reads 12:30, off the target clock range.",
+    );
+    expect(left.nextAction.zoneId).toBe("thumb-pad");
+  });
+
+  it("defaults to a right-hander when handedness is not given", () => {
+    expect(assess(mayaFourSeam)).toEqual(
+      assess({ ...mayaFourSeam, handedness: "right" }),
+    );
+  });
+
+  it("cannot judge a changeup without a fastball baseline, and can with one", () => {
+    const changeup = {
+      pitchId: "changeup",
+      throws: [
+        makeThrow({
+          throwId: "changeup-1",
+          pitchId: "changeup",
+          measurements: { velocityMph: 80 },
+        }),
+      ],
+      zones: instructionZonesForPitch("changeup"),
+    };
+
+    const alone = assess(changeup);
+    expect(feedbackOf(alone).kind).toBe("baseline");
+    expect(alone.classification).toBe("not-grip");
+    expect(alone.nextAction.zoneId).toBeNull();
+
+    // 4 mph off the fastball, against the 8 mph separation floor.
+    const compared = assess({
+      ...changeup,
+      baseline: [
+        makeThrow({ throwId: "fastball-1", measurements: { velocityMph: 84 } }),
+      ],
+    });
+    expect(feedbackOf(compared).kind).toBe("change");
+    expect(feedbackOf(compared).ruleId).toBe("changeup-separation");
+    expect(compared.classification).toBe("grip-focus");
+    expect(compared.nextAction.zoneId).toBe("palm");
+  });
+});
+
+describe("assess outcomes that are not a grip change", () => {
+  it("never tells a hand to move a contact it cannot make", () => {
+    const result = assess({
+      ...mayaFourSeam,
+      zones: instructionZonesForPitch("four-seam", {
+        "index-pad": "unreachable",
+      }),
     });
 
+    expect(feedbackOf(result).kind).toBe("fit");
+    expect(result.classification).toBe("not-grip");
+    expect(result.unreachableZones).toEqual(["index-pad"]);
+    // The zone is still named, so the hand can show which contact does not
+    // fit, but the advice is about fit rather than technique.
+    expect(result.nextAction.zoneId).toBe("index-pad");
+    expect(result.nextAction.summary).toContain("does not fit your hand yet");
+    expect(result.nextAction.detail).not.toContain("Rotate the ball");
+  });
+
+  it("calls drifting release height an arm-slot problem and names no finger", () => {
     const result = assess({
       pitchId: "four-seam",
-      throws: [mayaThrow],
+      throws: [5.2, 5.8, 6.2].map((releaseHeightFeet, i) =>
+        makeThrow({
+          throwId: `sample-throw-${i + 1}`,
+          measurements: { releaseHeightFeet },
+        }),
+      ),
       zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
     });
 
-    expect(result).toEqual(fixture as FocusAssessment);
-    expect(toSeverityMap(result.zones)).toEqual({
-      wrist: "red",
-      "middle-pad": "red",
-      "index-pad": "yellow",
-      "thumb-pad": "yellow",
-    });
+    expect(feedbackOf(result).kind).toBe("drift");
+    expect(result.classification).toBe("not-grip");
+    expect(result.nextAction.zoneId).toBeNull();
+    expect(result.nextAction.summary).toContain("arm-slot problem");
+    expect(result.consistency).not.toBeNull();
   });
 
-  it("cools the four-seam zones to yellow at 84% and green at 92% as described in PRODUCT.md", () => {
-    const secondThrow = makeThrow({
-      throwId: "sample-throw-2",
-      measurements: { spinEfficiencyPercent: 84 },
-    });
-    const yellowResult = assess({
-      pitchId: "four-seam",
-      throws: [secondThrow],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    expect(yellowResult.classification).toBe("grip-focus");
-    expect(yellowResult.zones.every((z) => z.severity === "yellow")).toBe(true);
-
-    const onTargetThrow = makeThrow({
-      throwId: "sample-throw-3",
-      measurements: { spinEfficiencyPercent: 92 },
-    });
-    const greenResult = assess({
-      pitchId: "four-seam",
-      throws: [onTargetThrow],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
+  it("says so when every reading is inside its target range", () => {
+    // A slider wants low efficiency: 20 percent is under the 35 ceiling.
+    const result = assess({
+      pitchId: "slider",
+      throws: [
+        makeThrow({
+          throwId: "slider-1",
+          pitchId: "slider",
+          measurements: { spinEfficiencyPercent: 20 },
+        }),
+      ],
+      zones: instructionZonesForPitch("slider"),
     });
 
-    expect(greenResult.classification).toBe("grip-focus");
-    expect(greenResult.zones.every((z) => z.severity === "green")).toBe(true);
+    expect(feedbackOf(result).kind).toBe("on-target");
+    expect(result.classification).toBe("not-grip");
+    expect(result.nextAction.zoneId).toBeNull();
+    expect(result.confidence).toBe(0.5);
   });
 
-  it("is pure and deterministic: identical inputs and rule version always produce identical output without mutating inputs", () => {
-    const throws = [makeThrow({ measurements: { spinEfficiencyPercent: 72 } })];
+  it("asks for throws, with zero confidence, when none were recorded", () => {
+    const result = assess({
+      pitchId: "four-seam",
+      throws: [],
+      zones: FOUR_SEAM_INSTRUCTION_ZONES,
+    });
+
+    expect(feedbackOf(result).kind).toBe("no-data");
+    expect(result.throwIds).toEqual([]);
+    expect(result.confidence).toBe(0);
+    expect(result.nextAction.zoneId).toBeNull();
+    expect(result.nextAction.summary).toContain("Record a few throws");
+  });
+
+  it("cannot fire a rule whose reading is absent", () => {
+    const result = assess({
+      pitchId: "four-seam",
+      throws: [
+        makeThrow({
+          measurements: { spinEfficiencyPercent: null, gyroDegree: null },
+        }),
+      ],
+      zones: FOUR_SEAM_INSTRUCTION_ZONES,
+    });
+
+    // Efficiency is the only four-seam reading off target here, and it is
+    // missing, so nothing is claimed about it.
+    expect(feedbackOf(result).kind).toBe("on-target");
+    expect(result.nextAction.detail).not.toContain("spin efficiency");
+  });
+});
+
+describe("assess bookkeeping around the engine", () => {
+  it("is pure and deterministic: identical inputs produce identical output without mutating them", () => {
+    const throws = [makeThrow()];
     const zones = instructionZonesForPitch("four-seam");
-    const ruleSet: RuleSet = structuredClone(SAMPLE_RULE_SET);
+    const baseline = [
+      makeThrow({ throwId: "fastball-1", measurements: { velocityMph: 90 } }),
+    ];
 
     const snapshotThrows = structuredClone(throws);
     const snapshotZones = structuredClone(zones);
-    const snapshotRules = structuredClone(ruleSet);
+    const snapshotBaseline = structuredClone(baseline);
 
-    const first = assess({ pitchId: "four-seam", throws, zones, ruleSet });
-    const second = assess({ pitchId: "four-seam", throws, zones, ruleSet });
+    const first = assess({ pitchId: "four-seam", throws, zones, baseline });
+    const second = assess({ pitchId: "four-seam", throws, zones, baseline });
 
     expect(first).toEqual(second);
     expect(throws).toEqual(snapshotThrows);
     expect(zones).toEqual(snapshotZones);
-    expect(ruleSet).toEqual(snapshotRules);
+    expect(baseline).toEqual(snapshotBaseline);
   });
 
-  it("ensures every emitted zone carries a non-empty reason and a bounded confidence", () => {
-    const result = assess({
-      pitchId: "four-seam",
-      throws: [makeThrow({ measurements: { spinEfficiencyPercent: 72 } })],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
+  it("derives ids and throw ids deterministically from the session", () => {
+    const result = assess(mayaFourSeam);
 
-    expect(result.zones.length).toBeGreaterThan(0);
-    for (const zone of result.zones) {
-      expect(zone.reason.trim().length).toBeGreaterThan(0);
-      expect(zone.reason).toContain("72%");
-      expect(zone.triggeringMeasurement).toBe("spinEfficiencyPercent");
-      expect(zone.confidence).toBeGreaterThan(0);
-      expect(zone.confidence).toBeLessThanOrEqual(1);
-    }
+    expect(result.schemaVersion).toBe("1.0.0");
+    expect(result.assessmentId).toBe("sample-assessment-1");
+    expect(result.gripPlanId).toBe("sample-four-seam-average-right");
+    expect(result.throwIds).toEqual(["sample-throw-1"]);
+    expect(result.prototypeAdvice).toBe(true);
+
+    const explicit = assess({
+      ...mayaFourSeam,
+      gripPlanId: "plan-7",
+      assessmentId: "assessment-7",
+    });
+    expect(explicit.gripPlanId).toBe("plan-7");
+    expect(explicit.assessmentId).toBe("assessment-7");
   });
 
-  it("never gives technique advice to an unreachable zone and copies it to unreachableZones", () => {
-    // Case 1: Secondary zone (`thumb-pad`) is unreachable
-    const zonesWithUnreachableThumb = instructionZonesForPitch("four-seam", {
-      "thumb-pad": "unreachable",
-    });
-    const thumbResult = assess({
-      pitchId: "four-seam",
-      throws: [makeThrow({ measurements: { spinEfficiencyPercent: 72 } })],
-      zones: zonesWithUnreachableThumb,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    expect(thumbResult.unreachableZones).toEqual(["thumb-pad"]);
-    expect(thumbResult.zones.map((z) => z.zoneId)).not.toContain("thumb-pad");
-    expect(thumbResult.nextAction.zoneId).not.toBe("thumb-pad");
-    expect(isUsableRewrite(thumbResult.nextAction.detail, thumbResult)).toBe(
-      true,
-    );
-
-    // Case 2: Primary target zone (`wrist`) is unreachable -> suppresses the rule targeting it
-    const zonesWithUnreachableWrist = instructionZonesForPitch("four-seam", {
-      wrist: "unreachable",
-    });
-    const wristResult = assess({
-      pitchId: "four-seam",
-      throws: [makeThrow({ measurements: { spinEfficiencyPercent: 72 } })],
-      zones: zonesWithUnreachableWrist,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    expect(wristResult.unreachableZones).toEqual(["wrist"]);
-    expect(wristResult.zones.map((z) => z.zoneId)).not.toContain("wrist");
-    expect(wristResult.nextAction.zoneId).toBeNull();
-    expect(isUsableRewrite(wristResult.nextAction.detail, wristResult)).toBe(
-      true,
-    );
-  });
-
-  it("skips rules whose measurement is null and lowers overall confidence", () => {
-    const presentResult = assess({
-      pitchId: "four-seam",
-      throws: [
-        makeThrow({
-          measurements: { spinEfficiencyPercent: 72, gyroDegree: null },
-        }),
-      ],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    const nullResult = assess({
-      pitchId: "four-seam",
-      throws: [
-        makeThrow({
-          measurements: { spinEfficiencyPercent: null, gyroDegree: 24 },
-        }),
-      ],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    expect(nullResult.zones).toEqual([]);
-    expect(nullResult.classification).toBe("not-grip");
-    expect(nullResult.confidence).toBeLessThan(presentResult.confidence);
-
-    // Also verify partial null coverage when another rule in the RuleSet still fires
-    const multiMeasurementRules: RuleSet = {
-      version: "test-multi-1",
-      rules: [
-        ...SAMPLE_RULE_SET.rules,
-        {
-          id: "four-seam-low-spin-rate",
-          pitchIds: ["four-seam"],
-          measurement: "totalSpinRpm",
-          when: { below: 2000 },
-          zones: [{ zoneId: "middle-pad", severity: "yellow", confidence: 0.5 }],
-          reason: "Total spin {value} rpm is below {threshold} rpm",
-          nextAction: {
-            zoneId: "middle-pad",
-            summary: "Press firmer with the middle pad",
-            detail: "Keep firm middle-finger pressure across the seam at release.",
-          },
-          confidence: 0.5,
-          classification: "grip-focus",
-        },
-      ],
-    };
-
-    const fullEvidence = assess({
-      pitchId: "four-seam",
-      throws: [
-        makeThrow({
-          measurements: { spinEfficiencyPercent: 92, totalSpinRpm: 1850 },
-        }),
-      ],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: multiMeasurementRules,
-    });
-
-    const missingEfficiencyEvidence = assess({
-      pitchId: "four-seam",
-      throws: [
-        makeThrow({
-          measurements: { spinEfficiencyPercent: null, totalSpinRpm: 1850 },
-        }),
-      ],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: multiMeasurementRules,
-    });
-
-    expect(missingEfficiencyEvidence.zones).toHaveLength(1);
-    expect(missingEfficiencyEvidence.zones[0].triggeringMeasurement).toBe(
-      "totalSpinRpm",
-    );
-    expect(missingEfficiencyEvidence.confidence).toBeLessThan(
-      fullEvidence.confidence,
-    );
-  });
-
-  it("classifies drifting release height across 3+ throws as not-grip and colors nothing", () => {
-    const driftingThrows = [
-      makeThrow({
-        throwId: "sample-throw-1",
-        measurements: { spinEfficiencyPercent: 72, releaseHeightFeet: 5.2 },
-      }),
-      makeThrow({
-        throwId: "sample-throw-2",
-        measurements: { spinEfficiencyPercent: 72, releaseHeightFeet: 5.8 },
-      }),
-      makeThrow({
-        throwId: "sample-throw-3",
-        measurements: { spinEfficiencyPercent: 72, releaseHeightFeet: 6.2 },
-      }),
-    ];
-
-    const result = assess({
-      pitchId: "four-seam",
-      throws: driftingThrows,
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    expect(result.classification).toBe("not-grip");
-    expect(result.nextAction.zoneId).toBeNull();
-    expect(result.zones).toEqual([]);
-    expect(result.consistency).not.toBeNull();
-  });
-
-  it("selects exactly one nextAction by highest severity, then highest confidence, then rule order", () => {
-    const tieBreakRules: AssessmentRule[] = [
-      {
-        id: "rule-yellow-high-conf",
-        pitchIds: ["four-seam"],
-        measurement: "spinEfficiencyPercent",
-        when: { below: 85 },
-        zones: [{ zoneId: "index-pad", severity: "yellow" }],
-        reason: "Efficiency {value}% below {threshold}%",
-        nextAction: {
-          zoneId: "index-pad",
-          summary: "Yellow action",
-          detail: "Adjust index pad.",
-        },
-        confidence: 0.9,
-        classification: "grip-focus",
-      },
-      {
-        id: "rule-red-first-tie",
-        pitchIds: ["four-seam"],
-        measurement: "spinEfficiencyPercent",
-        when: { below: 85 },
-        zones: [{ zoneId: "wrist", severity: "red" }],
-        reason: "Efficiency {value}% below {threshold}%",
-        nextAction: {
-          zoneId: "wrist",
-          summary: "First red action",
-          detail: "Keep the wrist firm.",
-        },
-        confidence: 0.7,
-        classification: "grip-focus",
-      },
-      {
-        id: "rule-red-second-tie",
-        pitchIds: ["four-seam"],
-        measurement: "totalSpinRpm",
-        when: { below: 2300 },
-        zones: [{ zoneId: "middle-pad", severity: "red" }],
-        reason: "Spin {value} rpm below {threshold} rpm",
-        nextAction: {
-          zoneId: "middle-pad",
-          summary: "Second red action",
-          detail: "Press firmer with the middle finger.",
-        },
-        confidence: 0.7,
-        classification: "grip-focus",
-      },
-    ];
-
-    const result = assess({
-      pitchId: "four-seam",
-      throws: [makeThrow({ measurements: { spinEfficiencyPercent: 72, totalSpinRpm: 2100 } })],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: { version: "tie-test-1", rules: tieBreakRules },
-    });
-
-    // Red beats yellow even when yellow has higher confidence, and first red rule beats second red rule on a tie.
-    expect(result.nextAction.summary).toBe("First red action");
-    expect(result.nextAction.zoneId).toBe("wrist");
-  });
-
-  it("leaves unchecked zones absent rather than marking them green", () => {
-    const result = assess({
-      pitchId: "four-seam",
-      throws: [makeThrow({ measurements: { spinEfficiencyPercent: 72 } })],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-
-    const emittedIds = result.zones.map((z) => z.zoneId);
-    expect(emittedIds).toEqual(["wrist", "middle-pad", "index-pad", "thumb-pad"]);
-    expect(emittedIds).not.toContain("ring-side");
-    expect(emittedIds).not.toContain("pinky");
-    expect(emittedIds).not.toContain("palm");
-  });
-
-  it("handles two-seam, slider, and changeup honestly without reusing four-seam logic", () => {
-    // A 72% two-seam is above the conservative 65% floor, so it does not trigger a low-efficiency warning.
-    const twoSeam72 = assess({
-      pitchId: "two-seam",
-      throws: [makeThrow({ pitchId: "two-seam", measurements: { spinEfficiencyPercent: 72 } })],
-      zones: instructionZonesForPitch("two-seam"),
-      ruleSet: SAMPLE_RULE_SET,
-    });
-    expect(twoSeam72.zones).toEqual([]);
-
-    // A 58% two-seam triggers the conservative yellow rule with low confidence.
-    const twoSeam58 = assess({
-      pitchId: "two-seam",
-      throws: [makeThrow({ pitchId: "two-seam", measurements: { spinEfficiencyPercent: 58 } })],
-      zones: instructionZonesForPitch("two-seam"),
-      ruleSet: SAMPLE_RULE_SET,
-    });
-    expect(twoSeam58.classification).toBe("grip-focus");
-    expect(twoSeam58.confidence).toBeLessThanOrEqual(0.4);
-
-    // A slider wants low spin efficiency: 40% is normal for a slider and does not trigger a fastball fault.
-    const sliderLowEfficiency = assess({
-      pitchId: "slider",
-      throws: [makeThrow({ pitchId: "slider", measurements: { spinEfficiencyPercent: 40 } })],
-      zones: instructionZonesForPitch("slider"),
-      ruleSet: SAMPLE_RULE_SET,
-    });
-    expect(sliderLowEfficiency.classification).toBe("not-grip");
-    expect(sliderLowEfficiency.zones).toEqual([]);
-
-    // A slider with high spin efficiency (78%) inverts the comparison and returns a low-confidence finding.
-    const sliderHighEfficiency = assess({
-      pitchId: "slider",
-      throws: [makeThrow({ pitchId: "slider", measurements: { spinEfficiencyPercent: 78 } })],
-      zones: instructionZonesForPitch("slider"),
-      ruleSet: SAMPLE_RULE_SET,
-    });
-    expect(sliderHighEfficiency.classification).toBe("grip-focus");
-    expect(sliderHighEfficiency.confidence).toBeLessThanOrEqual(0.35);
-
-    // A changeup throw returns `not-grip` because velocity separation requires a fastball comparison.
-    const changeupResult = assess({
-      pitchId: "changeup",
-      throws: [makeThrow({ pitchId: "changeup", measurements: { spinEfficiencyPercent: 72 } })],
-      zones: instructionZonesForPitch("changeup"),
-      ruleSet: SAMPLE_RULE_SET,
-    });
-    expect(changeupResult.classification).toBe("not-grip");
-    expect(changeupResult.zones).toEqual([]);
-    expect(changeupResult.nextAction.zoneId).toBeNull();
-  });
-
-  it("returns null consistency under 3 throws and reports velocity/spin spread for 3+ throws separately from grip focus", () => {
-    const singleResult = assess({
-      pitchId: "four-seam",
-      throws: [makeThrow()],
-      zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
-    });
-    expect(singleResult.consistency).toBeNull();
+  it("returns null consistency under 3 throws and reports spread separately from grip focus", () => {
+    expect(assess(mayaFourSeam).consistency).toBeNull();
 
     const threeThrows = [
-      makeThrow({
-        throwId: "sample-throw-1",
-        measurements: { velocityMph: 80.0, totalSpinRpm: 2050, spinEfficiencyPercent: 72, releaseHeightFeet: 5.8 },
-      }),
-      makeThrow({
-        throwId: "sample-throw-2",
-        measurements: { velocityMph: 84.5, totalSpinRpm: 2300, spinEfficiencyPercent: 72, releaseHeightFeet: 5.9 },
-      }),
-      makeThrow({
-        throwId: "sample-throw-3",
-        measurements: { velocityMph: 82.0, totalSpinRpm: 2150, spinEfficiencyPercent: 72, releaseHeightFeet: 5.85 },
-      }),
-    ];
+      { velocityMph: 80.0, totalSpinRpm: 2050, releaseHeightFeet: 5.8 },
+      { velocityMph: 84.5, totalSpinRpm: 2300, releaseHeightFeet: 5.9 },
+      { velocityMph: 82.0, totalSpinRpm: 2150, releaseHeightFeet: 5.85 },
+    ].map((measurements, i) =>
+      makeThrow({ throwId: `sample-throw-${i + 1}`, measurements }),
+    );
 
-    const multiResult = assess({
+    const result = assess({
       pitchId: "four-seam",
       throws: threeThrows,
       zones: FOUR_SEAM_INSTRUCTION_ZONES,
-      ruleSet: SAMPLE_RULE_SET,
     });
 
-    expect(multiResult.consistency).toEqual({
+    expect(result.consistency).toEqual({
       throwCount: 3,
       velocitySpreadMph: 4.5,
       totalSpinSpreadRpm: 250,
       inconsistent: true,
     });
-    // Consistency is kept separate from grip focus
-    expect(multiResult.classification).toBe("grip-focus");
-    expect(multiResult.zones).toHaveLength(4);
-    expect(multiResult.prototypeAdvice).toBe(true);
+    // Spread is reported, never acted on: the grip finding stands on its own.
+    expect(result.classification).toBe("grip-focus");
+    expect(feedbackOf(result).ruleId).toBe("four-seam-efficiency");
   });
 });

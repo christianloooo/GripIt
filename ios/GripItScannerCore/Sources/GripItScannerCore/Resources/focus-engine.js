@@ -140,569 +140,595 @@ var GripItFocus = (() => {
     return zones.filter((zone) => zone.reach === "unreachable").map((z) => z.zoneId);
   }
 
-  // shared/focus/rules.ts
-  var SAMPLE_RULES_LIST = [
+  // shared/focus/metrics.ts
+  function round(value, decimals) {
+    const factor = 10 ** decimals;
+    return Math.round(value * factor) / factor;
+  }
+  function isNumber(value) {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  function median(values) {
+    const present = values.filter(isNumber).sort((a, b) => a - b);
+    if (!present.length) return null;
+    const mid = Math.floor(present.length / 2);
+    return present.length % 2 ? present[mid] : (present[mid - 1] + present[mid]) / 2;
+  }
+  function efficiencyFromGyro(gyroDegree) {
+    return round(Math.cos(gyroDegree * Math.PI / 180) * 100, 1);
+  }
+  function clockHoursApart(a, b) {
+    const diff = Math.abs(a - b) % 12;
+    return Math.min(diff, 12 - diff);
+  }
+  function deriveMetrics(throws) {
+    const column = (key) => throws.map((t) => t.measurements[key]);
+    const efficiencies = throws.map(({ measurements: m }) => {
+      if (isNumber(m.spinEfficiencyPercent)) return m.spinEfficiencyPercent;
+      return isNumber(m.gyroDegree) ? efficiencyFromGyro(m.gyroDegree) : null;
+    });
+    const velocity = median(column("velocityMph"));
+    const totalSpin = median(column("totalSpinRpm"));
+    const efficiency = median(efficiencies);
+    const direction = median(column("spinDirectionClock"));
+    const horizontal = median(column("horizontalBreakInches"));
+    const vertical = median(column("verticalBreakInches"));
+    const activeSpin = totalSpin !== null && efficiency !== null ? totalSpin * efficiency / 100 : null;
+    const spinPerMph = totalSpin !== null && velocity !== null && velocity > 0 ? totalSpin / velocity : null;
+    const rounded = (value, decimals) => value === null ? null : round(value, decimals);
+    return {
+      throwCount: throws.length,
+      velocityMph: rounded(velocity, 1),
+      totalSpinRpm: rounded(totalSpin, 0),
+      spinEfficiencyPercent: rounded(efficiency, 1),
+      activeSpinRpm: rounded(activeSpin, 0),
+      spinPerMph: rounded(spinPerMph, 1),
+      spinDirectionClock: rounded(direction, 2),
+      horizontalBreakInches: rounded(horizontal, 1),
+      verticalBreakInches: rounded(vertical, 1)
+    };
+  }
+
+  // shared/focus/gripRules.ts
+  var GRIP_RULE_VERSION = "demo-rules-1";
+  var SCALE = {
+    axisHours: 1,
+    efficiencyPoints: 5,
+    spinPerMph: 2,
+    breakInches: 4,
+    separationMph: 2
+  };
+  function distanceOutside(value, range) {
+    if (value === null || value === void 0 || !range) return 0;
+    if (range.min !== void 0 && value < range.min) return range.min - value;
+    if (range.max !== void 0 && value > range.max) return value - range.max;
+    return 0;
+  }
+  function axisDistance(axis, range) {
+    if (axis === null || !range) return 0;
+    const ends = [range.min, range.max].filter(
+      (end) => end !== void 0
+    );
+    if (!ends.length) return 0;
+    const mid = (Math.min(...ends) + Math.max(...ends)) / 2;
+    let unwrapped = axis;
+    while (unwrapped < mid - 6) unwrapped += 12;
+    while (unwrapped > mid + 6) unwrapped -= 12;
+    if (distanceOutside(unwrapped, range) === 0) return 0;
+    return Math.min(...ends.map((end) => clockHoursApart(axis, end)));
+  }
+  function clockText(clock) {
+    const mod = clock % 12;
+    const wrapped = mod < 1 ? mod + 12 : mod;
+    let hours = Math.floor(wrapped);
+    let minutes = Math.round((wrapped - hours) * 60);
+    if (minutes === 60) {
+      hours = hours === 12 ? 1 : hours + 1;
+      minutes = 0;
+    }
+    return `${hours}:${String(minutes).padStart(2, "0")}`;
+  }
+  function deviation(summary, distance, scale) {
+    return distance > 0 ? { summary, magnitude: distance / scale } : null;
+  }
+  var FOUR_SEAM = ["four-seam"];
+  var TWO_SEAM = ["two-seam"];
+  var SLIDER = ["slider"];
+  var CHANGEUP = ["changeup"];
+  function runShortfall(value, range) {
+    if (value === null || !range) return 0;
+    const ends = [range.min, range.max].filter(
+      (end) => end !== void 0
+    );
+    if (!ends.length) return 0;
+    const mid = (Math.min(...ends) + Math.max(...ends)) / 2;
+    const nearZeroEnd = mid >= 0 ? { min: range.min } : { max: range.max };
+    return distanceOutside(value, nearZeroEnd);
+  }
+  var RAPSODO_SOURCE = "Rapsodo, 'Understanding the Three Fastball Movement Profiles' and the fastball spin-rate/efficiency profile article";
+  var PRP_SOURCE = "PRP Baseball published pitch-grading cues";
+  var RAPSODO_SLIDER_SOURCE = "Rapsodo curveball/slider/changeup article: gyro sliders under 10 percent, topspin and sidespin sliders near 35 percent with 65 to 75 gyro degrees";
+  var CHANGEUP_BASELINE_SOURCE = "A changeup has no absolute target, so both rules compare it to the same pitcher's own fastball in the same session";
+  var GRIP_RULES = [
     {
-      id: "four-seam-low-spin-efficiency",
-      pitchIds: ["four-seam"],
-      measurement: "spinEfficiencyPercent",
-      when: { below: 80, target: 90 },
-      zones: [
-        { zoneId: "wrist", severity: "red", confidence: 0.6 },
-        { zoneId: "middle-pad", severity: "red", confidence: 0.5 },
-        { zoneId: "index-pad", severity: "yellow", confidence: 0.4 },
-        { zoneId: "thumb-pad", severity: "yellow", confidence: 0.4 }
-      ],
-      reason: "Spin efficiency {value}% is below the {target}% four-seam target",
-      nextAction: {
-        zoneId: "wrist",
-        summary: "Stay behind the ball",
-        detail: "Keep the wrist firm and push through the back of the ball instead of around its side."
+      id: "four-seam-axis",
+      pitchIds: FOUR_SEAM,
+      detect(m, t) {
+        if (m.spinDirectionClock === null) return null;
+        const miss = axisDistance(m.spinDirectionClock, t.axisClock);
+        return deviation(
+          `Spin axis reads ${clockText(m.spinDirectionClock)}, off the target clock range.`,
+          miss,
+          SCALE.axisHours
+        );
       },
-      confidence: 0.6,
-      classification: "grip-focus"
+      change: "Set the thumb pad under the space between the index and middle fingers, on smooth leather.",
+      zones: ["thumb-pad"],
+      expect: "Axis moves toward 12 o'clock and spin efficiency rises.",
+      source: `${RAPSODO_SOURCE} (axis target); ${PRP_SOURCE}; handInstructions.md (thumb approximately opposite the space between the two upper fingers, initially on smooth leather). Centring the thumb squares the hand behind the ball.`
     },
     {
-      id: "four-seam-moderate-spin-efficiency",
-      pitchIds: ["four-seam"],
-      measurement: "spinEfficiencyPercent",
-      when: { atLeast: 80, below: 90, target: 90 },
-      zones: [
-        { zoneId: "wrist", severity: "yellow", confidence: 0.5 },
-        { zoneId: "middle-pad", severity: "yellow", confidence: 0.5 },
-        { zoneId: "index-pad", severity: "yellow", confidence: 0.45 },
-        { zoneId: "thumb-pad", severity: "yellow", confidence: 0.4 }
-      ],
-      reason: "Spin efficiency {value}% is below the {target}% four-seam target",
-      nextAction: {
-        zoneId: "middle-pad",
-        summary: "Finish squarely through the horseshoe seam",
-        detail: "Keep both upper finger pads even across the stitching and drive straight through release."
+      id: "four-seam-efficiency",
+      pitchIds: FOUR_SEAM,
+      detect(m, t) {
+        if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+        const eff = m.spinEfficiencyPercent;
+        if (eff === null) return null;
+        return deviation(
+          `Spin efficiency reads ${eff} percent, below target.`,
+          distanceOutside(eff, t.efficiencyPercent),
+          SCALE.efficiencyPoints
+        );
       },
-      confidence: 0.5,
-      classification: "grip-focus"
+      change: "Rotate the ball so the stitching crosses underneath both pads rather than running along them.",
+      zones: ["index-pad", "middle-pad"],
+      expect: "Spin efficiency rises.",
+      source: `${RAPSODO_SOURCE} (efficiency target); ${PRP_SOURCE}; handInstructions.md (pad across the raised stitching, seam crossing underneath).`
     },
     {
-      id: "four-seam-target-spin-efficiency",
-      pitchIds: ["four-seam"],
-      measurement: "spinEfficiencyPercent",
-      when: { atLeast: 90, target: 90 },
-      zones: [
-        { zoneId: "wrist", severity: "green", confidence: 0.6 },
-        { zoneId: "middle-pad", severity: "green", confidence: 0.6 },
-        { zoneId: "index-pad", severity: "green", confidence: 0.55 },
-        { zoneId: "thumb-pad", severity: "green", confidence: 0.5 }
-      ],
-      reason: "Spin efficiency {value}% meets the {target}% four-seam target",
-      nextAction: {
-        zoneId: "wrist",
-        summary: "Repeat this four-seam release",
-        detail: "Spin efficiency meets the 90% target. Keep the same wrist position and finger pressure on the next throw."
+      id: "four-seam-purchase",
+      pitchIds: FOUR_SEAM,
+      detect(m, t) {
+        const spm = m.spinPerMph;
+        if (spm === null) return null;
+        return deviation(
+          `Spin per mph reads ${spm}, below target. The pads may be on smooth leather.`,
+          distanceOutside(spm, t.spinPerMph),
+          SCALE.spinPerMph
+        );
       },
-      confidence: 0.6,
-      classification: "grip-focus"
+      change: "Move both pads onto the raised stitching.",
+      zones: ["index-pad", "middle-pad"],
+      expect: "Total spin rises.",
+      source: `Spin per mph target from PitchLogic via targets.ts; ${PRP_SOURCE}; handInstructions.md (pad across the raised stitching).`
     },
     {
-      id: "two-seam-low-spin-efficiency",
-      pitchIds: ["two-seam"],
-      measurement: "spinEfficiencyPercent",
-      when: { below: 65, target: 75 },
-      zones: [
-        { zoneId: "wrist", severity: "yellow", confidence: 0.4 },
-        { zoneId: "index-pad", severity: "yellow", confidence: 0.35 },
-        { zoneId: "middle-pad", severity: "yellow", confidence: 0.35 }
-      ],
-      reason: "Spin efficiency {value}% is below the conservative {threshold}% two-seam floor",
-      nextAction: {
-        zoneId: "index-pad",
-        summary: "Keep pads aligned along the two-seam pair",
-        detail: "Rest the index and middle pads along their seams and stay behind the ball before adding extra movement."
+      id: "four-seam-cut",
+      pitchIds: FOUR_SEAM,
+      detect(m, t) {
+        if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+        const h = m.horizontalBreakInches;
+        if (h === null) return null;
+        return deviation(
+          `Horizontal break reads ${h} inches. A four-seam should run near straight.`,
+          distanceOutside(h, t.horizontalBreakInches),
+          SCALE.breakInches
+        );
       },
-      confidence: 0.4,
-      classification: "grip-focus"
+      change: "Bring the index and middle fingers closer, to a comfortable, small separation.",
+      zones: ["index-pad", "middle-pad"],
+      expect: "Sideways movement drops and vertical break rises.",
+      source: `${RAPSODO_SOURCE} (backspin profile has near-zero horizontal break); ${PRP_SOURCE}; handInstructions.md (a comfortable, small separation between the fingers).`
     },
     {
-      id: "slider-excess-spin-efficiency",
-      pitchIds: ["slider"],
-      measurement: "spinEfficiencyPercent",
-      when: { above: 65, target: 65 },
-      zones: [
-        { zoneId: "middle-pad", severity: "yellow", confidence: 0.35 },
-        { zoneId: "wrist", severity: "yellow", confidence: 0.35 }
-      ],
-      reason: "Spin efficiency {value}% is above the {threshold}% slider ceiling where sliders aim for lower efficiency",
-      nextAction: {
-        zoneId: "middle-pad",
-        summary: "Work the pinky-side seam",
-        detail: "A slider wants lower spin efficiency than a fastball. Apply firmer purchase along the pinky-side seam with the middle finger."
+      id: "four-seam-buried",
+      pitchIds: FOUR_SEAM,
+      detect(m, t) {
+        if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+        const eff = m.spinEfficiencyPercent;
+        if (distanceOutside(eff, t.efficiencyPercent) > 0) return null;
+        const v = m.verticalBreakInches;
+        if (v === null || (t.verticalBreakInches?.min ?? -Infinity) <= v) {
+          return null;
+        }
+        return deviation(
+          `Vertical break reads ${v} inches, below target. The ball may be buried in the palm.`,
+          distanceOutside(v, t.verticalBreakInches),
+          SCALE.breakInches
+        );
       },
-      confidence: 0.35,
-      classification: "grip-focus"
+      change: "Hold the ball between the upper pads and thumb, without deliberately burying it in your palm.",
+      zones: ["palm"],
+      expect: "Vertical break rises.",
+      source: `${RAPSODO_SOURCE} (vertical break target); ${PRP_SOURCE}; handInstructions.md (without deliberately burying it in your palm).`
+    },
+    {
+      id: "two-seam-axis",
+      pitchIds: TWO_SEAM,
+      detect(m, t) {
+        if (m.spinDirectionClock === null) return null;
+        const miss = axisDistance(m.spinDirectionClock, t.axisClock);
+        return deviation(
+          `Spin axis reads ${clockText(m.spinDirectionClock)}, off the target clock range. The ball may still be set like a four-seamer.`,
+          miss,
+          SCALE.axisHours
+        );
+      },
+      change: "Rotate the ball so the two close stretches of stitching run from your wrist toward your fingertips.",
+      zones: ["index-pad", "middle-pad"],
+      expect: "Axis moves into the arm-side range and the ball starts running.",
+      source: `${RAPSODO_SOURCE} (axis target); ${PRP_SOURCE}; handInstructions.md (rotate the ball until the seams run approximately from the wrist toward the fingertips).`
+    },
+    {
+      id: "two-seam-run",
+      pitchIds: TWO_SEAM,
+      detect(m, t) {
+        if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+        const h = m.horizontalBreakInches;
+        if (h === null) return null;
+        return deviation(
+          `Horizontal break reads ${h} inches, below target. The pitch is not running.`,
+          runShortfall(h, t.horizontalBreakInches),
+          SCALE.breakInches
+        );
+      },
+      change: "Set the index pad along the thumb-side seam and the middle pad along the other seam. Rotate the ball slightly until both pads engage stitching.",
+      zones: ["index-pad", "middle-pad"],
+      expect: "Horizontal run increases.",
+      source: `${RAPSODO_SOURCE} (horizontal break target); ${PRP_SOURCE}; handInstructions.md (index pad on the thumb-side seam, middle pad on the other seam, each following the stitching).`
+    },
+    {
+      id: "two-seam-efficiency",
+      pitchIds: TWO_SEAM,
+      detect(m, t) {
+        if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+        const eff = m.spinEfficiencyPercent;
+        if (eff === null) return null;
+        return deviation(
+          `Spin efficiency reads ${eff} percent, below target. The hand may have slipped to the side of the ball.`,
+          distanceOutside(eff, t.efficiencyPercent),
+          SCALE.efficiencyPoints
+        );
+      },
+      change: "Bring the thumb back under the two upper fingers, supporting the underside with its fleshy pad.",
+      zones: ["thumb-pad"],
+      expect: "Spin efficiency rises.",
+      source: `${RAPSODO_SOURCE} (75 to 100 percent efficiency, wide because different efficiencies suit different spin directions, arm slots and grips); ${PRP_SOURCE}; handInstructions.md (thumb supports the underside, approximately opposite the two upper fingers).`
+    },
+    {
+      id: "two-seam-purchase",
+      pitchIds: TWO_SEAM,
+      detect(m, t) {
+        const spm = m.spinPerMph;
+        if (spm === null) return null;
+        return deviation(
+          `Spin per mph reads ${spm}, below target. The pads may be on smooth leather.`,
+          distanceOutside(spm, t.spinPerMph),
+          SCALE.spinPerMph
+        );
+      },
+      change: "Set both pads onto their seams so each follows its own stitching.",
+      zones: ["index-pad", "middle-pad"],
+      expect: "Total spin rises.",
+      source: `Spin per mph target from PitchLogic via targets.ts; ${PRP_SOURCE}; handInstructions.md (each upper finger follows its own seam).`
+    },
+    // Only one slider rule. "Fingers too far apart" cannot be observed from ball
+    // flight or a static scan. "Not enough sweep" has no target because the app
+    // does not know whether a sweeper or a gyro slider was intended, and
+    // targetFor("slider") carries no break range. Spin per mph has no slider
+    // target either, so there is no purchase rule.
+    {
+      id: "slider-efficiency",
+      pitchIds: SLIDER,
+      detect(m, t) {
+        const eff = m.spinEfficiencyPercent;
+        if (eff === null) return null;
+        return deviation(
+          `Spin efficiency reads ${eff} percent, above the slider range. The index finger may be driving the ball like a fastball.`,
+          distanceOutside(eff, t.efficiencyPercent),
+          SCALE.efficiencyPoints
+        );
+      },
+      // The index is named only to relax it. On a slider it parks on leather.
+      change: "Let the index pad rest on the smooth leather beside the middle finger, and let the middle finger alone work the pinky-side seam.",
+      zones: ["index-pad"],
+      expect: "Spin efficiency drops and gyro degree rises.",
+      source: `${RAPSODO_SLIDER_SOURCE} (efficiency ceiling); ${PRP_SOURCE}; handInstructions.md (middle pad on the pinky-side seam, index pad resting on the adjacent smooth leather).`
+    },
+    // Two changeup rules, not the four the design table lists.
+    //
+    // "No fade" is cut. It needs to know whether the changeup is breaking
+    // arm-side, and targetFor("changeup") carries no horizontalBreakInches
+    // range to measure that against. detect() is not given handedness, and the
+    // changeup target is identical for both hands because it has nothing to
+    // mirror, so the arguments carry no way to tell arm-side from glove-side.
+    // The only ways to get it are to invent a break target or to assume a sign,
+    // and a sign assumption passes every right-handed test while inverting the
+    // advice for every left-hander. Restore this row when a sourced changeup
+    // break range exists; it will then mirror like the two-seam one does.
+    //
+    // "Loop squeezed rigid" is cut. Its trigger is grip pressure, which ball
+    // flight and a static hand scan cannot observe. Same class as the cut
+    // slider "fingers too far apart" row.
+    {
+      id: "changeup-separation",
+      pitchIds: CHANGEUP,
+      detect(m, t, baseline) {
+        if (!baseline) return null;
+        const velocity = m.velocityMph;
+        const fastball = baseline.velocityMph;
+        if (velocity === null || fastball === null) return null;
+        const separation = Math.round((fastball - velocity) * 10) / 10;
+        return deviation(
+          `Changeup velocity reads ${velocity} mph, ${separation} off the fastball's ${fastball}. It is too close to read as a different pitch.`,
+          distanceOutside(separation, t.velocitySeparationMph),
+          SCALE.separationMph
+        );
+      },
+      change: "Let the ball settle comfortably into the hand while maintaining middle- and ring-finger contact.",
+      zones: ["palm"],
+      expect: "Velocity drops.",
+      source: `${CHANGEUP_BASELINE_SOURCE}. Separation floor from targets.ts, where it is recorded as a coaching convention rather than a measured target; ${PRP_SOURCE}; handInstructions.md (let the ball settle comfortably into the hand while maintaining middle- and ring-finger contact).`
+    },
+    {
+      id: "changeup-spin",
+      pitchIds: CHANGEUP,
+      // No target argument is read: a changeup has no absolute spin target.
+      detect(m, _t, baseline) {
+        if (!baseline) return null;
+        const spm = m.spinPerMph;
+        const fastball = baseline.spinPerMph;
+        if (spm === null || fastball === null) return null;
+        return deviation(
+          `Spin per mph reads ${spm}, above the fastball's ${fastball}. The changeup is still spinning like a fastball.`,
+          distanceOutside(spm, { max: fastball }),
+          SCALE.spinPerMph
+        );
+      },
+      change: "Curl the index finger around the thumb-side surface rather than placing it over the top.",
+      zones: ["index-pad"],
+      expect: "Spin drops.",
+      source: `${CHANGEUP_BASELINE_SOURCE}, so the comparison point is the baseline's own spin per mph and no threshold is written here; ${PRP_SOURCE}; handInstructions.md (curl the index around the thumb-side surface rather than placing it over the top).`
     }
   ];
-  var SAMPLE_RULE_SET = {
-    version: "sample-rules-1",
-    ruleVersion: "sample-rules-1",
-    prototypeAdvice: true,
-    releaseHeightDriftFeet: 0.5,
-    velocitySpreadThresholdMph: 3,
-    totalSpinSpreadThresholdRpm: 200,
-    rules: SAMPLE_RULES_LIST
+
+  // shared/focus/targets.ts
+  var PITCH_TARGETS = {
+    "four-seam": {
+      pitchId: "four-seam",
+      axisClock: { min: 12, max: 12.5 },
+      efficiencyPercent: { min: 95, max: 100 },
+      verticalBreakInches: { min: 15, max: 20 },
+      horizontalBreakInches: { min: -3, max: 3 },
+      spinPerMph: { min: 22 },
+      source: "Rapsodo, 'Understanding the Three Fastball Movement Profiles' and the fastball spin-rate/efficiency profile article (backspin profile). Spin per mph from PitchLogic: average near 24, barely changes with velocity."
+    },
+    "two-seam": {
+      pitchId: "two-seam",
+      axisClock: { min: 1, max: 2 },
+      // Wide on purpose. The source says different efficiencies suit different
+      // spin directions, arm slots and grips.
+      efficiencyPercent: { min: 75, max: 100 },
+      horizontalBreakInches: { min: 10, max: 20 },
+      spinPerMph: { min: 22 },
+      source: "Rapsodo fastball spin-rate/efficiency article: 75 to 100 percent efficiency, wide because different efficiencies suit different spin directions, arm slots and grips."
+    },
+    slider: {
+      pitchId: "slider",
+      // No minimum: a gyro slider runs under 10 percent and that is correct.
+      // The value this replaces was 65 percent, which the same article puts at
+      // a sweeping curveball, so the old rule was about 30 points wrong.
+      efficiencyPercent: { max: 35 },
+      source: "Rapsodo curveball/slider/changeup article: gyro sliders under 10 percent, topspin and sidespin sliders near 35 percent with 65 to 75 gyro degrees."
+    },
+    changeup: {
+      pitchId: "changeup",
+      // No absolute ranges on purpose. A changeup is judged only against the
+      // same pitcher's own fastball, which gripRules.ts handles with a
+      // baseline. The one number here is a gap from that fastball, not a
+      // reading the pitch should hit.
+      velocitySeparationMph: { min: 8 },
+      source: "Rapsodo curveball/slider/changeup article: its own changeup examples run 71.6 to 100 percent efficiency, so no single efficiency target is defensible. The 8 mph velocity separation is a coaching convention, not a measured target: changeups are conventionally thrown 8 to 10 mph off the same pitcher's fastball, and 8 is the bottom of that convention as stated in the Task 6 plan row. Treat it as the least defensible number in this table."
+    }
   };
-  var DEFAULT_RULE_SET = SAMPLE_RULE_SET;
-  var PITCH_INSTRUCTION_ZONES = {
-    "four-seam": [
-      {
-        zoneId: "index-pad",
-        title: "Index finger",
-        instruction: "Pad across the raised stitching, seam crossing underneath",
-        pressure: "medium",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "across",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "middle-pad",
-        title: "Middle finger",
-        instruction: "Beside the index, pad also crossing the stitching",
-        pressure: "firm",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "across",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "ring-side",
-        title: "Ring finger",
-        instruction: "Side of the finger curled against the ball for light support",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "side",
-          region: "pinky-side",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "pinky",
-        title: "Pinky",
-        instruction: "Relaxed beside the ring finger, clear of the ball",
-        pressure: "none",
-        role: "clear",
-        reach: "comfortable",
-        placement: {
-          surface: "none",
-          region: "off-ball",
-          seam: "none",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "thumb-pad",
-        title: "Thumb",
-        instruction: "Fleshy pad underneath, on smooth leather",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "underside",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: ["index-pad", "middle-pad"]
-        }
-      },
-      {
-        zoneId: "palm",
-        title: "Palm",
-        instruction: "Do not bury the ball. Leave a small gap",
-        pressure: "none",
-        role: "clear",
-        reach: "comfortable",
-        placement: null
-      },
-      {
-        zoneId: "wrist",
-        title: "Wrist",
-        instruction: "Stay behind the ball",
-        pressure: "firm",
-        role: "drive",
-        reach: "comfortable",
-        placement: null
+  function mirrorRange(range, fn) {
+    const mirrored = {};
+    if (range.max !== void 0) mirrored.min = fn(range.max);
+    if (range.min !== void 0) mirrored.max = fn(range.min);
+    return mirrored;
+  }
+  function mirrorClock(clock) {
+    const mirrored = 24 - clock;
+    return mirrored >= 13 ? mirrored - 12 : mirrored;
+  }
+  function targetFor(pitchId, handedness) {
+    const target = PITCH_TARGETS[pitchId];
+    if (!target) return null;
+    if (handedness === "right") return target;
+    const mirrored = { ...target };
+    if (target.axisClock) {
+      mirrored.axisClock = mirrorRange(target.axisClock, mirrorClock);
+    }
+    if (target.horizontalBreakInches) {
+      mirrored.horizontalBreakInches = mirrorRange(
+        target.horizontalBreakInches,
+        (inches) => -inches
+      );
+    }
+    return mirrored;
+  }
+
+  // shared/focus/gripFeedback.ts
+  var RELEASE_HEIGHT_DRIFT_FEET = 0.5;
+  var MIN_THROWS_FOR_DRIFT = 3;
+  var PITCH_IDS_NEEDING_BASELINE = ["changeup"];
+  function roundTo(value, decimals) {
+    const factor = 10 ** decimals;
+    return Math.round((value + Number.EPSILON) * factor) / factor;
+  }
+  function measuredText(m) {
+    if (m.throwCount === 0) return "No throws recorded for this pitch yet.";
+    const parts = [];
+    if (m.velocityMph !== null) parts.push(`${m.velocityMph} mph`);
+    if (m.totalSpinRpm !== null) parts.push(`${m.totalSpinRpm} rpm total spin`);
+    if (m.spinEfficiencyPercent !== null) {
+      parts.push(`${m.spinEfficiencyPercent} percent spin efficiency`);
+    }
+    if (m.activeSpinRpm !== null) {
+      parts.push(`${m.activeSpinRpm} rpm active spin`);
+    }
+    if (m.spinPerMph !== null) parts.push(`${m.spinPerMph} spin per mph`);
+    if (m.spinDirectionClock !== null) {
+      parts.push(`axis ${clockText(m.spinDirectionClock)}`);
+    }
+    if (m.horizontalBreakInches !== null) {
+      parts.push(`${m.horizontalBreakInches} in horizontal break`);
+    }
+    if (m.verticalBreakInches !== null) {
+      parts.push(`${m.verticalBreakInches} in vertical break`);
+    }
+    const count = `${m.throwCount} ${m.throwCount === 1 ? "throw" : "throws"}`;
+    return parts.length ? `${count}: ${parts.join(", ")}.` : `${count}.`;
+  }
+  function candidatesFor(pitchId, metrics, handedness, baseline) {
+    const target = targetFor(pitchId, handedness);
+    if (!target) return [];
+    const found = [];
+    for (const rule of GRIP_RULES) {
+      if (!rule.pitchIds.includes(pitchId)) continue;
+      const deviation2 = rule.detect(metrics, target, baseline);
+      if (!deviation2) continue;
+      if (!Number.isFinite(deviation2.magnitude) || deviation2.magnitude <= 0) {
+        continue;
       }
-    ],
-    "two-seam": [
-      {
-        zoneId: "index-pad",
-        title: "Index finger",
-        instruction: "Pad along the thumb-side seam, following its direction",
-        pressure: "medium",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "along",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "middle-pad",
-        title: "Middle finger",
-        instruction: "Pad along the other seam, toward the pinky side",
-        pressure: "medium",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "along",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "ring-side",
-        title: "Ring finger",
-        instruction: "Curled lightly against the pinky-side surface",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "side",
-          region: "pinky-side",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "pinky",
-        title: "Pinky",
-        instruction: "Relaxed beside the ring finger, off the ball",
-        pressure: "none",
-        role: "clear",
-        reach: "comfortable",
-        placement: {
-          surface: "none",
-          region: "off-ball",
-          seam: "none",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "thumb-pad",
-        title: "Thumb",
-        instruction: "Fleshy pad underneath, opposite the two upper fingers",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "underside",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: ["index-pad", "middle-pad"]
-        }
-      },
-      {
-        zoneId: "palm",
-        title: "Palm",
-        instruction: "Similar depth to the four-seam. Do not bury the ball",
-        pressure: "none",
-        role: "clear",
-        reach: "comfortable",
-        placement: null
-      },
-      {
-        zoneId: "wrist",
-        title: "Wrist",
-        instruction: "Stay behind the ball",
-        pressure: "firm",
-        role: "drive",
-        reach: "comfortable",
-        placement: null
+      found.push({
+        rule,
+        summary: deviation2.summary,
+        magnitude: deviation2.magnitude
+      });
+    }
+    return found;
+  }
+  function unfittableZones(candidates, zones) {
+    const reachById = new Map(zones.map((zone) => [zone.zoneId, zone.reach]));
+    const problems = [];
+    for (const candidate of candidates) {
+      for (const zoneId of candidate.rule.zones) {
+        const reach = reachById.get(zoneId);
+        if (reach !== "unreachable" && reach !== "strained") continue;
+        if (!problems.includes(zoneId)) problems.push(zoneId);
       }
-    ],
-    slider: [
-      {
-        zoneId: "index-pad",
-        title: "Index finger",
-        instruction: "Rests on smooth leather beside the middle finger, stabilising",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "beside",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "middle-pad",
-        title: "Middle finger",
-        instruction: "Pad along the pinky-side seam with definite purchase",
-        pressure: "firm",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "along",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "ring-side",
-        title: "Ring finger",
-        instruction: "Curled against the surface below the middle finger",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "side",
-          region: "pinky-side",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "pinky",
-        title: "Pinky",
-        instruction: "Relaxed beside the ring finger, clear of the ball",
-        pressure: "none",
-        role: "clear",
-        reach: "comfortable",
-        placement: {
-          surface: "none",
-          region: "off-ball",
-          seam: "none",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "thumb-pad",
-        title: "Thumb",
-        instruction: "Underneath and opposite, slightly off centre, no hard pinch",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "underside",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: ["middle-pad"]
-        }
-      },
-      {
-        zoneId: "wrist",
-        title: "Wrist",
-        instruction: "Release decides whether this behaves like a slider",
-        pressure: "firm",
-        role: "drive",
-        reach: "comfortable",
-        placement: null
-      }
-    ],
-    changeup: [
-      {
-        zoneId: "index-pad",
-        title: "Index finger",
-        instruction: "Curled around the thumb-side surface, forming a loop with the thumb",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "curl",
-          region: "thumb-side",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: ["thumb-pad"]
-        }
-      },
-      {
-        zoneId: "middle-pad",
-        title: "Middle finger",
-        instruction: "Pad along the thumb-side seam",
-        pressure: "medium",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "along",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "ring-side",
-        title: "Ring finger",
-        instruction: "Pad along the pinky-side seam. A principal contact here",
-        pressure: "medium",
-        role: "drive",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "top",
-          seam: "along",
-          seamOffsetMm: 0,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "pinky",
-        title: "Pinky",
-        instruction: "Wrapped lightly around the far side to stabilise",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "curl",
-          region: "pinky-side",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: []
-        }
-      },
-      {
-        zoneId: "thumb-pad",
-        title: "Thumb",
-        instruction: "Wrapped around the lower thumb-side surface, closing the loop",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: {
-          surface: "pad",
-          region: "thumb-side",
-          seam: "off",
-          seamOffsetMm: null,
-          opposes: ["index-pad"]
-        }
-      },
-      {
-        zoneId: "palm",
-        title: "Palm",
-        instruction: "Let the ball settle comfortably into the hand",
-        pressure: "light",
-        role: "support",
-        reach: "comfortable",
-        placement: null
-      }
-    ]
-  };
-  var FOUR_SEAM_INSTRUCTION_ZONES = PITCH_INSTRUCTION_ZONES["four-seam"];
+    }
+    return problems;
+  }
+  function titleFor(zoneId, zones) {
+    return zones.find((zone) => zone.zoneId === zoneId)?.title ?? zoneId;
+  }
+  function releaseHeightSpreadFeet(throws) {
+    if (throws.length < MIN_THROWS_FOR_DRIFT) return null;
+    const heights = throws.map((t) => t.measurements.releaseHeightFeet).filter((v) => typeof v === "number" && Number.isFinite(v));
+    if (heights.length < MIN_THROWS_FOR_DRIFT) return null;
+    return roundTo(Math.max(...heights) - Math.min(...heights), 2);
+  }
+  function result(partial) {
+    return {
+      change: null,
+      expect: null,
+      zones: [],
+      ruleId: null,
+      source: null,
+      ruleVersion: GRIP_RULE_VERSION,
+      ...partial
+    };
+  }
+  function gripFeedback(input) {
+    const { pitchId, throws, zones, baseline, handedness = "right" } = input;
+    const metrics = deriveMetrics(throws);
+    const measured = measuredText(metrics);
+    const baselineMetrics = baseline && baseline.length ? deriveMetrics(baseline) : null;
+    if (metrics.throwCount === 0) {
+      return result({
+        kind: "no-data",
+        measured,
+        headline: "Record a few throws of this pitch to get a change to try."
+      });
+    }
+    const candidates = candidatesFor(
+      pitchId,
+      metrics,
+      handedness,
+      baselineMetrics
+    );
+    const unfittable = unfittableZones(candidates, zones);
+    if (unfittable.length) {
+      const names = unfittable.map((zoneId) => titleFor(zoneId, zones));
+      return result({
+        kind: "fit",
+        measured,
+        headline: `This grip does not fit your hand yet: ${names.join(" and ")} cannot make the contact this pitch asks for. Work on the fit before changing technique.`,
+        zones: unfittable
+      });
+    }
+    if (PITCH_IDS_NEEDING_BASELINE.includes(pitchId) && !baselineMetrics) {
+      return result({
+        kind: "baseline",
+        measured,
+        headline: "This pitch is read against your own fastball, so throw some fastballs in the same session before it can be judged."
+      });
+    }
+    const spread = releaseHeightSpreadFeet(throws);
+    if (spread !== null && spread > RELEASE_HEIGHT_DRIFT_FEET) {
+      return result({
+        kind: "drift",
+        measured,
+        headline: `Your release height moved ${spread} feet across these throws. That is an arm-slot problem rather than a grip problem, so settle the release point first.`
+      });
+    }
+    let best = null;
+    for (const candidate of candidates) {
+      if (!best || candidate.magnitude > best.magnitude) best = candidate;
+    }
+    if (best) {
+      return result({
+        kind: "change",
+        measured,
+        headline: best.summary,
+        change: best.rule.change,
+        expect: best.rule.expect,
+        zones: [...best.rule.zones],
+        ruleId: best.rule.id,
+        source: best.rule.source
+      });
+    }
+    const hasRules = GRIP_RULES.some((rule) => rule.pitchIds.includes(pitchId));
+    return result({
+      kind: "on-target",
+      measured,
+      headline: hasRules ? "Every reading for this pitch is inside its target range. Keep throwing it." : "No grip rules are written for this pitch yet, so there is nothing to flag."
+    });
+  }
 
   // shared/focus/assess.ts
-  var SEVERITY_RANK = {
-    green: 1,
-    yellow: 2,
-    red: 3
-  };
-  var DEFAULT_RELEASE_HEIGHT_DRIFT_FEET = 0.5;
-  var DEFAULT_VELOCITY_SPREAD_MPH = 3;
-  var DEFAULT_TOTAL_SPIN_SPREAD_RPM = 200;
+  var VELOCITY_SPREAD_MPH = 3;
+  var TOTAL_SPIN_SPREAD_RPM = 200;
+  var MIN_THROWS_FOR_CONSISTENCY = 3;
+  var UNSCORED_CONFIDENCE = 0.5;
   function roundNumber(value, decimals = 2) {
     const factor = 10 ** decimals;
     return Math.round((value + Number.EPSILON) * factor) / factor;
   }
-  function clampConfidence(value) {
-    if (!Number.isFinite(value)) return 0;
-    return roundNumber(Math.min(1, Math.max(0, value)), 2);
-  }
-  function formatMetricValue(value) {
-    return Number.isInteger(value) ? String(value) : String(roundNumber(value, 1));
-  }
-  function primaryThreshold(when) {
-    return when.target ?? when.below ?? when.atLeast ?? when.above ?? when.atMost;
-  }
-  function interpolateReason(template, value, when) {
-    const formattedValue = formatMetricValue(value);
-    const thresholdBound = when.target ?? when.below ?? when.atLeast ?? when.above ?? when.atMost;
-    const targetBound = primaryThreshold(when);
-    return template.replaceAll("{value}", formattedValue).replaceAll(
-      "{threshold}",
-      thresholdBound !== void 0 ? formatMetricValue(thresholdBound) : ""
-    ).replaceAll(
-      "{target}",
-      targetBound !== void 0 ? formatMetricValue(targetBound) : ""
-    );
-  }
-  function matchesCondition(value, when) {
-    const hasBound = when.below !== void 0 || when.atLeast !== void 0 || when.above !== void 0 || when.atMost !== void 0;
-    if (!hasBound || !Number.isFinite(value)) return false;
-    if (when.below !== void 0 && !(value < when.below)) return false;
-    if (when.atLeast !== void 0 && !(value >= when.atLeast)) return false;
-    if (when.above !== void 0 && !(value > when.above)) return false;
-    if (when.atMost !== void 0 && !(value <= when.atMost)) return false;
-    return true;
-  }
-  function resolveZoneBaseConfidence(rule, ruleZone) {
-    if (typeof ruleZone.confidence === "number" && Number.isFinite(ruleZone.confidence)) {
-      return ruleZone.confidence;
-    }
-    if (ruleZone.severity === "red") {
-      return ruleZone.zoneId === rule.nextAction.zoneId ? rule.confidence : roundNumber(Math.max(0, rule.confidence - 0.1));
-    }
-    if (ruleZone.severity === "yellow") {
-      return roundNumber(Math.max(0, rule.confidence - 0.2));
-    }
-    return rule.confidence;
-  }
-  function mentionsUnreachableZone(text, unreachableSet) {
-    const lowered = text.toLowerCase();
-    for (const zoneId of unreachableSet) {
-      if (lowered.includes(zoneId) || lowered.includes(zoneId.replace("-", " "))) {
-        return true;
-      }
-    }
-    return false;
-  }
-  function computeConsistency(throws, ruleSet) {
-    if (throws.length < 3) return null;
+  function computeConsistency(throws) {
+    if (throws.length < MIN_THROWS_FOR_CONSISTENCY) return null;
     const velocities = throws.map((t) => t.measurements.velocityMph).filter((v) => typeof v === "number" && Number.isFinite(v));
     const spins = throws.map((t) => t.measurements.totalSpinRpm).filter((v) => typeof v === "number" && Number.isFinite(v));
     const velocitySpreadMph = velocities.length >= 2 ? roundNumber(Math.max(...velocities) - Math.min(...velocities), 2) : 0;
     const totalSpinSpreadRpm = spins.length >= 2 ? roundNumber(Math.max(...spins) - Math.min(...spins), 2) : 0;
-    const velocityLimit = ruleSet.velocitySpreadThresholdMph ?? DEFAULT_VELOCITY_SPREAD_MPH;
-    const spinLimit = ruleSet.totalSpinSpreadThresholdRpm ?? DEFAULT_TOTAL_SPIN_SPREAD_RPM;
     return {
       throwCount: throws.length,
       velocitySpreadMph,
       totalSpinSpreadRpm,
-      inconsistent: velocitySpreadMph > velocityLimit || totalSpinSpreadRpm > spinLimit
+      inconsistent: velocitySpreadMph > VELOCITY_SPREAD_MPH || totalSpinSpreadRpm > TOTAL_SPIN_SPREAD_RPM
     };
-  }
-  function isReleaseHeightDrifting(throws, ruleSet) {
-    if (throws.length < 3) return false;
-    const heights = throws.map((t) => t.measurements.releaseHeightFeet).filter((v) => typeof v === "number" && Number.isFinite(v));
-    if (heights.length < 3) return false;
-    const spread = roundNumber(Math.max(...heights) - Math.min(...heights), 2);
-    const threshold = ruleSet.releaseHeightDriftFeet ?? DEFAULT_RELEASE_HEIGHT_DRIFT_FEET;
-    return spread > threshold;
   }
   function deriveGripPlanId(pitchId, throws, explicitId) {
     if (explicitId && explicitId.trim()) return explicitId;
@@ -722,259 +748,40 @@ var GripItFocus = (() => {
     const ids = throws.map((t) => t.throwId).join("-");
     return `${isSample ? "sample-" : ""}assessment-${pitchId}${ids ? `-${ids}` : ""}`;
   }
-  function fallbackNotGripAction(pitchId, reason) {
-    if (reason === "release-drift") {
-      return {
-        zoneId: null,
-        summary: "Steady your release point",
-        detail: "Release height drifted across this session, which points to arm slot and timing rather than finger placement.",
-        rewritten: false
-      };
-    }
-    if (reason === "unreachable") {
-      return {
-        zoneId: null,
-        summary: "Adjust grip for hand fit",
-        detail: "This hand cannot reach every required contact for this grip. Adjust the grip fit before changing release technique.",
-        rewritten: false
-      };
-    }
-    if (reason === "null-measurement") {
-      return {
-        zoneId: null,
-        summary: "Record spin efficiency on the next throw",
-        detail: "The measurement needed to evaluate this grip was not provided, so no finger adjustment is suggested yet.",
-        rewritten: false
-      };
-    }
-    if (pitchId === "changeup") {
-      return {
-        zoneId: null,
-        summary: "Compare against your fastball",
-        detail: "Changeup evaluation needs fastball velocity from the same session to judge separation, so no grip change is suggested from changeup throws alone.",
-        rewritten: false
-      };
-    }
-    if (pitchId === "slider") {
-      return {
-        zoneId: null,
-        summary: "Keep working the slider release",
-        detail: "Slider spin metrics are within the expected low-efficiency range, so no grip adjustment is flagged.",
-        rewritten: false
-      };
-    }
-    return {
-      zoneId: null,
-      summary: "Keep the current grip",
-      detail: "Available throw numbers do not point to a grip adjustment on this pitch.",
-      rewritten: false
-    };
+  function detailFrom(feedback) {
+    return [feedback.measured, feedback.change, feedback.expect].filter((part) => part !== null && part.trim() !== "").join(" ");
   }
   function assess(input) {
-    const { pitchId, throws, zones, ruleSet } = input;
-    const ruleVersion = ruleSet.ruleVersion?.trim() || ruleSet.version?.trim() || "sample-rules-1";
-    const prototypeAdvice = ruleSet.prototypeAdvice ?? true;
-    const throwIds = throws.map((t) => t.throwId);
-    const gripPlanId = deriveGripPlanId(pitchId, throws, input.gripPlanId);
-    const assessmentId = deriveAssessmentId(pitchId, throws, input.assessmentId);
-    const unreachable = unreachableZones(zones);
-    const unreachableSet = new Set(unreachable);
-    const silentZoneSet = new Set(
-      zones.filter((z) => z.instruction.trim() === "").map((z) => z.zoneId)
-    );
-    const consistency = computeConsistency(throws, ruleSet);
-    if (isReleaseHeightDrifting(throws, ruleSet)) {
-      return {
-        schemaVersion: "1.0.0",
-        assessmentId,
-        gripPlanId,
-        throwIds,
-        ruleVersion,
-        classification: "not-grip",
-        zones: [],
-        nextAction: fallbackNotGripAction(pitchId, "release-drift"),
-        confidence: 0.5,
-        unreachableZones: unreachable,
-        consistency,
-        prototypeAdvice,
-        extensions: {}
-      };
-    }
-    const pitchRules = ruleSet.rules.filter(
-      (rule) => rule.pitchIds.includes(pitchId)
-    );
-    if (throws.length === 0 || pitchRules.length === 0) {
-      return {
-        schemaVersion: "1.0.0",
-        assessmentId,
-        gripPlanId,
-        throwIds,
-        ruleVersion,
-        classification: "not-grip",
-        zones: [],
-        nextAction: fallbackNotGripAction(pitchId, "no-finding"),
-        confidence: throws.length === 0 ? 0 : 0.25,
-        unreachableZones: unreachable,
-        consistency,
-        prototypeAdvice,
-        extensions: {}
-      };
-    }
-    const referencedMeasurements = Array.from(
-      new Set(pitchRules.map((rule) => rule.measurement))
-    );
-    const measurementValues = /* @__PURE__ */ new Map();
-    let totalCoverageSum = 0;
-    let hadNullMeasurement = false;
-    for (const key of referencedMeasurements) {
-      const valid = throws.map((t) => t.measurements[key]).filter((v) => typeof v === "number" && Number.isFinite(v));
-      measurementValues.set(key, valid);
-      const coverage = valid.length / throws.length;
-      if (coverage < 1) hadNullMeasurement = true;
-      totalCoverageSum += coverage;
-    }
-    const evidenceCoverage = referencedMeasurements.length > 0 ? totalCoverageSum / referencedMeasurements.length : 1;
-    const firedCandidates = [];
-    let suppressedByUnreachable = false;
-    for (let ruleIndex = 0; ruleIndex < ruleSet.rules.length; ruleIndex += 1) {
-      const rule = ruleSet.rules[ruleIndex];
-      if (!rule.pitchIds.includes(pitchId)) continue;
-      const values = measurementValues.get(rule.measurement) ?? [];
-      if (values.length === 0) continue;
-      const meanValue = values.reduce((sum, current) => sum + current, 0) / values.length;
-      if (!matchesCondition(meanValue, rule.when)) continue;
-      const primaryTargetUnreachable = rule.nextAction.zoneId !== null && unreachableSet.has(rule.nextAction.zoneId);
-      const textNamesUnreachable = mentionsUnreachableZone(rule.nextAction.summary, unreachableSet) || mentionsUnreachableZone(rule.nextAction.detail, unreachableSet);
-      if (primaryTargetUnreachable) {
-        suppressedByUnreachable = true;
-        continue;
-      }
-      const ruleMeasurementCoverage = values.length / throws.length;
-      const confidenceScale = hadNullMeasurement ? Math.min(ruleMeasurementCoverage, 0.5 + 0.5 * evidenceCoverage) : 1;
-      const reachableZones = [];
-      for (const ruleZone of rule.zones) {
-        if (unreachableSet.has(ruleZone.zoneId)) {
-          suppressedByUnreachable = true;
-          continue;
-        }
-        if (silentZoneSet.has(ruleZone.zoneId)) {
-          continue;
-        }
-        const baseConf = resolveZoneBaseConfidence(rule, ruleZone);
-        const zoneConf = clampConfidence(baseConf * confidenceScale);
-        const reason = interpolateReason(
-          ruleZone.reason ?? rule.reason,
-          meanValue,
-          rule.when
-        );
-        reachableZones.push({
-          zoneId: ruleZone.zoneId,
-          severity: ruleZone.severity,
-          reason,
-          triggeringMeasurement: rule.measurement,
-          confidence: zoneConf
-        });
-      }
-      if (reachableZones.length === 0 && rule.zones.length > 0) {
-        suppressedByUnreachable = true;
-        continue;
-      }
-      const maxSeverityRank = reachableZones.reduce(
-        (max, z) => Math.max(max, SEVERITY_RANK[z.severity]),
-        0
-      );
-      firedCandidates.push({
-        rule,
-        ruleIndex,
-        maxSeverityRank,
-        effectiveRuleConfidence: clampConfidence(
-          rule.confidence * confidenceScale
-        ),
-        emittedZones: reachableZones,
-        canSupplyNextAction: !textNamesUnreachable
-      });
-    }
-    if (firedCandidates.length === 0) {
-      const baseFallbackConfidence = pitchRules[0]?.confidence ?? 0.4;
-      const fallbackConfidence = hadNullMeasurement ? clampConfidence(baseFallbackConfidence * 0.4 * evidenceCoverage) : suppressedByUnreachable ? clampConfidence(baseFallbackConfidence * 0.5) : 0.25;
-      const reasonKind = suppressedByUnreachable ? "unreachable" : hadNullMeasurement ? "null-measurement" : "no-finding";
-      return {
-        schemaVersion: "1.0.0",
-        assessmentId,
-        gripPlanId,
-        throwIds,
-        ruleVersion,
-        classification: "not-grip",
-        zones: [],
-        nextAction: fallbackNotGripAction(pitchId, reasonKind),
-        confidence: fallbackConfidence,
-        unreachableZones: unreachable,
-        consistency,
-        prototypeAdvice,
-        extensions: {}
-      };
-    }
-    const mergedZones = [];
-    const zoneIndexById = /* @__PURE__ */ new Map();
-    for (const candidate of firedCandidates) {
-      for (const focusZone of candidate.emittedZones) {
-        const existingIdx = zoneIndexById.get(focusZone.zoneId);
-        if (existingIdx === void 0) {
-          zoneIndexById.set(focusZone.zoneId, mergedZones.length);
-          mergedZones.push(focusZone);
-        } else {
-          const existing = mergedZones[existingIdx];
-          const newRank = SEVERITY_RANK[focusZone.severity];
-          const oldRank = SEVERITY_RANK[existing.severity];
-          if (newRank > oldRank || newRank === oldRank && focusZone.confidence > existing.confidence) {
-            mergedZones[existingIdx] = focusZone;
-          }
-        }
-      }
-    }
-    const rankedForAction = [...firedCandidates].sort((a, b) => {
-      if (b.maxSeverityRank !== a.maxSeverityRank) {
-        return b.maxSeverityRank - a.maxSeverityRank;
-      }
-      if (b.effectiveRuleConfidence !== a.effectiveRuleConfidence) {
-        return b.effectiveRuleConfidence - a.effectiveRuleConfidence;
-      }
-      return a.ruleIndex - b.ruleIndex;
+    const { pitchId, throws, zones, baseline, handedness } = input;
+    const feedback = gripFeedback({
+      pitchId,
+      throws,
+      zones,
+      baseline,
+      handedness
     });
-    const winningCandidate = rankedForAction.find((c) => c.canSupplyNextAction) ?? rankedForAction[0];
-    const nextAction = winningCandidate.canSupplyNextAction ? {
-      zoneId: winningCandidate.rule.nextAction.zoneId,
-      summary: winningCandidate.rule.nextAction.summary,
-      detail: winningCandidate.rule.nextAction.detail,
+    const nextAction = {
+      zoneId: feedback.zones[0] ?? null,
+      summary: feedback.headline,
+      detail: detailFrom(feedback),
       rewritten: false
-    } : fallbackNotGripAction(pitchId, "unreachable");
-    const classification = mergedZones.length === 0 || !winningCandidate.canSupplyNextAction ? "not-grip" : winningCandidate.rule.classification;
-    let overallConfidence = winningCandidate.effectiveRuleConfidence;
-    if (mergedZones.length > 0) {
-      const topRank = mergedZones.reduce(
-        (max, z) => Math.max(max, SEVERITY_RANK[z.severity]),
-        0
-      );
-      const topZones = mergedZones.filter(
-        (z) => SEVERITY_RANK[z.severity] === topRank
-      );
-      const meanTopConfidence = topZones.reduce((sum, z) => sum + z.confidence, 0) / topZones.length;
-      overallConfidence = clampConfidence(meanTopConfidence);
-    }
+    };
+    const classification = feedback.kind === "change" ? "grip-focus" : "not-grip";
     return {
       schemaVersion: "1.0.0",
-      assessmentId,
-      gripPlanId,
-      throwIds,
-      ruleVersion,
+      assessmentId: deriveAssessmentId(pitchId, throws, input.assessmentId),
+      gripPlanId: deriveGripPlanId(pitchId, throws, input.gripPlanId),
+      throwIds: throws.map((t) => t.throwId),
+      ruleVersion: feedback.ruleVersion,
       classification,
-      zones: mergedZones,
+      zones: [],
       nextAction,
-      confidence: overallConfidence,
-      unreachableZones: unreachable,
-      consistency,
-      prototypeAdvice,
-      extensions: {}
+      confidence: feedback.kind === "no-data" ? 0 : UNSCORED_CONFIDENCE,
+      unreachableZones: unreachableZones(zones),
+      consistency: computeConsistency(throws),
+      // True while the rule set has not been reviewed by a pitching coach.
+      prototypeAdvice: true,
+      extensions: { gripFeedback: feedback }
     };
   }
 
@@ -987,7 +794,7 @@ var GripItFocus = (() => {
     return JSON.stringify(makeThrowRecords(input.session, input.pitchId, input.options));
   }
   function assessJSON(json) {
-    return JSON.stringify(assess({ ...JSON.parse(json), ruleSet: DEFAULT_RULE_SET }));
+    return JSON.stringify(assess(JSON.parse(json)));
   }
   return __toCommonJS(nativeFocus_exports);
 })();
