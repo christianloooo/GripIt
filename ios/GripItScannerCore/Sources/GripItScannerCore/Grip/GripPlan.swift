@@ -67,6 +67,16 @@ public struct GripPlacement: Codable, Sendable {
     try c.encode(opposes, forKey: .opposes)
   }
 }
+/// A complete instruction-to-surface record for the Step 2 demo.
+public struct GripHighlight: Codable, Equatable, Sendable {
+  public enum Region: String, Codable, Sendable {
+    case fingerPad, fingerSide, curledFinger, palm, wrist
+  }
+  public enum Kind: String, Codable, Sendable { case pressure, support, stabilization }
+  public let region: Region
+  public let intensity: GripPressure
+  public let kind: Kind
+}
 public struct GripZonePlan: Codable, Sendable, Identifiable {
   public let zoneId: GripZoneID
   public var title: String { zoneId.title }
@@ -78,23 +88,47 @@ public struct GripZonePlan: Codable, Sendable, Identifiable {
   public var shortfallMm: Double? = nil
   public var reachEvidence: String = "Not fitted"
   public let placement: GripPlacement?
+  public let highlight: GripHighlight?
+  private static func makeHighlight(
+    zoneId: GripZoneID, pressure: GripPressure?, role: GripRole?, placement: GripPlacement?
+  ) -> GripHighlight? {
+    guard let pressure else { return nil }
+    let region: GripHighlight.Region
+    switch zoneId {
+    case .wrist: region = .wrist
+    case .palm: region = .palm
+    default:
+      switch placement?.surface {
+      case .side: region = .fingerSide
+      case .curl: region = .curledFinger
+      default: region = .fingerPad
+      }
+    }
+    return GripHighlight(
+      region: region, intensity: pressure,
+      kind: zoneId == .wrist ? .stabilization : role == .support ? .support : .pressure)
+  }
   public var extrapolated: Bool = false
 
   // Encode title as part of the public interchange contract, although it is derived locally.
   private enum CodingKeys: String, CodingKey {
     case zoneId, title, instruction, pressure, role, reach, shortfallMm, reachEvidence, placement,
-      extrapolated
+      extrapolated, highlight
   }
   public init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     zoneId = try c.decode(GripZoneID.self, forKey: .zoneId)
     instruction = try c.decode(String.self, forKey: .instruction)
-    pressure = try c.decodeIfPresent(GripPressure.self, forKey: .pressure)
+    let highlight = try c.decodeIfPresent(GripHighlight.self, forKey: .highlight)
+    pressure = try highlight?.intensity ?? c.decodeIfPresent(GripPressure.self, forKey: .pressure)
     role = try c.decodeIfPresent(GripRole.self, forKey: .role)
     reach = try c.decode(GripReach.self, forKey: .reach)
     shortfallMm = try c.decodeIfPresent(Double.self, forKey: .shortfallMm)
     reachEvidence = try c.decodeIfPresent(String.self, forKey: .reachEvidence) ?? "Not supplied"
     placement = try c.decodeIfPresent(GripPlacement.self, forKey: .placement)
+    self.highlight =
+      highlight
+      ?? Self.makeHighlight(zoneId: zoneId, pressure: pressure, role: role, placement: placement)
     extrapolated = try c.decodeIfPresent(Bool.self, forKey: .extrapolated) ?? false
   }
   public func encode(to encoder: Encoder) throws {
@@ -108,6 +142,7 @@ public struct GripZonePlan: Codable, Sendable, Identifiable {
     try c.encode(shortfallMm, forKey: .shortfallMm)
     try c.encode(reachEvidence, forKey: .reachEvidence)
     try c.encode(placement, forKey: .placement)
+    try c.encode(highlight, forKey: .highlight)
     try c.encode(extrapolated, forKey: .extrapolated)
   }
   init(
@@ -119,7 +154,9 @@ public struct GripZonePlan: Codable, Sendable, Identifiable {
     self.pressure = pressure
     self.role = role
     self.placement = placement
-    extrapolated = zone == .wrist
+    highlight = Self.makeHighlight(
+      zoneId: zone, pressure: pressure, role: role, placement: placement)
+    extrapolated = false
   }
 }
 public struct GripPlan: Codable, Sendable {
@@ -169,7 +206,7 @@ public struct GripPlan: Codable, Sendable {
           ? "Clearance against a 2 mm modeled palm gap." : "Modeled palm surface distance to ball."
       } else {
         zone.reachEvidence =
-          "No wrist reach constraint is defined; comfortable means no geometric target. Wrist guidance is extrapolated and is not measured."
+          "Wrist stabilization highlights the full wrist surface and has no ball-contact reach target."
       }
       return zone
     }
@@ -213,15 +250,14 @@ extension PitchGrip {
           .pad, .underside, .off,
           change ? [.middlePad, .ringSide] : slider ? [.middlePad] : [.indexPad, .middlePad])),
     ]
-    if !slider {
-      zones.append(
-        GripZonePlan(
-          .palm, instructionText(.palm), change ? .light : GripPressure.none,
-          change ? .support : .clear, nil))
-    }
     zones.append(
       GripZonePlan(
-        .wrist, instructionText(.wrist), change ? nil : .firm, change ? nil : .drive, nil))
+        .palm, instructionText(.palm), change ? .light : GripPressure.none,
+        change ? .support : .clear, nil))
+    zones.append(
+      GripZonePlan(
+        .wrist, instructionText(.wrist), change ? .medium : .firm,
+        change ? .support : .drive, nil))
     return zones
   }
   private func instructionText(_ zone: GripZoneID) -> String {
@@ -234,23 +270,24 @@ extension PitchGrip {
       "Wrap the pad and middle section on leather beside the middle finger, stabilising."
     case (.slider, .middlePad): "Wrap the pad and middle section along the pinky-side seam."
     case (.circleChange, .indexPad):
-      "Curled lightly around the thumb-side surface; keep the thumb supporting underneath."
+      "Wrap the index around the thumb-side centre of the ball, opposite the pinky; keep the tip softly curled."
     case (.circleChange, .middlePad): "Pad along the thumb-side seam."
     case (.circleChange, .ringSide): "Pad along the pinky-side seam. A principal contact here."
     case (.circleChange, .thumbPad):
       "Supports the lower centre of the ball with the fleshy pad; keep the index relaxed beside it."
-    case (.circleChange, .pinky): "Wrapped lightly around the far side to stabilise."
+    case (.circleChange, .pinky): "Wrap the pinky around the opposite side centre, cradling the ball against the index."
     case (.circleChange, .palm): "Let the ball settle comfortably into the hand."
-    case (.circleChange, .wrist): "Wrist guidance is not specified by the source."
+    case (.circleChange, .wrist): "Keep the wrist steady while the fingers hold a relaxed grip."
     case (.slider, .thumbPad):
       "Underneath and opposite the middle finger, slightly off centre, no hard pinch."
-    case (.slider, .wrist): "Release decides whether this behaves like a slider."
+    case (.slider, .wrist): "Keep the wrist firm while the middle finger maintains seam contact."
     case (.slider, .ringSide): "Curled against the surface below the middle finger."
     case (_, .ringSide): "Side of the finger curled against the ball for light support."
     case (_, .pinky): "Relaxed beside the ring finger, clear of the ball."
     case (_, .thumbPad): "Fleshy pad underneath, on smooth leather, opposite the two upper fingers."
+    case (.slider, .palm): "Use a comfortable depth; apply pressure through the fingers and thumb."
     case (_, .palm): "Do not bury the ball. Leave a small gap."
-    case (_, .wrist): "Stay behind the ball."
+    case (_, .wrist): "Keep the wrist firm and stay behind the ball."
     }
   }
 }

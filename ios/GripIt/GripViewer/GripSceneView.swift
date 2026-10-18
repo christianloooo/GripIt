@@ -26,21 +26,26 @@ struct GripSceneView: UIViewRepresentable {
   var gripPlan: GripPlan? = nil
   var zoneSeverity: GripSeverityMap? = nil
   var showPressure = false
+  var showAnnotations = false
+  var arcadeStyle = false
   var selectedZone: GripZoneID? = nil
+  var onZoneDismiss: () -> Void = {}
   var onZoneSelect: (GripZoneID) -> Void = { _ in }
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeUIView(context: Context) -> SCNView {
     let view = SCNView()
-    view.backgroundColor = UIColor(white: 0.10, alpha: 1)
+    view.backgroundColor = arcadeStyle ? .clear : UIColor(white: 0.10, alpha: 1)
     view.antialiasingMode = .multisampling4X
     view.allowsCameraControl = true
     view.defaultCameraController.inertiaEnabled = true
     view.defaultCameraController.interactionMode = .orbitTurntable
     context.coordinator.onZoneSelect = onZoneSelect
+    context.coordinator.onZoneDismiss = onZoneDismiss
     context.coordinator.update(
       view, pose: pose, contacts: showContacts, camera: camera, reset: reset,
       plan: gripPlan ?? GripPlan(pose: pose), severity: zoneSeverity, selected: selectedZone,
-      showBall: showBall, wireframe: wireframe, pressure: showPressure)
+      showBall: showBall, wireframe: wireframe, pressure: showPressure,
+      annotations: showAnnotations, arcade: arcadeStyle)
     let tap = UITapGestureRecognizer(
       target: context.coordinator, action: #selector(Coordinator.selectZone(_:)))
     tap.cancelsTouchesInView = false
@@ -53,16 +58,24 @@ struct GripSceneView: UIViewRepresentable {
   }
   func updateUIView(_ view: SCNView, context: Context) {
     context.coordinator.onZoneSelect = onZoneSelect
+    context.coordinator.onZoneDismiss = onZoneDismiss
     context.coordinator.update(
       view, pose: pose, contacts: showContacts, camera: camera, reset: reset,
       plan: gripPlan ?? GripPlan(pose: pose), severity: zoneSeverity, selected: selectedZone,
-      showBall: showBall, wireframe: wireframe, pressure: showPressure)
+      showBall: showBall, wireframe: wireframe, pressure: showPressure,
+      annotations: showAnnotations, arcade: arcadeStyle)
   }
   static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
     if let tap = coordinator.tap { view.removeGestureRecognizer(tap) }
     for pinch in view.gestureRecognizers?.compactMap({ $0 as? UIPinchGestureRecognizer }) ?? [] {
       pinch.removeTarget(coordinator, action: #selector(Coordinator.limitZoom(_:)))
     }
+    coordinator.displayLink?.invalidate()
+    coordinator.displayLink = nil
+    coordinator.projectionDriver = nil
+    coordinator.graphOverlay?.removeFromSuperview()
+    coordinator.graphOverlay = nil
+    coordinator.annotationView = nil
     view.scene = nil
     coordinator.content = nil
     coordinator.cameraNode = nil
@@ -78,6 +91,14 @@ struct GripSceneView: UIViewRepresentable {
     coordinator.onZoneSelect = { _ in }
   }
   @MainActor final class Coordinator: NSObject {
+    weak var annotationView: SCNView?
+    var graphOverlay: GripGraphOverlay?
+    var displayLink: CADisplayLink?
+    var projectionDriver: GripProjectionDriver?
+    var annotationCandidates: [GripZoneID: [SCNVector3]] = [:]
+    var showingArcade = false
+    var showingAnnotations = false
+    var onZoneDismiss: () -> Void = {}
     var poseID: UUID?
     var showingBall = true
     var showingWireframe = false
@@ -90,6 +111,7 @@ struct GripSceneView: UIViewRepresentable {
     var severity: GripSeverityMap?
     var showingPressure = false
     var pressureWeights: [Double] = []
+    var planData: Data?
     var selected: GripZoneID?
     var onZoneSelect: (GripZoneID) -> Void = { _ in }
 
@@ -110,7 +132,9 @@ struct GripSceneView: UIViewRepresentable {
       }
     }
     @objc func selectZone(_ recognizer: UITapGestureRecognizer) {
-      guard let view = recognizer.view as? SCNView,
+      guard let view = recognizer.view as? SCNView else { return }
+      if graphOverlay?.point(inside: recognizer.location(in: view), with: nil) == true { return }
+      guard
         let hit = view.hitTest(
           recognizer.location(in: view),
           options: [.searchMode: SCNHitTestSearchMode.closest.rawValue, .categoryBitMask: 1]
@@ -148,33 +172,61 @@ struct GripSceneView: UIViewRepresentable {
     func update(
       _ view: SCNView, pose: GripPose, contacts: Bool, camera: GripCamera, reset: Int,
       plan: GripPlan, severity: GripSeverityMap?, selected: GripZoneID?,
-      showBall: Bool = true, wireframe: Bool = false, pressure: Bool = false
+      showBall: Bool = true, wireframe: Bool = false, pressure: Bool = false,
+      annotations: Bool = false, arcade: Bool = false
     ) {
-      let changed = poseID != pose.id || content == nil || showingBall != showBall
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = .sortedKeys
+      let planData = try? encoder.encode(plan)
+      let planChanged = self.planData != planData
+      let changed =
+        poseID != pose.id || content == nil || showingBall != showBall || showingArcade != arcade
       if changed {
         let scene = GripSceneBuilder.scene(pose: pose, showBall: showBall)
+        if arcade { GripSceneBuilder.applyArcadeStyle(scene, pose: pose) }
+        view.backgroundColor = arcade ? .clear : UIColor(white: 0.10, alpha: 1)
+        showingArcade = arcade
         view.scene = scene
         content = scene.rootNode.childNode(withName: "hand-and-ball", recursively: false)
         markerNode = scene.rootNode.childNode(withName: "contact-points", recursively: true)
         cameraNode = scene.rootNode.childNode(withName: "camera", recursively: false)
         view.pointOfView = cameraNode
-        view.defaultCameraController.target = SCNVector3(0, 60, 15)
+        view.defaultCameraController.target = SCNVector3(0, annotations ? 32 : 60, annotations ? 30 : 15)
         poseID = pose.id
         showingBall = showBall
         hand = scene.rootNode.childNode(withName: "measured-hand", recursively: true)
         baseGeometry = hand?.geometry
-        surface = (try? GripHandAsset.load()).map {
-          GripZoneSurface(pose: pose, gripPlan: plan, hand: $0)
-        }
-        pressureWeights =
-          (try? GripHandAsset.load()).map {
-            GripPoseSolver.pressureShadingWeights(hand: $0, pose: pose)
-          } ?? []
         indices = pose.indices
         vertices = pose.vertices
         self.reset = -1
       }
-      if changed || self.severity != severity || self.selected != selected
+      if changed || planChanged {
+        if let asset = try? GripHandAsset.load() {
+          surface = GripZoneSurface(pose: pose, gripPlan: plan, hand: asset)
+          pressureWeights = GripPoseSolver.pressureShadingWeights(
+            hand: asset, pose: pose, plan: plan)
+        }
+        annotationCandidates = Dictionary(
+          uniqueKeysWithValues: plan.zones.map { zone in
+            let target: SIMD3<Double>
+            if let finger = pose.fingers.first(where: { $0.finger == zone.zoneId.finger }) {
+              target =
+                zone.placement?.surface == .side || zone.placement?.surface == .curl
+                ? (finger.points[1] + finger.points[2]) / 2
+                : finger.points[2] * 0.4 + finger.points[3] * 0.6
+            } else {
+              target = zone.zoneId == .wrist ? SIMD3(0, -2, 0) : SIMD3(0, 48, 12)
+            }
+            let ids = pose.vertices.indices.filter { surface?.picking[$0] == zone.zoneId }
+              .sorted {
+                simd_distance_squared(pose.vertices[$0], target)
+                  < simd_distance_squared(pose.vertices[$1], target)
+              }.prefix(100)
+            return (zone.zoneId, ids.map { GripSceneBuilder.vector(pose.vertices[$0]) })
+          })
+        self.planData = planData
+      }
+      if changed || planChanged || self.severity != severity || self.selected != selected
         || showingPressure != pressure
       {
         if let surface, let baseGeometry {
@@ -197,6 +249,32 @@ struct GripSceneView: UIViewRepresentable {
         showingWireframe = wireframe
       }
       markerNode?.isHidden = !contacts || !showBall
+      if annotations {
+        if graphOverlay == nil {
+          let overlay = GripGraphOverlay(frame: view.bounds)
+          overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          view.addSubview(overlay)
+          graphOverlay = overlay
+          annotationView = view
+          let driver = GripProjectionDriver()
+          driver.coordinator = self
+          projectionDriver = driver
+          let link = CADisplayLink(target: driver, selector: #selector(GripProjectionDriver.tick))
+          link.preferredFramesPerSecond = 30
+          link.add(to: .main, forMode: .common)
+          displayLink = link
+        }
+        graphOverlay?.onSelect = { [weak self] zone in self?.onZoneSelect(zone) }
+        graphOverlay?.onClose = { [weak self] in self?.onZoneDismiss() }
+        graphOverlay?.configure(plan: plan, selected: selected)
+        graphOverlay?.isHidden = false
+        displayLink?.isPaused = false
+      } else {
+        graphOverlay?.isHidden = true
+        displayLink?.isPaused = true
+      }
+      if showingAnnotations != annotations { self.reset = -1 }
+      showingAnnotations = annotations
       if self.reset != reset {
         let sign: Float = pose.handedness == .left ? -1 : 1
         switch camera {
@@ -205,6 +283,9 @@ struct GripSceneView: UIViewRepresentable {
         case .palm: cameraNode?.position = SCNVector3(0, 75, 300)
         case .thumbSide: cameraNode?.position = SCNVector3(290 * sign, 90, 80)
         case .back: cameraNode?.position = SCNVector3(0, 85, -290)
+        }
+        if showBall && annotations, let cameraNode {
+          cameraNode.simdPosition *= 1.15
         }
         if !showBall {
           switch camera {
@@ -216,10 +297,32 @@ struct GripSceneView: UIViewRepresentable {
           }
           view.defaultCameraController.target = SCNVector3(0, 80, 0)
         }
-        cameraNode?.look(at: showBall ? SCNVector3(0, 60, 15) : SCNVector3(0, 80, 0))
+        cameraNode?.look(
+          at: showBall ? SCNVector3(0, annotations ? 32 : 60, annotations ? 30 : 15) : SCNVector3(0, 80, 0))
         view.pointOfView = cameraNode
         self.reset = reset
       }
+      if annotations { projectAnnotations() }
+    }
+    func projectAnnotations() {
+      guard let view = annotationView, let hand, let camera = view.pointOfView,
+        let overlay = graphOverlay, !overlay.isHidden
+      else { return }
+      let eye = SIMD3<Float>(camera.presentation.worldPosition)
+      var points: [GripZoneID: CGPoint] = [:]
+      for (zone, candidates) in annotationCandidates {
+        let world = candidates.map { hand.convertPosition($0, to: nil) }
+        guard
+          let anchor = world.min(by: {
+            simd_distance_squared(SIMD3<Float>($0), eye)
+              < simd_distance_squared(SIMD3<Float>($1), eye)
+          })
+        else { continue }
+        let screen = view.projectPoint(anchor)
+        guard screen.x.isFinite, screen.y.isFinite, screen.z >= 0, screen.z <= 1 else { continue }
+        points[zone] = CGPoint(x: CGFloat(screen.x), y: CGFloat(screen.y))
+      }
+      overlay.project(points)
     }
   }
 }
@@ -260,40 +363,6 @@ struct GripSceneView: UIViewRepresentable {
     let hand = SCNNode(geometry: skinGeometry)
     hand.name = "measured-hand"
     group.addChildNode(hand)
-    for finger in pose.fingers {
-      let direction = simd_normalize(finger.points[3] - finger.points[2])
-      guard let sourceHand,
-        let sourceA = sourceHand.joints.first(where: { $0.name == finger.finger.jointNames[2] }),
-        let sourceB = sourceHand.joints.first(where: { $0.name == finger.finger.jointNames[3] })
-      else { continue }
-      let a = SIMD3<Double>(sourceA.position[0], sourceA.position[1], sourceA.position[2])
-      let b = SIMD3<Double>(sourceB.position[0], sourceB.position[1], sourceB.position[2])
-      let restDirection = simd_normalize(b - a)
-      let restBack = SIMD3<Double>(0, 0, -1)
-      let restDorsal = simd_normalize(restBack - restDirection * simd_dot(restBack, restDirection))
-      let dorsal = simd_quatd(from: restDirection, to: direction).act(restDorsal)
-      let x = simd_normalize(simd_cross(direction, dorsal))
-      let basis = simd_float3x3(
-        columns: (SIMD3<Float>(x), SIMD3<Float>(direction), SIMD3<Float>(dorsal)))
-      let center = finger.points[2] + direction * (finger.lengths[2] * 0.52)
-      guard
-        let nailGeometry = nailSurface(
-          finger: finger, source: sourceHand,
-          indices: pose.indices, vertices: pose.vertices, center: center, basis: basis)
-      else { continue }
-      nailGeometry.materials = [SCNMaterial()]
-      let nail = SCNNode(geometry: nailGeometry)
-      nail.name = "\(finger.finger.rawValue)-nail"
-      nail.position = vector(center)
-      nail.simdOrientation = simd_quatf(basis)
-      nail.geometry?.firstMaterial?.lightingModel = .physicallyBased
-      nail.geometry?.firstMaterial?.diffuse.contents = UIColor(
-        red: 0.86, green: 0.79, blue: 0.73, alpha: 1)
-      nail.geometry?.firstMaterial?.roughness.contents = 0.45
-      // Nails belong to the same finger for picking; no severity paint on the nail plate.
-      nail.categoryBitMask = 4
-      group.addChildNode(nail)
-    }
     if showBall, let asset = try? GripBallAsset.load() {
       let ballGeometry = mesh(
         vertices: asset.vertices.map { SIMD3($0[0], $0[1], $0[2]) }, indices: asset.indices,
@@ -305,7 +374,7 @@ struct GripSceneView: UIViewRepresentable {
       material.roughness.contents = 0.85
       if let url = asset.normalTextureURL {
         material.normal.contents = UIImage(contentsOfFile: url.path)
-        material.normal.intensity = 0.35
+        material.normal.intensity = 1
       }
       if let url = asset.materialTextureURL, let map = UIImage(contentsOfFile: url.path) {
         material.roughness.contents = map
@@ -320,6 +389,18 @@ struct GripSceneView: UIViewRepresentable {
       let q = pose.ballRotation.vector
       ball.simdOrientation = simd_quatf(
         ix: Float(q.x), iy: Float(q.y), iz: Float(q.z), r: Float(q.w))
+      if let threads = raisedBallGeometry?.copy() as? SCNGeometry {
+        let threadMaterial = SCNMaterial()
+        threadMaterial.lightingModel = .physicallyBased
+        threadMaterial.diffuse.contents = UIColor(red: 0.65, green: 0.025, blue: 0.045, alpha: 1)
+        threadMaterial.roughness.contents = 0.85
+        threadMaterial.metalness.contents = 0
+        threads.materials = [threadMaterial]
+        let stitchNode = SCNNode(geometry: threads)
+        stitchNode.name = "original-ball-raised-stitches"
+        stitchNode.categoryBitMask = 2
+        ball.addChildNode(stitchNode)
+      }
       group.addChildNode(ball)
     }
     let markers = SCNNode()
@@ -374,77 +455,6 @@ struct GripSceneView: UIViewRepresentable {
       root.addChildNode(light)
     }
     return scene
-  }
-  /// Nail patches reuse the actual dorsal skin triangles. They cannot detach
-  /// from a finger when its dimensions or joint angles change.
-  static func nailSurface(
-    finger: GripFingerPose, source: GripHandAsset,
-    indices: [UInt32], vertices: [SIMD3<Double>], center: SIMD3<Double>, basis: simd_float3x3
-  ) -> SCNGeometry? {
-    let bones = finger.finger.jointNames.suffix(2).compactMap { name in
-      source.joints.firstIndex { $0.name == name }
-    }
-    let startArray = source.joints[bones[0]].position
-    let endArray = source.joints[bones[1]].position
-    let start = SIMD3<Double>(startArray[0], startArray[1], startArray[2])
-    let end = SIMD3<Double>(endArray[0], endArray[1], endArray[2])
-    let direction = simd_normalize(end - start)
-    let length = simd_length(end - start)
-    let back = SIMD3<Double>(0, 0, -1)
-    let dorsal = simd_normalize(back - direction * simd_dot(back, direction))
-    let across = simd_normalize(simd_cross(direction, dorsal))
-    var coordinates: [Int: SIMD3<Double>] = [:]
-    for i in source.vertices.indices where bones.reduce(0.0, { $0 + source.weights[i][$1] }) > 0.6 {
-      let a = source.vertices[i]
-      let p = SIMD3<Double>(a[0], a[1], a[2]) - start
-      let t = simd_dot(p, direction) / length
-      if (0.15...0.9).contains(t) {
-        coordinates[i] = SIMD3(simd_dot(p, across), t, simd_dot(p, dorsal))
-      }
-    }
-    guard let minX = coordinates.values.map(\.x).min(),
-      let maxX = coordinates.values.map(\.x).max(),
-      let minZ = coordinates.values.map(\.z).min(), let maxZ = coordinates.values.map(\.z).max(),
-      maxX - minX > 0.1
-    else { return nil }
-    let midpoint = (minX + maxX) / 2
-    let halfWidth = (maxX - minX) * 0.33
-    let selected = Set(
-      coordinates.compactMap { i, p -> Int? in
-        let x = (p.x - midpoint) / halfWidth
-        let y = (p.y - 0.53) / 0.29
-        return x * x + y * y < 1 && p.z > minZ + (maxZ - minZ) * 0.62 ? i : nil
-      })
-    var chosen: [UInt32] = []
-    var normals = Array(repeating: SIMD3<Double>.zero, count: vertices.count)
-    for i in stride(from: 0, to: indices.count, by: 3) {
-      let a = Int(indices[i])
-      let b = Int(indices[i + 1])
-      let c = Int(indices[i + 2])
-      let n = simd_cross(vertices[b] - vertices[a], vertices[c] - vertices[a])
-      normals[a] += n
-      normals[b] += n
-      normals[c] += n
-      if selected.contains(a) && selected.contains(b) && selected.contains(c) {
-        chosen.append(contentsOf: indices[i..<i + 3])
-      }
-    }
-    guard !chosen.isEmpty else { return nil }
-    let inverse = simd_transpose(basis)
-    var remap: [UInt32: UInt32] = [:]
-    var points: [SIMD3<Double>] = []
-    var triangles: [UInt32] = []
-    for index in chosen {
-      if remap[index] == nil {
-        let i = Int(index)
-        let n = normals[i]
-        let lifted = vertices[i] + (simd_length(n) > 1e-9 ? simd_normalize(n) * 0.04 : .zero)
-        remap[index] = UInt32(points.count)
-        points.append(SIMD3<Double>(inverse * SIMD3<Float>(lifted - center)))
-      }
-      triangles.append(remap[index]!)
-    }
-    return mesh(vertices: points, indices: triangles)
   }
   #if DEBUG
     /// Render actual mesh views into a review sheet; no image-generated stand-in.

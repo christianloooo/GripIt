@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0DD2A30CA93F4B1E0F8814C3 /* GripViewerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48AFCD17A01EBCAFB0B344EC /* GripViewerTests.swift */; };
 		4D41DD372D8E0FAD9BCA5A62 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 26B2A637F7DC4079D5AB78A5 /* PrivacyInfo.xcprivacy */; };
 		7C2AA8A20398C976F1405324 /* GripItApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3088441B6FE7960C118A2671 /* GripItApp.swift */; };
 		993A6F0DC816349E9715E5C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 28AAD1477D5182D66D4B03B3 /* Assets.xcassets */; };
@@ -22,12 +23,13 @@
 		AA000001000000000000000A /* GripItScannerCore in Frameworks */ = {isa = PBXBuildFile; productRef = AE0000010000000000000001 /* GripItScannerCore */; };
 		AA000001000000000000000B /* GripItScannerCore in Frameworks */ = {isa = PBXBuildFile; productRef = AE0000010000000000000002 /* GripItScannerCore */; };
 		AA000001000000000000000C /* MediaPipeTasksVision in Frameworks */ = {isa = PBXBuildFile; productRef = AF0000010000000000000001 /* MediaPipeTasksVision */; };
-		EC195AE464865746B133FDFF /* GripViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92EF2FA91A7060D876DDB6B7; };
-		B1BDD8AFBB00863D891C5F64 /* GripSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD39EF337B61DC4EB2498E3D; };
-		0DD2A30CA93F4B1E0F8814C3 /* GripViewerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48AFCD17A01EBCAFB0B344EC; };
-		F10000000000000000000011 /* TrainingFlowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
-		F10000000000000000000012 /* ThrowEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
-		F10000000000000000000013 /* FocusAssessmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003; };
+		B1BDD8AFBB00863D891C5F64 /* GripViewer/GripSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD39EF337B61DC4EB2498E3D /* GripViewer/GripSceneView.swift */; };
+		EC195AE464865746B133FDFF /* GripViewer/GripViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92EF2FA91A7060D876DDB6B7 /* GripViewer/GripViewerView.swift */; };
+		F10000000000000000000011 /* Training/TrainingFlowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001 /* Training/TrainingFlowModel.swift */; };
+		F10000000000000000000012 /* Training/ThrowEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* Training/ThrowEntryView.swift */; };
+		F10000000000000000000013 /* Training/FocusAssessmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003 /* Training/FocusAssessmentView.swift */; };
+		F20000000000000000000011 /* GripViewer/GripGraphOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* GripViewer/GripGraphOverlay.swift */; };
+		F20000000000000000000012 /* GripViewer/GripArcadeStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* GripViewer/GripArcadeStyle.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,8 +46,10 @@
 		26B2A637F7DC4079D5AB78A5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		28AAD1477D5182D66D4B03B3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3088441B6FE7960C118A2671 /* GripItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripItApp.swift; sourceTree = "<group>"; };
+		48AFCD17A01EBCAFB0B344EC /* GripViewerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewerTests.swift; sourceTree = "<group>"; };
 		7B594B6DB375E1BF3F23CDD6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8BCD5BC4CDFDF0918087C782 /* GripIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = GripIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		92EF2FA91A7060D876DDB6B7 /* GripViewer/GripViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripViewerView.swift; sourceTree = "<group>"; };
 		AB0000010000000000000001 /* TrueDepthCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueDepthCaptureService.swift; sourceTree = "<group>"; };
 		AB0000010000000000000002 /* HandLandmarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandLandmarkerService.swift; sourceTree = "<group>"; };
 		AB0000010000000000000003 /* DepthLandmarkMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthLandmarkMapper.swift; sourceTree = "<group>"; };
@@ -55,13 +59,13 @@
 		AB0000010000000000000007 /* SkeletonCoverageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonCoverageView.swift; sourceTree = "<group>"; };
 		AB0000010000000000000008 /* ScannerAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerAdapterTests.swift; sourceTree = "<group>"; };
 		AB0000010000000000000009 /* hand_landmarker.task */ = {isa = PBXFileReference; lastKnownFileType = file; name = hand_landmarker.task; path = ../../public/mediapipe/hand_landmarker.task; sourceTree = "<group>"; };
+		F10000000000000000000001 /* Training/TrainingFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/TrainingFlowModel.swift; sourceTree = "<group>"; };
+		F10000000000000000000002 /* Training/ThrowEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/ThrowEntryView.swift; sourceTree = "<group>"; };
+		F10000000000000000000003 /* Training/FocusAssessmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/FocusAssessmentView.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 /* GripViewer/GripGraphOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripGraphOverlay.swift; sourceTree = "<group>"; };
+		F20000000000000000000002 /* GripViewer/GripArcadeStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripArcadeStyle.swift; sourceTree = "<group>"; };
 		F219C0274590DA45E4BEF1EA /* GripItTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = GripItTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		92EF2FA91A7060D876DDB6B7 /* GripViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripViewerView.swift; sourceTree = "<group>"; };
-		FD39EF337B61DC4EB2498E3D /* GripSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripSceneView.swift; sourceTree = "<group>"; };
-		48AFCD17A01EBCAFB0B344EC /* GripViewerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewerTests.swift; sourceTree = "<group>"; };
-		F10000000000000000000001 /* TrainingFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/TrainingFlowModel.swift; sourceTree = "<group>"; };
-		F10000000000000000000002 /* ThrowEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/ThrowEntryView.swift; sourceTree = "<group>"; };
-		F10000000000000000000003 /* FocusAssessmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/FocusAssessmentView.swift; sourceTree = "<group>"; };
+		FD39EF337B61DC4EB2498E3D /* GripViewer/GripSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripSceneView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,11 +93,13 @@
 			isa = PBXGroup;
 			children = (
 				3088441B6FE7960C118A2671 /* GripItApp.swift */,
-				F10000000000000000000003 /* FocusAssessmentView.swift */,
-				F10000000000000000000002 /* ThrowEntryView.swift */,
-				F10000000000000000000001 /* TrainingFlowModel.swift */,
-				FD39EF337B61DC4EB2498E3D /* GripSceneView.swift */,
-				92EF2FA91A7060D876DDB6B7 /* GripViewerView.swift */,
+				F10000000000000000000003 /* Training/FocusAssessmentView.swift */,
+				F10000000000000000000002 /* Training/ThrowEntryView.swift */,
+				F10000000000000000000001 /* Training/TrainingFlowModel.swift */,
+				FD39EF337B61DC4EB2498E3D /* GripViewer/GripSceneView.swift */,
+				F20000000000000000000002 /* GripViewer/GripArcadeStyle.swift */,
+				F20000000000000000000001 /* GripViewer/GripGraphOverlay.swift */,
+				92EF2FA91A7060D876DDB6B7 /* GripViewer/GripViewerView.swift */,
 				AG0000010000000000000001 /* Scanner */,
 				AB0000010000000000000009 /* hand_landmarker.task */,
 				28AAD1477D5182D66D4B03B3 /* Assets.xcassets */,
@@ -256,11 +262,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				7C2AA8A20398C976F1405324 /* GripItApp.swift in Sources */,
-				F10000000000000000000013 /* FocusAssessmentView.swift in Sources */,
-				F10000000000000000000012 /* ThrowEntryView.swift in Sources */,
-				F10000000000000000000011 /* TrainingFlowModel.swift in Sources */,
-				B1BDD8AFBB00863D891C5F64 /* GripSceneView.swift in Sources */,
-				EC195AE464865746B133FDFF /* GripViewerView.swift in Sources */,
+				F10000000000000000000013 /* Training/FocusAssessmentView.swift in Sources */,
+				F10000000000000000000012 /* Training/ThrowEntryView.swift in Sources */,
+				F10000000000000000000011 /* Training/TrainingFlowModel.swift in Sources */,
+				B1BDD8AFBB00863D891C5F64 /* GripViewer/GripSceneView.swift in Sources */,
+				F20000000000000000000012 /* GripViewer/GripArcadeStyle.swift in Sources */,
+				F20000000000000000000011 /* GripViewer/GripGraphOverlay.swift in Sources */,
+				EC195AE464865746B133FDFF /* GripViewer/GripViewerView.swift in Sources */,
 				AA0000010000000000000001 /* TrueDepthCaptureService.swift in Sources */,
 				AA0000010000000000000002 /* HandLandmarkerService.swift in Sources */,
 				AA0000010000000000000003 /* DepthLandmarkMapper.swift in Sources */,
@@ -288,10 +296,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7L2S82588R;
+				DEVELOPMENT_TEAM = 93M2VB34JZ;
 				INFOPLIST_FILE = GripIt/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.jyshum.gripit.scanner;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gripit.scanner.dev93m2vb34jz;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -313,7 +324,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -324,7 +335,8 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jyshum.gripit.scanner.tests;
+				DEVELOPMENT_TEAM = 93M2VB34JZ;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gripit.scanner.dev93m2vb34jz.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -357,10 +369,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7L2S82588R;
+				DEVELOPMENT_TEAM = 93M2VB34JZ;
 				INFOPLIST_FILE = GripIt/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.jyshum.gripit.scanner;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gripit.scanner.dev93m2vb34jz;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -375,7 +390,8 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jyshum.gripit.scanner.tests;
+				DEVELOPMENT_TEAM = 93M2VB34JZ;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gripit.scanner.dev93m2vb34jz.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

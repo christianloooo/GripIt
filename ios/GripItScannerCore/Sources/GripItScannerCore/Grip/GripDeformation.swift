@@ -146,6 +146,25 @@ extension GripPoseSolver {
     pitch == .slider && [.index, .middle].contains(finger)
       || pitch == .circleChange && [.middle, .ring].contains(finger)
   }
+  /// Inner side of the index's middle/distal flesh, used by the circle change.
+  static func circleIndexSideIndices(hand: GripHandAsset) -> [Int] {
+    circleSideIndices(hand: hand, finger: .index)
+  }
+  static func circleSideIndices(hand: GripHandAsset, finger: GripFinger) -> [Int] {
+    let names = finger.jointNames
+    let bones = names.map { name in hand.joints.firstIndex { $0.name == name }! }
+    let start = gv(hand.joints[bones[1]].position)
+    let end = gv(hand.joints[bones[3]].position)
+    let direction = unit(end - start)
+    let lateral = unit(simd_cross(direction, SIMD3<Double>(0, 0, 1)))
+    return hand.vertices.indices.filter { i in
+      let offset = gv(hand.vertices[i]) - start
+      let along = simd_dot(offset, direction) / simd_distance(start, end)
+      return bones.dropFirst().reduce(0.0) { $0 + hand.weights[i][$1] } > 0.65
+        && (0.05...0.9).contains(along)
+        && simd_dot(offset, lateral) * (finger == .index ? -1 : 1) > 2
+    }
+  }
   public static func contactIndices(hand: GripHandAsset, finger: GripFinger, pitch: PitchGrip)
     -> [Int]
   {
@@ -222,6 +241,17 @@ extension GripPoseSolver {
       })
     let positions = ball.seams.map { gv($0.position) }
     let tangents = ball.seams.map { gv($0.tangent) }
+    let middleNormals = Dictionary(uniqueKeysWithValues: contacts.compactMap { finger
+      -> (GripFinger, SIMD3<Double>)? in
+      guard wrapsMiddle(finger.finger, pitch: pitch), relations[finger.finger] == .along else { return nil }
+      let nearest = middleContactIndices(hand: hand, finger: finger.finger).sorted {
+        abs(simd_distance(vertices[$0], center) - ballRadius)
+          < abs(simd_distance(vertices[$1], center) - ballRadius)
+      }.prefix(12)
+      guard !nearest.isEmpty else { return nil }
+      let point = nearest.reduce(SIMD3<Double>.zero) { $0 + vertices[$1] } / Double(nearest.count)
+      return (finger.finger, unit(point - center))
+    })
     // Construct the ball frame from the assigned stitching and real contacts.
     // This follows a deeper grip without jumping to another seam or retaining
     // an unrelated world-space ball rotation from the old pose.
@@ -278,7 +308,18 @@ extension GripPoseSolver {
         let direction = unit(finger.points[3] - finger.points[2])
         let tangent = unit(direction - normal * simd_dot(direction, normal))
         let dot = simd_dot(tangent, q.act(tangents[index]))
-        return value + nearest * 2 + 140
+        let middleError: Double
+        if let middle = middleNormals[finger.finger] {
+          let localMiddle = inverse.act(middle * ballRadius)
+          // The middle phalanx follows the same seam beyond the small
+          // fingertip anchor patch; it must not be pulled onto that patch.
+          let anchor = GripSeamTemplate.anchor(pitch, finger.finger)!
+          let distance = positions.filter { simd_distance($0, anchor) < 30 }.map {
+            simd_distance($0, localMiddle)
+          }.min() ?? 0
+          middleError = pow(max(0, distance - 2.5), 2)
+        } else { middleError = 0 }
+        return value + nearest * 2 + middleError * 8 + 140
           * (relations[finger.finger] == .across ? dot * dot : 1 - dot * dot)
       }
     }

@@ -54,7 +54,7 @@ struct ScannerView: View {
             Button("OK") { importError = nil }
         } message: { Text(importError ?? "") }
         .fullScreenCover(isPresented: $showGrips) {
-            if let profile = model.profile { GripViewerView(profile: profile) }
+            if let profile = model.profile { GripViewerView(profile: profile).id(try? HandProfileCodec.encode(profile)) }
         }
         .preferredColorScheme(usesLightLandingTheme ? .light : .dark)
         .animation(.easeInOut(duration: 0.2), value: model.phase)

@@ -72,8 +72,8 @@ Absent means step 2. Present means step 4. One component, no second renderer.
 ## The field only you can produce
 
 `reach` is what your solver says after fitting a pitch to a real `HandProfile`.
-A small hand often cannot close the index-to-thumb loop a changeup needs. A
-large hand buries the ball and loses the palm gap.
+A smaller hand may need a different ball position to maintain contact.
+The approved changeup keeps the thumb supporting underneath, with the index curled beside the ball.
 
 That field is the product. It is what separates GripIt from a static grip
 diagram. Step 4 reads it before giving advice, so nobody is told to press
@@ -133,15 +133,14 @@ The two-seam narrow area, working the seam on the pinky side.
 | `ring-side` | side | pinky-side | off | – | – | light | support |
 | `pinky` | none | off-ball | none | – | – | none | clear |
 | `thumb-pad` | pad | underside | off | – | `middle-pad` | light | support |
-| `palm` | **omit this zone entirely** | | | | | | |
+| `palm` | no placement | | | | | none | clear |
 | `wrist` | no placement | | | | | firm | drive |
 
 Only the middle finger finds stitching. The index rests on smooth leather
 beside it toward the thumb side, and the two may touch lightly. The thumb is
 allowed slightly off centre and should not need a hard pinch.
 
-Omit `palm`. The source states there is no compulsory palm gap for this grip,
-so step 4 stays silent about it rather than guessing.
+The palm is present with an explicit no-effort value. The grip uses a comfortable depth.
 
 ### changeup
 
@@ -153,13 +152,13 @@ Circle-change version. The ball sits deeper in the hand.
 | `middle-pad` | pad | top | along | 0 mm | – | medium | drive |
 | `ring-side` | **pad** | **top** | **along** | 0 mm | – | medium | **drive** |
 | `pinky` | **curl** | **pinky-side** | off | – | – | light | **support** |
-| `thumb-pad` | pad | **thumb-side** | off | – | `index-pad` | light | support |
+| `thumb-pad` | pad | **underside** | off | – | `middle-pad` + `ring-side` | light | support |
 | `palm` | no placement | | | | | **light** | **support** |
-| `wrist` | no placement | | | | | unspecified | unspecified |
+| `wrist` | no placement | | | | | medium | support |
 
 Three reversals from the fastballs. Middle and ring replace index and middle as
 the drivers. The index never goes over the top; it curls around the side and
-meets the thumb in a loop that should not be forced into a circle. The palm
+rests beside the thumb, which supports underneath. The palm
 goes from clearance to contact, because the ball settles into the hand.
 
 ## Instruction text
@@ -188,26 +187,26 @@ One sentence per zone that a player can act on.
 | slider | `pinky` | Relaxed beside the ring finger, clear of the ball |
 | slider | `thumb-pad` | Underneath and opposite, slightly off centre, no hard pinch |
 | slider | `wrist` | Release decides whether this behaves like a slider |
-| changeup | `index-pad` | Curled around the thumb-side surface, forming a loop with the thumb |
+| changeup | `index-pad` | Curled lightly around the thumb-side surface |
 | changeup | `middle-pad` | Pad along the thumb-side seam |
 | changeup | `ring-side` | Pad along the pinky-side seam. A principal contact here |
 | changeup | `pinky` | Wrapped lightly around the far side to stabilise |
-| changeup | `thumb-pad` | Wrapped around the lower thumb-side surface, closing the loop |
+| changeup | `thumb-pad` | Supports the lower centre with its fleshy pad |
 | changeup | `palm` | Let the ball settle comfortably into the hand |
 
-## Two weak spots, flagged honestly
+## Demo effort coverage
 
-**The wrist has no source.** `handInstructions.md` never mentions it, for any
-pitch. `PRODUCT.md` colours the wrist red in its worked example, so the zone has
-to exist, but its text is extrapolated and the changeup wrist is left
-unspecified rather than invented. It is also the zone most likely to go red in
-a demo, since spin-efficiency problems point there. Worth a real answer before
-it ships.
+The demo effort chart in `handInstructions.md` specifies every region for all
+four pitches. White means no effort. Deeper pine means more pressure or tension.
+Wrist stabilization covers the full circumference: firm for four-seam, two-seam,
+and slider; medium for changeup. Ring-side support, curled fingers, and changeup
+palm support also have visible regions. Every pitch includes the palm, including
+an explicit no-effort entry for slider.
 
-**Pressure values are a first pass.** The firmer four-seam middle finger comes
-from `PRODUCT.md`, not `handInstructions.md`. Everything else comes from
-`handInstructions.md`. All of it needs coach review before it is presented as
-validated advice, which the product brief already requires.
+Each zone records `highlight: {region, intensity, kind}`. `region` maps to the
+finger pad, finger side, curled finger, palm, or wrist; `kind` identifies pressure,
+support, or stabilization. This record drives the demo shading. Legacy payloads
+without it derive the same record from pressure, role, and placement.
 
 ## Out of scope
 

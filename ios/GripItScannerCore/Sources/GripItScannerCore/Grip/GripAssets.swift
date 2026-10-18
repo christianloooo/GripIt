@@ -85,6 +85,18 @@ public struct GripBallAsset: Decodable, Sendable {
       withExtension: (texture as NSString).pathExtension)
   }
 }
+/// Continuous, constant-radius threads recovered from the original ball's UV strokes.
+public struct GripBallStitchAsset: Decodable, Sendable {
+  public let vertices: [[Double]]
+  public let normals: [[Double]]
+  public let indices: [UInt32]
+  public let stitchCount: Int
+  public let threadRadiusMm: Double
+  public let threadCenterRadiusMm: Double
+  public let sourceSHA256: String
+  private static let cached: Result<Self, Error> = Result { try GripResources.decode("grip-baseball-stitches") }
+  public static func load() throws -> Self { try cached.get() }
+}
 enum GripResources {
   static func decode<T: Decodable>(_ name: String) throws -> T {
     guard let url = Bundle.module.url(forResource: name, withExtension: "json") else {

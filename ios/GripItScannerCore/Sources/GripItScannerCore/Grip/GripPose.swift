@@ -53,7 +53,6 @@ public struct GripFitDiagnostics: Sendable {
   public var adjustedProportions = false
   public var needsReview: Bool {
     maximumContactGapMm > 6 || maximumSkinPenetrationMm > 3 || maximumPadSurfaceGapMm > 3
-      || (loopGapMm ?? 0) > 5
       || seams.contains(where: \.needsReview)
   }
 }
@@ -86,7 +85,7 @@ public enum GripPoseSolver {
         let f = rig.finger
         let r = ballRadius + rig.radius * (pitch.upperContacts.contains(f) ? 0.6 : 0.8)
         if pitch == .circleChange && f == .index {
-          return center + SIMD3(24, -27, 13)
+          return center + SIMD3(34, 0, -9)
         }
         let direction: SIMD3<Double>
         switch f {
@@ -95,8 +94,8 @@ public enum GripPoseSolver {
         case .ring:
           if pitch != .circleChange {
             var tucked = rig
-            tucked.angles = rig.preferredCurl ?? [0.9, 1.6, 1.1]
-            tucked.yaw = 0.18
+            tucked.angles = rig.preferredCurl ?? [0.85, 1.1, 0.7]
+            tucked.yaw = 0.08
             tucked.opposition = -0.08
             return forward(tucked).last!
           }
@@ -104,12 +103,12 @@ public enum GripPoseSolver {
         case .pinky:
           if pitch != .circleChange {
             var relaxed = rig
-            relaxed.angles = rig.preferredCurl ?? [1.1, 1.5, 1.0]
-            relaxed.yaw = 0.22
+            relaxed.angles = rig.preferredCurl ?? [0.9, 1.15, 0.7]
+            relaxed.yaw = 0.12
             relaxed.opposition = -0.08
             return forward(relaxed).last!
           }
-          direction = SIMD3(-0.90, -0.28, 0.32)
+          direction = SIMD3(-0.97, 0, -0.25)
         case .thumb:
           // Seed the thumb beneath the principal contacts. Actual skin support
           // is then fitted in the lower, central quadrant of the ball.
@@ -169,14 +168,26 @@ public enum GripPoseSolver {
     if pitch != .circleChange {
       for i in fingers.indices where fingers[i].finger == .ring || fingers[i].finger == .pinky {
         fingers[i].angles = fingers[i].preferredCurl!
-        fingers[i].yaw = fingers[i].finger == .ring ? 0.32 : 0.22
+        fingers[i].yaw = fingers[i].finger == .ring ? 0.08 : 0.12
         fingers[i].opposition = -0.08
         update(&fingers[i], center: center)
       }
     }
     for i in fingers.indices where pitch.upperContacts.contains(fingers[i].finger) {
-      fingers[i].angles = [0.8, 0.8, 0.6]
+      fingers[i].angles = pitch == .circleChange ? [0.45, 1.05, 0.7] : [0.8, 0.8, 0.6]
       fingers[i].yaw = fingers[i].finger == .ring ? 0.08 : 0
+      fingers[i].opposition = 0
+      update(&fingers[i], center: center)
+    }
+    if pitch == .circleChange, let i = fingers.firstIndex(where: { $0.finger == .index }) {
+      fingers[i].angles = [1.05, 1.05, 0.75]
+      fingers[i].yaw = -0.25
+      fingers[i].opposition = 0
+      update(&fingers[i], center: center)
+    }
+    if pitch == .circleChange, let i = fingers.firstIndex(where: { $0.finger == .pinky }) {
+      fingers[i].angles = [0.65, 1.0, 0.7]
+      fingers[i].yaw = 0.12
       fingers[i].opposition = 0
       update(&fingers[i], center: center)
     }
@@ -186,7 +197,26 @@ public enum GripPoseSolver {
       fingers = refined.fingers
       center = refined.center
     }
-    let uncompressed = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
+    var uncompressed = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
+    if pitch == .circleChange {
+      // A sparse fitting sample can miss a small knuckle/palm collision.
+      // Validate every actual vertex and refine using the deepest witnesses.
+      var witnesses = Set<Int>()
+      for _ in 0..<2 {
+        let colliding = uncompressed.indices.filter {
+          ballRadius - simd_distance(uncompressed[$0], center) > 2.7
+        }.sorted {
+          simd_distance_squared(uncompressed[$0], center) < simd_distance_squared(uncompressed[$1], center)
+        }.prefix(256)
+        if colliding.isEmpty { break }
+        witnesses.formUnion(colliding)
+        let refined = try fitAuthoredSurface(hand: hand, fingers: fingers, scale: scale,
+          center: center, pitch: pitch, collisionWitnesses: witnesses.sorted())
+        fingers = refined.fingers
+        center = refined.center
+        uncompressed = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
+      }
+    }
     let vertices = compressContacts(
       hand: hand, vertices: uncompressed, fingers: fingers,
       center: center, pitch: pitch)
@@ -225,9 +255,8 @@ public enum GripPoseSolver {
           abs(simd_distance($0, center) - ballRadius)
         }.min() ?? Double.infinity
       }.max() ?? 0
-    // This photo-guided changeup wraps the index beside the ball. A closed
-    // index–thumb circle is optional; it must never displace the supporting thumb.
-    let loop: Double? = nil
+    let loop: Double? = pitch == .circleChange
+      ? padGap(hand: hand, vertices: vertices, first: .index, second: .thumb) : nil
     return GripPose(
       pitch: pitch, handedness: profile.handedness, ballCenter: center, ballRotation: rotation,
       fingers: fingers, vertices: vertices, indices: hand.indices,
@@ -399,13 +428,14 @@ public enum GripPoseSolver {
           contact: pitch.upperContacts.contains(f) || f == .thumb
             || (pitch == .circleChange && f == .pinky),
           preferredCurl: pitch != .circleChange && f == .ring
-            ? [0.9, 1.6, 1.1]
+            ? [0.85, 1.1, 0.7]
             : pitch != .circleChange && f == .pinky
-              ? [1.1, 1.5, 1.0]
+              ? [0.9, 1.15, 0.7]
               : pitch == .circleChange && f == .index ? [1.2, 1.6, 1.05] : nil,
           minimumKnuckleCurl: pitch == .circleChange && f == .index
-            ? 1.0 : pitch.upperContacts.contains(f) ? 0.65 : -0.15,
-          spreadLimit: f == .middle || (f == .index && pitch != .circleChange) ? 0.18 : 0.4))
+            ? 0.65 : pitch.upperContacts.contains(f) ? (pitch == .circleChange ? 0.35 : 0.65) : -0.15,
+          spreadLimit: f == .index && pitch == .circleChange ? 0.7
+            : f == .middle || f == .index ? 0.18 : 0.4))
     }
     return (fingers, scale, width, length, measuredRoots, limited)
   }
@@ -445,13 +475,6 @@ public enum GripPoseSolver {
     } else {
       rig.angles[0] = min(1.45, max(rig.minimumKnuckleCurl, rig.angles[0]))
       rig.angles[1] = min(1.65, max(0, rig.angles[1]))
-      if rig.preferredCurl != nil && [.ring, .pinky].contains(rig.finger) {
-        // Photo-reference pose: fold support fingertips back toward the palm,
-        // rather than satisfying clearance with extended fingers beside the ball.
-        rig.angles[0] = max(rig.finger == .ring ? 0.8 : 0.9, rig.angles[0])
-        rig.angles[1] = max(rig.finger == .ring ? 1.4 : 1.3, rig.angles[1])
-        rig.angles[2] = max(0.85, rig.angles[2])
-      }
       rig.angles[2] = min(
         1.15,
         min(
@@ -459,7 +482,7 @@ public enum GripPoseSolver {
           max(rig.angles[1] * 0.35, rig.angles[2])))
       rig.yaw = min(rig.spreadLimit, max(-rig.spreadLimit, rig.yaw))
       rig.opposition = min(0.12, max(-0.12, rig.opposition))
-      if rig.minimumKnuckleCurl > 0 {
+      if rig.minimumKnuckleCurl > 0 && rig.preferredCurl == nil {
         rig.opposition = 0
         if rig.finger == .index { rig.yaw = max(0, rig.yaw) }
         if rig.finger == .middle { rig.yaw = min(0, rig.yaw) }

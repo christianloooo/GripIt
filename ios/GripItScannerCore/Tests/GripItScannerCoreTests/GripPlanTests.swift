@@ -12,14 +12,19 @@ final class GripPlanTests: XCTestCase {
       ["index-pad", "middle-pad", "ring-side", "pinky", "thumb-pad", "palm", "wrist"])
     for pitch in PitchGrip.allCases {
       let zones = pitch.zoneTemplates
-      XCTAssertEqual(Set(zones.map(\.zoneId)).count, pitch == .slider ? 6 : 7)
-      XCTAssertEqual(zones.contains { $0.zoneId == .palm }, pitch != .slider)
+      XCTAssertEqual(Set(zones.map(\.zoneId)).count, 7)
+      XCTAssertTrue(zones.contains { $0.zoneId == .palm })
       let thumb = try XCTUnwrap(zones.first { $0.zoneId == .thumbPad })
       XCTAssertEqual(
         thumb.placement?.opposes,
         pitch == .circleChange
           ? [.middlePad, .ringSide] : pitch == .slider ? [.middlePad] : [.indexPad, .middlePad])
-      XCTAssertEqual(zones.first { $0.zoneId == .wrist }?.extrapolated, true)
+      for zone in zones {
+        XCTAssertNotNil(
+          zone.highlight, "Every demo instruction must declare how its surface highlights")
+      }
+      XCTAssertEqual(zones.first { $0.zoneId == .wrist }?.highlight?.region, .wrist)
+      XCTAssertEqual(zones.first { $0.zoneId == .wrist }?.highlight?.kind, .stabilization)
       for zone in zones where zone.placement?.seam == .across || zone.placement?.seam == .along {
         XCTAssertEqual(zone.placement?.seamOffsetMm, 0)
       }
@@ -34,12 +39,29 @@ final class GripPlanTests: XCTestCase {
     XCTAssertEqual(slider.first { $0.zoneId == .indexPad }?.placement?.seam, .beside)
     XCTAssertEqual(slider.first { $0.zoneId == .indexPad }?.role, .support)
     let change = PitchGrip.circleChange.zoneTemplates
-    XCTAssertNil(change.first { $0.zoneId == .wrist }?.pressure)
-    XCTAssertNil(change.first { $0.zoneId == .wrist }?.role)
+    XCTAssertEqual(change.first { $0.zoneId == .wrist }?.pressure, .medium)
+    XCTAssertEqual(change.first { $0.zoneId == .wrist }?.role, .support)
     XCTAssertEqual(change.first { $0.zoneId == .ringSide }?.placement?.surface, .pad)
     XCTAssertEqual(change.first { $0.zoneId == .ringSide }?.role, .drive)
     XCTAssertEqual(change.first { $0.zoneId == .indexPad }?.placement?.surface, .curl)
     XCTAssertEqual(change.first { $0.zoneId == .palm }?.role, .support)
+  }
+  func testSerializedHighlightDrivesIntensityAndLegacyPlansStillDecode() throws {
+    var payload: [String: Any] = [
+      "zoneId": "wrist", "instruction": "Keep the wrist steady", "pressure": "none",
+      "role": "support", "reach": "comfortable",
+      "highlight": ["region": "wrist", "intensity": "medium", "kind": "stabilization"],
+    ]
+    let record = try JSONDecoder().decode(
+      GripZonePlan.self, from: JSONSerialization.data(withJSONObject: payload))
+    XCTAssertEqual(record.highlight?.intensity, .medium)
+    XCTAssertEqual(record.pressure, .medium, "The new highlight record is authoritative")
+    payload.removeValue(forKey: "highlight")
+    payload["pressure"] = "firm"
+    let legacy = try JSONDecoder().decode(
+      GripZonePlan.self, from: JSONSerialization.data(withJSONObject: payload))
+    XCTAssertEqual(legacy.highlight?.region, .wrist)
+    XCTAssertEqual(legacy.highlight?.intensity, .firm)
   }
   func testSeverityUsesNumericMapAndDoesNotConfuseMissingWithGreen() throws {
     let map = GripSeverityMap([
@@ -93,6 +115,10 @@ final class GripPlanTests: XCTestCase {
       plan.zones.map(\.zoneId))
     let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     XCTAssertEqual((json["zones"] as? [[String: Any]])?.first?["title"] as? String, "Index finger")
+    let encodedZones = try XCTUnwrap(json["zones"] as? [[String: Any]])
+    XCTAssertTrue(encodedZones.allSatisfy { $0["highlight"] is [String: Any] })
+    let decoded = try JSONDecoder().decode(GripPlan.self, from: data)
+    XCTAssertEqual(decoded.zones.map(\.highlight), plan.zones.map(\.highlight))
   }
   func testEveryApplicableZoneOwnsRealSurfaceAndSelectableFaces() throws {
     let hand = try GripHandAsset.load()
@@ -114,10 +140,34 @@ final class GripPlanTests: XCTestCase {
             zone.zoneId)
         }
       }
-      if pitch == .slider {
-        XCTAssertFalse(surface.picking.contains(.palm))
-        let palm = GripZoneSurface.zones.firstIndex(of: .palm)!
-        XCTAssertTrue(surface.weights.allSatisfy { $0[palm] == 0 })
+      // Audit each instruction in isolation: another nearby green zone cannot
+      // accidentally make a missing wrist, side, curl, or palm instruction pass.
+      let encoded = try JSONEncoder().encode(plan)
+      let original = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+      for zone in plan.zones where zone.pressure != GripPressure.none {
+        var payload = original
+        var zones = try XCTUnwrap(payload["zones"] as? [[String: Any]])
+        for i in zones.indices where zones[i]["zoneId"] as? String != zone.zoneId.rawValue {
+          zones[i]["pressure"] = "none"
+          var highlight = zones[i]["highlight"] as! [String: Any]
+          highlight["intensity"] = "none"
+          zones[i]["highlight"] = highlight
+        }
+        payload["zones"] = zones
+        let isolated = try JSONDecoder().decode(
+          GripPlan.self, from: JSONSerialization.data(withJSONObject: payload))
+        let weights = GripPoseSolver.pressureShadingWeights(hand: hand, pose: pose, plan: isolated)
+        XCTAssertGreaterThan(weights.max()!, 0.1, "Missing highlight: \(pitch) \(zone.zoneId)")
+        XCTAssertGreaterThan(
+          weights.filter { $0 > 0.08 }.count, 30, "Instruction needs a visible surface region")
+        if zone.zoneId == .wrist {
+          let minimum = hand.vertices.indices.filter { hand.vertices[$0][1] < -8 }.map {
+            weights[$0]
+          }.min()!
+          XCTAssertGreaterThan(
+            minimum, pitch == .circleChange ? 0.6 : 0.95,
+            "The entire wrist circumference must highlight, including the back")
+        }
       }
       let wrist = GripZoneSurface.zones.firstIndex(of: .wrist)!
       let palm = GripZoneSurface.zones.firstIndex(of: .palm)!

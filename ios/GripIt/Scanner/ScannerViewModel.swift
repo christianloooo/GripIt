@@ -34,6 +34,18 @@ final class ScannerViewModel: ObservableObject {
     private var generation = UUID()
     var captureSession: AVCaptureSession { capture.session }
 
+    init() {
+        if let saved = SavedHandProfile.latest() {
+            profile = saved
+            selectedHand = saved.handedness
+            phase = .complete
+            progress = 1
+            currentView = nil
+            message = "Your saved hand measurements are ready."
+            diagnostics = "Saved hand profile · scan again to replace it"
+        }
+    }
+
     func start(hand: Handedness) {
         reset()
         selectedHand = hand
@@ -157,6 +169,9 @@ final class ScannerViewModel: ObservableObject {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("gripit-hand-\(profile.profileId).json")
             try HandProfileCodec.encode(profile).write(to: file, options: .atomic)
+            if !profile.capture.method.localizedCaseInsensitiveContains("sample") {
+                try SavedHandProfile.save(profile)
+            }
             exportURL = file
         } catch { message = "Could not export the profile: \(error.localizedDescription)" }
     }
@@ -585,5 +600,35 @@ private extension UIImage.Orientation {
         case .left: "270°"
         default: "mirrored"
         }
+    }
+}
+
+/// One local profile per app installation. Demo samples never replace a real scan.
+enum SavedHandProfile {
+    static var url: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("GripIt/hand-profile.json")
+    }
+    static func load(from file: URL = url) -> HandProfile? {
+        guard let data = try? Data(contentsOf: file),
+              let profile = try? HandProfileCodec.decode(data),
+              !profile.capture.method.localizedCaseInsensitiveContains("sample") else { return nil }
+        return profile
+    }
+    static func latest(exportDirectory: URL = FileManager.default.temporaryDirectory, savedFile: URL = url) -> HandProfile? {
+        if let saved = load(from: savedFile) { return saved }
+        // Upgrade earlier builds that exported scans only into the app's tmp folder.
+        let files = (try? FileManager.default.contentsOfDirectory(at: exportDirectory,
+            includingPropertiesForKeys: nil)) ?? []
+        let recovered = files.filter {
+            $0.lastPathComponent.hasPrefix("gripit-hand-") && $0.pathExtension == "json"
+        }.compactMap { load(from: $0) }.max { $0.createdAt < $1.createdAt }
+        if let recovered { try? save(recovered, to: savedFile) }
+        return recovered
+    }
+    static func save(_ profile: HandProfile, to file: URL = url) throws {
+        guard !profile.capture.method.localizedCaseInsensitiveContains("sample") else { return }
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try HandProfileCodec.encode(profile).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }

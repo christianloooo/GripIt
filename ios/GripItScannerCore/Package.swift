@@ -14,7 +14,10 @@ let package = Package(
     targets: [
         .target(
             name: "GripItScannerCore",
-            resources: [.process("Resources")]
+            resources: [.process("Resources")],
+            // The numerical fitter needs optimized loops even when the app is run
+            // from Xcode's Debug scheme. Keep all mesh/contact work unchanged.
+            swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]
         ),
         .executableTarget(
             name: "GripItScannerCoreChecks",
