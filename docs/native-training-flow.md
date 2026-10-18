@@ -30,10 +30,10 @@ For local testing, start the existing Step 4 worktree's server:
 
 ```sh
 cd /Users/jshum/Desktop/code-folders/gripit/.worktrees/step-4-assessment
-npm run dev -- --port 5173 --strictPort
+env __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=Jareds-MacBook-Pro.local npm run dev -- --port 5173 --strictPort
 ```
 
-The key stays in that server's ignored `.env`. This test copy has a local Debug
+The hostname allow-list is required: without it Vite rejects phone requests with HTTP 403. Only this Mac hostname is added. The key stays in that server's ignored `.env`. This test copy has a local Debug
 URL of `http://Jareds-MacBook-Pro.local:5173`. Keep the iPhone and Mac on the same
 network, allow local network access when prompted, and keep the server running.
 The machine-specific URL and signing settings are not part of shared commits.
