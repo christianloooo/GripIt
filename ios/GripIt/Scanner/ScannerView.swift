@@ -186,23 +186,18 @@ struct ScannerView: View {
                         .font(.title2.bold())
                 }
                 Spacer()
-                Button {
-                    model.showGatePanel.toggle()
+                Menu {
+                    Button("Start over", systemImage: "arrow.counterclockwise") {
+                        model.reset()
+                    }
+                    Toggle("Scan details", isOn: $model.showGatePanel)
                 } label: {
-                    Image(systemName: model.showGatePanel
-                        ? "stethoscope.circle.fill" : "stethoscope.circle")
-                        .font(.title3)
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title2)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
-                .buttonStyle(.bordered)
                 .tint(.white)
-                .accessibilityLabel(model.showGatePanel
-                    ? "Hide scan gate diagnostics" : "Show scan gate diagnostics")
-                Button("Start over") {
-                    model.reset()
-                }
-                .font(.subheadline.weight(.semibold))
-                .buttonStyle(.bordered)
-                .tint(.white)
+                .accessibilityLabel("Scan options")
             }
 
             HStack(spacing: 6) {
@@ -241,15 +236,15 @@ struct ScannerView: View {
     }
 
     private var scanFooter: some View {
-        HStack(alignment: .bottom, spacing: 14) {
+        HStack(alignment: .bottom, spacing: 12) {
             SkeletonCoverageView(fractions: model.jointFractions)
-                .frame(width: 150)
-                .padding(12)
-                .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 16))
+                .frame(width: 64)
+                .padding(8)
+                .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Overall")
+                    Text("Scan progress")
                     Spacer()
                     Text("\(Int(clampedProgress * 100))%")
                         .monospacedDigit()
@@ -259,16 +254,6 @@ struct ScannerView: View {
                 ProgressView(value: clampedProgress)
                     .tint(accent)
 
-                Text(diagnosticsSummary)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text("Accepted \(model.acceptedViewFrames)/8 frames")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Text(model.trackingStatus)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             .padding(14)
             .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 16))
@@ -501,11 +486,6 @@ struct ScannerView: View {
             return "arrow.triangle.2.circlepath"
         }
         return nil
-    }
-
-    private var diagnosticsSummary: String {
-        let distance = model.distanceCm.map { " • \(Int($0.rounded())) cm" } ?? ""
-        return "Depth \(model.validDepthCount)/21\(distance)"
     }
 
     private var clampedProgress: Double {

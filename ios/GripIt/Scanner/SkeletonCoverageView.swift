@@ -9,88 +9,68 @@ struct SkeletonCoverageView: View {
     private let completeColor = Color.mint
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Depth samples this view")
-                .font(.caption.weight(.semibold))
+        Canvas { context, size in
+            let locations = Self.locations.mapValues {
+                CGPoint(x: $0.x * size.width, y: $0.y * size.height)
+            }
 
-            Canvas { context, size in
-                let locations = Self.locations.mapValues {
-                    CGPoint(x: $0.x * size.width, y: $0.y * size.height)
-                }
+            for (start, end) in Self.edges {
+                guard let first = locations[start], let second = locations[end] else { continue }
+                var segment = Path()
+                segment.move(to: first)
+                segment.addLine(to: second)
+                context.stroke(segment, with: .color(missingColor), lineWidth: 2)
 
-                for (start, end) in Self.edges {
-                    guard let first = locations[start], let second = locations[end] else { continue }
-                    var segment = Path()
-                    segment.move(to: first)
-                    segment.addLine(to: second)
-                    context.stroke(segment, with: .color(missingColor), lineWidth: 4)
-
-                    let fraction = min(progress(for: start), progress(for: end))
-                    if fraction > 0 {
-                        context.stroke(
-                            segment,
-                            with: .color(fraction >= 1 ? completeColor : samplingColor),
-                            lineWidth: 3
-                        )
-                    }
-                }
-
-                for name in HandLandmarkName.allCases {
-                    guard let point = locations[name] else { continue }
-                    let radius = max(4, min(size.width, size.height) * 0.035)
-                    let circleRect = CGRect(
-                        x: point.x - radius,
-                        y: point.y - radius,
-                        width: radius * 2,
-                        height: radius * 2
+                let fraction = min(progress(for: start), progress(for: end))
+                if fraction > 0 {
+                    context.stroke(
+                        segment,
+                        with: .color(fraction >= 1 ? completeColor : samplingColor),
+                        lineWidth: 2
                     )
-                    let circle = Path(ellipseIn: circleRect)
-                    context.fill(circle, with: .color(Color.black.opacity(0.72)))
-
-                    let fraction = progress(for: name)
-                    if fraction > 0 {
-                        let fillRect = CGRect(
-                            x: circleRect.minX,
-                            y: circleRect.maxY - circleRect.height * fraction,
-                            width: circleRect.width,
-                            height: circleRect.height * fraction
-                        )
-                        context.drawLayer { layer in
-                            layer.clip(to: Path(fillRect))
-                            layer.fill(
-                                circle,
-                                with: .color(fraction >= 1 ? completeColor : samplingColor)
-                            )
-                        }
-                    }
-                    context.stroke(circle, with: .color(missingColor), lineWidth: 1.5)
                 }
             }
-            .aspectRatio(0.72, contentMode: .fit)
-            .accessibilityElement()
-            .accessibilityLabel("Current view skeletal coverage")
-            .accessibilityValue(accessibilitySummary)
 
-            VStack(alignment: .leading, spacing: 3) {
-                legendItem("Missing", color: missingColor)
-                legendItem("Sampling", color: samplingColor)
-                legendItem("Complete", color: completeColor)
+            for name in HandLandmarkName.allCases {
+                guard let point = locations[name] else { continue }
+                let radius = max(2, min(size.width, size.height) * 0.035)
+                let circleRect = CGRect(
+                    x: point.x - radius,
+                    y: point.y - radius,
+                    width: radius * 2,
+                    height: radius * 2
+                )
+                let circle = Path(ellipseIn: circleRect)
+                context.fill(circle, with: .color(Color.black.opacity(0.72)))
+
+                let fraction = progress(for: name)
+                if fraction > 0 {
+                    let fillRect = CGRect(
+                        x: circleRect.minX,
+                        y: circleRect.maxY - circleRect.height * fraction,
+                        width: circleRect.width,
+                        height: circleRect.height * fraction
+                    )
+                    context.drawLayer { layer in
+                        layer.clip(to: Path(fillRect))
+                        layer.fill(
+                            circle,
+                            with: .color(fraction >= 1 ? completeColor : samplingColor)
+                        )
+                    }
+                }
+                context.stroke(circle, with: .color(missingColor), lineWidth: 1)
             }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
+        .aspectRatio(0.72, contentMode: .fit)
+        .accessibilityElement()
+        .accessibilityLabel("Current view skeletal coverage")
+        .accessibilityValue(accessibilitySummary)
+
     }
 
     private func progress(for name: HandLandmarkName) -> Double {
         min(max(fractions[name] ?? 0, 0), 1)
-    }
-
-    private func legendItem(_ label: String, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(label)
-                .lineLimit(1)
-        }
     }
 
     private var accessibilitySummary: String {

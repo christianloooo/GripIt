@@ -26,7 +26,7 @@ final class ScannerViewModel: ObservableObject {
     @Published var profile: HandProfile?
     @Published var diagnostics = ""
     @Published var gate = ScanGateReport()
-    @Published var showGatePanel = true
+    @Published var showGatePanel = false
     @Published var exportURL: URL?
 
     private static let log = Logger(subsystem: "com.gripit.scanner", category: "gates")
