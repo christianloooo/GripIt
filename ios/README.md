@@ -1,52 +1,72 @@
-# GripIt for iOS
+# GripIt TrueDepth scanner
 
-A SwiftUI application for iPhone and iPad, targeting iOS 17+. It embeds the existing React/Three.js studio in WKWebView. The renderer, grip solver, scan quality checks, and MediaPipe worker remain TypeScript; this is a SwiftUI/WebKit hybrid, not a complete rewrite of those systems in Swift.
+This native SwiftUI demo uses the front TrueDepth camera for metric hand measurements. MediaPipe identifies 21 hand landmarks. `GripItScannerCore` handles projection, guided coverage, aggregation, and `HandProfile` JSON.
 
-All website assets, hand/baseball models, textures, MediaPipe WASM, and the detection model are copied into the app bundle. No development server or internet connection is needed when running the installed app. A Swift `Network` server bound to `127.0.0.1:49173` serves only the bundled files; it is not accessible over Wi-Fi. Its stable origin preserves WebKit's local failure log between launches.
+Camera and depth frames are processed in memory. The app does not save photos, video, or depth maps.
 
-## Run on your iPhone
+## Requirements
 
-From the repository root:
+- A Mac with Xcode.
+- iOS 17 or later.
+- A physical iPhone with a front TrueDepth camera. Device validation targets iPhone 17.
+- An Apple ID added to Xcode. A free Personal Team is enough for direct device installation.
 
-```sh
-npm ci
-npm run ios:prepare
-npm run ios:open
-```
+The iOS app does not require `npm`, `npm run ios:prepare`, a local web server, or generated web assets.
 
-In Xcode:
+## Run on iPhone 17
 
-1. Select the **GripIt** target, then **Signing & Capabilities**.
-2. Select your Apple development team. Change `com.christianloooo.gripit` if your team needs a different bundle identifier.
-3. Select a connected iPhone or an iOS simulator and press **Run**.
-4. On a real iPhone, allow the camera when starting a scan. Place an open hand and regulation baseball beside each other at the same depth.
+1. Connect and unlock the iPhone.
+2. Open `ios/GripIt.xcodeproj` in Xcode.
+3. Wait for Swift Package Manager to resolve `GripItScannerCore` and `MediaPipeTasksVision`.
+4. Select the **GripIt** target, then **Signing & Capabilities**.
+5. Select your Personal Team. Change the bundle identifier only if your team reports a conflict.
+6. Select the connected iPhone 17 as the run destination.
+7. Press **Run**.
+8. Allow camera access when prompted.
 
-Re-run `npm run ios:prepare` after changing the website. `ios/GripIt/Web` is generated and ignored by Git; the Xcode project, Swift sources, icon, and licenses in the web bundle are retained. Missing generated assets produce a build/resource error; prepare them before opening/building from a fresh checkout.
+The project intentionally has no committed development team. Its default bundle identifiers are:
 
-## Native integration
+- App: `com.jyshum.gripit.scanner`
+- Tests: `com.jyshum.gripit.scanner.tests`
 
-- SwiftUI hosts the app, loading state, recovery screen, and native share sheet.
-- `WKUIDelegate` grants camera capture only to the app's own loopback origin and only after iOS camera authorization. Microphone capture requests are denied.
-- **Export configuration** and **Download log** open the iOS share sheet; choose **Save to Files**, AirDrop, or another destination. JSON exports are also written to the app's private Documents directory.
-- External links open in the system browser. The privileged export bridge accepts only messages from the bundled main frame.
-- Video remains on-device. Existing scan/model rejection checks and failure logging are shared with the website. Phone scan estimates retain the website's measurement limits.
+The simulator has no TrueDepth camera. Use it only for non-camera UI checks. Final validation must run on the physical device.
 
-Camera capture on a physical iPhone still needs a real-device test; the simulator test exercises a generated blank frame, not a camera or real hand scan. Native sharing is implemented but requires interactive device validation. No signing team, App Store upload, or TestFlight release is configured.
+## Scan flow
 
-Apple API references: [WebKit camera permissions](<https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:requestmediacapturepermissionfor:initiatedbyframe:type:decisionhandler:)>), [local networking ATS setting](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking).
+1. Choose the physical hand being scanned.
+2. Hold the open hand near the requested distance.
+3. Complete the views in order: palm, thumb side, back, pinky side.
+4. Keep the whole hand visible until each view fills.
+5. Review or export the resulting `HandProfile` JSON.
+
+The analysis coordinates stay unmirrored. Only the selfie preview is mirrored. The scan requires synchronized RGB and depth frames. It does not fall back to RGB-only scale estimation.
+
+## Packages and model
+
+- `GripItScannerCore` is a local package at `ios/GripItScannerCore`.
+- `MediaPipeTasksVision` is pinned to official `v1.1.1` commit `50505c8312c7eacb1bd411cecdc4cc9fd08d53cb`.
+- `public/mediapipe/hand_landmarker.task` is referenced directly as an app resource. There is no second checked-in copy.
+
+The revision pin is required because the package uses unsafe linker flags. Open the project in Xcode and confirm package resolution before the device test.
 
 ## Checks
 
-```sh
-npm test
-npm run ios:prepare
-xcodebuild -project ios/GripIt.xcodeproj -scheme GripIt \
-  -sdk iphonesimulator -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+These syntax checks do not require full Xcode:
 
-# Substitute an available simulator ID from xcrun simctl list devices available.
-xcodebuild test -project ios/GripIt.xcodeproj -scheme GripIt \
-  -destination 'platform=iOS Simulator,id=YOUR_SIMULATOR_ID' \
-  -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO
+```sh
+plutil -lint ios/GripIt.xcodeproj/project.pbxproj
+plutil -lint ios/GripIt/Info.plist
 ```
 
-The Swift tests verify HTTP asset delivery, WASM MIME type, HEAD responses, missing files, path traversal rejection, studio/canvas loading, the native export bridge/file round trip, and offline detector initialization/frame processing inside iOS WebKit. The GitHub Actions workflow repeats the web tests and simulator tests on macOS.
+With full Xcode and package access, run the app tests:
+
+```sh
+xcodebuild test \
+  -project ios/GripIt.xcodeproj \
+  -scheme GripIt \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -derivedDataPath ios/build \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+Simulator tests cover adapter math and non-camera behavior. They do not validate TrueDepth capture, MediaPipe handedness, preview alignment, or measurement accuracy. Use [the device checklist](../docs/testing/truedepth-device-checklist.md) for those checks.
