@@ -1,0 +1,122 @@
+.focus-card {
+  border: 1px solid #dce3d6;
+  border-radius: 16px;
+  background: white;
+  padding: 28px;
+}
+.focus-card h2 {
+  font-family: Manrope, sans-serif;
+  font-size: 25px;
+  font-weight: 550;
+  letter-spacing: -0.6px;
+  margin: 12px 0 8px;
+}
+.focus-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.focus-confidence {
+  font-size: 11px;
+  color: #5b713f;
+  background: #f0f3ea;
+  border-radius: 30px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.focus-description {
+  color: #6b786c;
+  line-height: 1.7;
+  margin-bottom: 22px;
+}
+
+.focus-zones {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 26px;
+}
+.focus-zone {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 14px 0;
+  border-top: 1px solid #eef1ea;
+}
+.focus-zone:first-child {
+  border-top: none;
+}
+.focus-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+}
+.focus-dot.red {
+  background: #b44a3a;
+}
+.focus-dot.yellow {
+  background: #c2900f;
+}
+.focus-dot.green {
+  background: #5b713f;
+}
+.focus-zone strong {
+  font-size: 15px;
+  font-weight: 550;
+}
+.focus-zone p {
+  color: #6b786c;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 3px;
+}
+
+.focus-action {
+  border-left: 2px solid #b9ca9d;
+  padding: 4px 0 4px 25px;
+  display: grid;
+  gap: 8px;
+}
+.focus-action strong {
+  font-size: 19px;
+  font-weight: 550;
+}
+.focus-action p {
+  color: #6b786c;
+  line-height: 1.7;
+}
+.focus-written {
+  font-size: 11px;
+  color: #75816b;
+  letter-spacing: 1.2px;
+}
+
+.focus-fit {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #fbf6ec;
+  border: 1px solid #ecdfc4;
+  color: #6d5a2e;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.focus-footnotes {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #eef1ea;
+  color: #75816b;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .focus-card {
+    padding: 22px;
+  }
+  .focus-action {
+    padding-left: 18px;
+  }
+}
