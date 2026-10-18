@@ -4,23 +4,31 @@ import UIKit
 
 @MainActor private final class GripNodeButton: UIButton {
   let disc = UIView()
+  let status = UIView()
   override init(frame: CGRect) {
     super.init(frame: frame)
     disc.isUserInteractionEnabled = false
-    disc.layer.borderWidth = 1
+    disc.layer.borderWidth = 3
     disc.layer.shadowColor = UIColor.black.cgColor
-    disc.layer.shadowRadius = 4
-    disc.layer.shadowOpacity = 0.3
+    disc.layer.shadowRadius = 5
+    disc.layer.shadowOpacity = 0.9
     disc.layer.shadowOffset = CGSize(width: 0, height: 2)
     insertSubview(disc, at: 0)
+    status.isUserInteractionEnabled = false
+    status.layer.borderWidth = 2
+    status.layer.borderColor = UIColor.white.cgColor
+    status.isHidden = true
+    addSubview(status)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func layoutSubviews() {
     super.layoutSubviews()
-    let size: CGFloat = isSelected ? 34 : 28
+    let size: CGFloat = isSelected ? 36 : 30
     disc.frame = CGRect(
       x: (bounds.width - size) / 2, y: (bounds.height - size) / 2, width: size, height: size)
     disc.layer.cornerRadius = size / 2
+    status.frame = CGRect(x: disc.frame.maxX - 10, y: disc.frame.maxY - 10, width: 12, height: 12)
+    status.layer.cornerRadius = 6
     bringSubviewToFront(titleLabel!)
   }
 }
@@ -81,7 +89,7 @@ import UIKit
     heading.textColor = .white
     instruction.font = .systemFont(ofSize: 14, weight: .medium)
     instruction.textColor = UIColor.white.withAlphaComponent(0.86)
-    instruction.numberOfLines = 4
+    instruction.numberOfLines = 0
     instruction.accessibilityIdentifier = "grip-node-instruction"
     effort.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
     effort.textColor = pine
@@ -144,12 +152,17 @@ import UIKit
         active ? pine : UIColor(red: 0.06, green: 0.14, blue: 0.12, alpha: 0.9)
       button.disc.layer.borderColor =
         (active ? UIColor.white : pine.withAlphaComponent(0.5)).cgColor
+      button.status.isHidden = true
       if let assessment {
         let finding = assessment.zones.first { $0.zoneId == zone.zoneId }
         let tint = feedbackColor(finding?.severity)
-        button.disc.backgroundColor = active ? tint : tint.withAlphaComponent(0.20)
-        button.disc.layer.borderColor = tint.cgColor
-        button.setTitleColor(active ? .black : tint, for: .normal)
+        // Opaque ink and a white ring remain readable on yellow/red skin.
+        // The separate colored badge carries the finding's severity.
+        button.disc.backgroundColor = UIColor(red: 0.025, green: 0.055, blue: 0.05, alpha: 1)
+        button.disc.layer.borderColor = UIColor.white.cgColor
+        button.status.isHidden = false
+        button.status.backgroundColor = tint
+        button.setTitleColor(.white, for: .normal)
         button.accessibilityLabel = "\(zone.title), \(finding?.severity.title ?? "Not assessed"). Show throw feedback."
       } else {
         button.accessibilityLabel =
@@ -159,10 +172,13 @@ import UIKit
     }
     if let zone = zones.first(where: { $0.zoneId == selected }) {
       heading.text = zone.title
-      instruction.text = zone.instruction
+      instruction.text = zone.reach == .comfortable
+        ? GripGuideCopy.instruction(pitch: plan.pitch, zone: zone.zoneId)
+        : "Try another grip if this finger cannot reach comfortably."
+      effort.isHidden = true
       effort.numberOfLines = 1
       effort.textColor = pine
-      category.text = "GRIP GUIDE / \(zone.highlight?.kind.rawValue.uppercased() ?? "PLACEMENT")"
+      category.text = "HOW TO HOLD IT"
       let intensity = zone.highlight?.intensity ?? .none
       let count = intensity == .firm ? 3 : intensity == .medium ? 2 : intensity == .light ? 1 : 0
       effort.text =
@@ -170,20 +186,19 @@ import UIKit
       if let assessment {
         let finding = assessment.zones.first { $0.zoneId == zone.zoneId }
         let fitProblem = zone.reach != .comfortable || assessment.unreachableZones.contains(zone.zoneId)
-        category.text = "THROW REVIEW / \(finding?.severity.title.uppercased() ?? "NOT ASSESSED")"
-        instruction.text = finding?.severity == .red
-          ? (assessment.changeToTry ?? finding?.reason)
-          : finding?.reason ?? (fitProblem
-            ? "Check this contact's fit before changing your grip."
-            : "No throw finding for this area.")
-        effort.text = finding?.severity == .red ? finding?.reason
-          : fitProblem ? "Fit needs attention" : ""
+        category.text = finding?.severity == .red ? "START HERE"
+          : finding?.severity == .yellow ? "CHECK NEXT"
+          : finding?.severity == .green ? "KEEP IT HERE" : "NO CHANGE"
+        if fitProblem || assessment.feedbackKind == "fit" { category.text = "CHECK THE FIT" }
+        instruction.text = fitProblem
+          ? "Try another grip if this finger cannot reach comfortably."
+          : assessment.action(for: zone.zoneId)
+        effort.text = ""
         effort.numberOfLines = 3
         effort.textColor = feedbackColor(finding?.severity)
         // Feedback can refer to a side or palm even when there is no severity.
         if assessment.feedbackKind == "fit", assessment.nextAction.zoneId == zone.zoneId {
-          instruction.text = assessment.nextAction.summary
-          effort.text = "Check the hand fit first"
+          instruction.text = assessment.primaryAction
         }
       }
       card.isHidden = false

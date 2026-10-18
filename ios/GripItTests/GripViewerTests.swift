@@ -26,9 +26,9 @@ final class GripViewerTests: XCTestCase {
     }
     let labels = descendants(overlay).compactMap { $0 as? UILabel }
     let instruction = try XCTUnwrap(labels.first { $0.accessibilityIdentifier == "grip-node-instruction" })
-    XCTAssertEqual(instruction.text, assessment.changeToTry)
+    XCTAssertEqual(instruction.text, assessment.primaryAction)
     let reading = try XCTUnwrap(labels.first { $0.accessibilityIdentifier == "grip-node-effort" })
-    XCTAssertTrue(reading.text?.contains("1:56") == true)
+    XCTAssertTrue(reading.isHidden)
     XCTAssertFalse(labels.contains { $0.text?.contains("EFFORT") == true })
     let scene = view.scene
     let vertices = coordinator.hand?.geometry?.sources(for: .vertex).first
@@ -37,7 +37,7 @@ final class GripViewerTests: XCTestCase {
       annotations: true, arcade: true, assessment: assessment)
     XCTAssertTrue(view.scene === scene)
     XCTAssertTrue(vertices === coordinator.hand?.geometry?.sources(for: .vertex).first)
-    XCTAssertEqual(instruction.text, "No throw finding for this area.")
+    XCTAssertEqual(instruction.text, "No change is suggested for this area.")
   }
 
   @MainActor func testChangeupReadsCurrentFastballDraftFromTheSameStudio() async throws {
@@ -123,10 +123,10 @@ final class GripViewerTests: XCTestCase {
     let views = descendants(overlay)
     let body = try XCTUnwrap(
       views.first { $0.accessibilityIdentifier == "grip-node-instruction" } as? UILabel)
-    XCTAssertEqual(body.text, plan.zones.first { $0.zoneId == .wrist }?.instruction)
+    XCTAssertEqual(body.text, GripGuideCopy.instruction(pitch: .fourSeam, zone: .wrist))
     let effort = try XCTUnwrap(
       views.first { $0.accessibilityIdentifier == "grip-node-effort" } as? UILabel)
-    XCTAssertTrue(effort.text?.contains("FIRM") == true)
+    XCTAssertTrue(effort.isHidden)
     XCTAssertEqual(
       views.filter { $0.accessibilityIdentifier == "grip-instruction-card" && !$0.isHidden }.count,
       1)

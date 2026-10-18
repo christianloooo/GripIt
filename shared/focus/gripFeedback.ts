@@ -367,6 +367,7 @@ export function gripFocusZones(
         zoneId,
         severity,
         reason: candidate?.summary ?? clean!.reason,
+        ...(candidate ? { action: rule.cue } : {}),
         triggeringMeasurement: measurement,
         confidence: UNSCORED_CONFIDENCE,
       });

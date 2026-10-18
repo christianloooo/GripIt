@@ -36,6 +36,7 @@ export interface GripRule {
     baseline: DerivedMetrics | null,
   ): Deviation | null;
   change: string; // what to do, in handInstructions wording
+  cue: string; // consumer paraphrase, documented in handInstructions.md
   zones: readonly ZoneId[]; // fingers to highlight on the 3D hand
   expect: string; // which number should move, and which way
   source: string;
@@ -153,6 +154,7 @@ const CHANGEUP_BASELINE_SOURCE =
 export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "four-seam-axis",
+    cue: "Rest your thumb under the ball, below the gap between your index and middle fingers.",
     pitchIds: FOUR_SEAM,
     reading: { metric: "spinDirectionClock", measurement: "spinDirectionClock", label: "Spin axis", target: "axisClock" },
     detect(m, t) {
@@ -172,6 +174,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "four-seam-efficiency",
+    cue: "Turn the ball so the seams cross under your index and middle fingertips.",
     pitchIds: FOUR_SEAM,
     reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent", guard: "axis" },
     detect(m, t) {
@@ -193,6 +196,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "four-seam-purchase",
+    cue: "Place your index and middle fingertips on the raised seams.",
     pitchIds: FOUR_SEAM,
     reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", target: "spinPerMph" },
     detect(m, t) {
@@ -211,6 +215,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "four-seam-cut",
+    cue: "Bring your index and middle fingers closer without squeezing them together.",
     pitchIds: FOUR_SEAM,
     reading: { metric: "horizontalBreakInches", measurement: "horizontalBreakInches", label: "Horizontal break", unit: " inches", target: "horizontalBreakInches", guard: "axis" },
     detect(m, t) {
@@ -238,6 +243,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "four-seam-buried",
+    cue: "Hold the ball with your fingers and thumb, leaving a little space above your palm.",
     pitchIds: FOUR_SEAM,
     reading: { metric: "verticalBreakInches", measurement: "verticalBreakInches", label: "Vertical break", unit: " inches", target: "verticalBreakInches", guard: "axis-and-efficiency", requiresMinimum: true },
     detect(m, t) {
@@ -266,6 +272,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "two-seam-axis",
+    cue: "Turn the ball so the two close seams run along your index and middle fingers.",
     pitchIds: TWO_SEAM,
     reading: { metric: "spinDirectionClock", measurement: "spinDirectionClock", label: "Spin axis", target: "axisClock" },
     detect(m, t) {
@@ -285,6 +292,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "two-seam-run",
+    cue: "Place your index and middle fingertips along the two close seams, one finger on each seam.",
     pitchIds: TWO_SEAM,
     reading: { metric: "horizontalBreakInches", measurement: "horizontalBreakInches", label: "Horizontal break", unit: " inches", target: "horizontalBreakInches", guard: "axis" },
     detect(m, t) {
@@ -307,6 +315,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "two-seam-efficiency",
+    cue: "Move your thumb under the ball, below your index and middle fingers.",
     pitchIds: TWO_SEAM,
     reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent", guard: "axis" },
     detect(m, t) {
@@ -328,6 +337,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "two-seam-purchase",
+    cue: "Place your index and middle fingertips along their seams.",
     pitchIds: TWO_SEAM,
     reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", target: "spinPerMph" },
     detect(m, t) {
@@ -352,6 +362,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   // target either, so there is no purchase rule.
   {
     id: "slider-efficiency",
+    cue: "Relax your index finger beside your middle finger and let your middle finger hold the seam.",
     pitchIds: SLIDER,
     reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent" },
     detect(m, t) {
@@ -387,6 +398,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   // slider "fingers too far apart" row.
   {
     id: "changeup-separation",
+    cue: "Let the ball sit deeper in your hand while your middle and ring fingers stay on it.",
     pitchIds: CHANGEUP,
     reading: { metric: "velocityMph", measurement: "velocityMph", label: "Changeup velocity", unit: " mph", target: "velocitySeparationMph", baseline: "velocityMph" },
     detect(m, t, baseline) {
@@ -410,6 +422,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   },
   {
     id: "changeup-spin",
+    cue: "Curl your index finger around the side of the ball near your thumb.",
     pitchIds: CHANGEUP,
     reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", baseline: "spinPerMph" },
     // No target argument is read: a changeup has no absolute spin target.

@@ -4,6 +4,20 @@ import XCTest
 @testable import GripItScannerCore
 
 final class RapsodoPhotoFixtureTests: XCTestCase {
+  func testTheOnlyBundledCaptureIsTheBaseballVersionOfRapsodo1() throws {
+    XCTAssertEqual(RapsodoPhotoFixture.allCases.count, 1)
+    XCTAssertEqual(RapsodoPhotoFixture.baseball.rawValue, "rapsodo1")
+    XCTAssertEqual(RapsodoPhotoFixture.baseball.title, "Rapsodo photo")
+    let row = RapsodoPhotoFixture.baseball.makeDraft()
+    XCTAssertEqual(row.velocityMph, "77.3")
+    XCTAssertEqual(row.totalSpinRpm, "1642")
+    XCTAssertEqual(row.spinDirectionClock, "01:56")
+    XCTAssertEqual(row.spinEfficiencyPercent, "93.8")
+    XCTAssertEqual(row.horizontalBreakInches, "18.6")
+    XCTAssertEqual(row.verticalBreakInches, "13.8")
+    XCTAssertTrue(row.gyroDegree.isEmpty)
+  }
+
   func testPhotoFeedbackRespectsTheActualFittedHand() throws {
     let pose = try GripPoseSolver.solve(profile: SampleHandProfiles.averageRight(), pitch: .fourSeam)
     let plan = GripPlan(pose: pose)
@@ -25,7 +39,7 @@ final class RapsodoPhotoFixtureTests: XCTestCase {
     }
   }
 
-  func testBothCapturesReachFeedbackWithoutInventedHeightOrLostSource() throws {
+  func testBundledCaptureReachesFeedbackWithoutInventedHeightOrLostSource() throws {
     for capture in RapsodoPhotoFixture.allCases {
       let draft = capture.makeDraft()
       XCTAssertTrue(draft.releaseHeightFeet.isEmpty)

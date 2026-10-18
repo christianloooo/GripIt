@@ -9,6 +9,7 @@ struct FocusAssessmentView: View {
   @State private var camera: GripCamera = .threeQuarter
   @State private var reset = 0
   @State private var showHeatmap = true
+  @State private var showDetails = false
 
   private let canvas = Color(red: 0.025, green: 0.045, blue: 0.04)
 
@@ -84,53 +85,50 @@ struct FocusAssessmentView: View {
         }.font(.system(size: 10)).frame(maxWidth: .infinity)
 
         VStack(alignment: .leading, spacing: 12) {
-          Text("WHAT TO TRY NEXT")
+          Text("TRY THIS FIRST")
             .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.mint)
-          Text(assessment.nextAction.summary).font(.headline)
-          if let change = assessment.changeToTry {
-            Text(change).font(.subheadline)
-          }
-          if let expected = assessment.expectedMovement {
-            Text(expected).font(.subheadline).foregroundStyle(.mint)
-          }
-          if assessment.changeToTry == nil && assessment.measuredSummary == nil {
-            Text(assessment.nextAction.detail).font(.subheadline).foregroundStyle(.secondary)
+          Text(assessment.primaryAction).font(.headline)
+          if !assessment.secondaryActions.isEmpty {
+            Text("THEN CHECK")
+              .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.yellow)
+            ForEach(assessment.secondaryActions) { finding in
+              Button { selectedZone = finding.zoneId } label: {
+                HStack(alignment: .top, spacing: 10) {
+                  Circle().fill(.yellow).frame(width: 8, height: 8).padding(.top, 5)
+                  Text(finding.action ?? "").font(.subheadline).multilineTextAlignment(.leading)
+                  Spacer(minLength: 0)
+                  Image(systemName: "chevron.right").font(.caption)
+                }.foregroundStyle(.white)
+              }.buttonStyle(.plain)
+            }
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(18)
         .background(.mint.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
 
-        if let measured = assessment.measuredSummary {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("YOUR READINGS")
-              .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.secondary)
-            Text(measured).font(.subheadline).foregroundStyle(.secondary)
-          }.padding(.horizontal, 2)
-        }
-        if !assessment.unreachableZones.isEmpty {
-          Label("Some contacts need a better fit before changing your grip.", systemImage: "hand.raised")
-            .font(.caption).foregroundStyle(.orange)
-        }
-        if let consistency = assessment.consistency {
-          Text(String(format: "%d throws · Velocity spread %.1f mph · Spin spread %.0f rpm",
-            consistency.throwCount, consistency.velocitySpreadMph, consistency.totalSpinSpreadRpm))
-            .font(.caption).foregroundStyle(.secondary)
-        }
-        Text("Colors show grip checks to try, not measured finger pressure.")
-          .font(.caption2).foregroundStyle(.secondary)
       }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 20)
     }
     .background(canvas).preferredColorScheme(.dark).tint(.mint)
     .navigationTitle("Feedback").navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
+      HStack(spacing: 12) {
       Button { model.addThrow(); dismiss() } label: {
         HStack { Text("Record another throw"); Spacer(); Image(systemName: "arrow.up.right") }
           .font(.headline).frame(maxWidth: .infinity, minHeight: 40)
       }
       .buttonStyle(.borderedProminent).tint(.mint)
       .foregroundStyle(Color(red: 0.025, green: 0.12, blue: 0.09))
+      Button { showDetails = true } label: {
+        VStack(spacing: 4) {
+          Image(systemName: "text.alignleft").font(.title3)
+          Text("Details").font(.caption)
+        }.frame(width: 54, height: 52)
+      }.buttonStyle(.plain).foregroundStyle(.mint)
+        .accessibilityIdentifier("feedback-details")
+      }
       .padding(.horizontal, 16).padding(.vertical, 10).background(canvas)
     }
+    .sheet(isPresented: $showDetails) { feedbackDetails }
     .onAppear {
       selectedZone = selectedZone ?? assessment.nextAction.zoneId
     }
@@ -138,5 +136,45 @@ struct FocusAssessmentView: View {
 
   private func legend(_ text: String, _ color: Color) -> some View {
     HStack(spacing: 4) { Circle().fill(color).frame(width: 6, height: 6); Text(text) }
+  }
+
+  private var feedbackDetails: some View {
+    NavigationStack {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          detail("Why start here?", assessment.nextAction.summary)
+          if let measured = assessment.measuredSummary { detail("Your readings", measured) }
+          if let change = assessment.changeToTry { detail("Full grip instruction", change) }
+          if let expected = assessment.expectedMovement { detail("What to look for", expected) }
+          ForEach(assessment.zones) { finding in
+            VStack(alignment: .leading, spacing: 8) {
+              Text("\(finding.zoneId.title) · \(finding.severity.title)").font(.headline)
+              Text(assessment.action(for: finding.zoneId)).font(.subheadline)
+              Text(finding.reason).font(.subheadline).foregroundStyle(.secondary)
+              if let zone = model.fit.plan.zones.first(where: { $0.zoneId == finding.zoneId }) {
+                Text(zone.instruction).font(.caption).foregroundStyle(.secondary)
+              }
+            }
+          }
+          if let consistency = assessment.consistency {
+            detail("Across your throws", String(format:
+              "%d throws · Velocity spread %.1f mph · Spin spread %.0f rpm",
+              consistency.throwCount, consistency.velocitySpreadMph, consistency.totalSpinSpreadRpm))
+          }
+          detail("About the colors",
+            "Red is the first adjustment to try; yellow shows another check to review next; green is a check with no change suggested. Uncolored areas have no assessment. Colors are not measured finger pressure.")
+        }.padding(20)
+      }.navigationTitle("Throw details").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { showDetails = false }
+        } }
+    }.preferredColorScheme(.dark).tint(.mint)
+  }
+
+  private func detail(_ title: String, _ body: String) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title).font(.headline)
+      Text(body).font(.subheadline).foregroundStyle(.secondary)
+    }.frame(maxWidth: .infinity, alignment: .leading)
   }
 }

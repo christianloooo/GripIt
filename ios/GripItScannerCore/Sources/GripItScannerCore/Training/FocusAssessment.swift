@@ -13,6 +13,7 @@ public struct FocusZone: Codable, Sendable, Identifiable {
   public let zoneId: GripZoneID
   public let severity: FocusSeverity
   public let reason: String
+  public let action: String?
   public let triggeringMeasurement: String
   public let confidence: Double
   public var id: GripZoneID { zoneId }
@@ -60,6 +61,40 @@ public struct FocusAssessment: Codable, Sendable, Identifiable {
   public var changeToTry: String? { feedbackText("change") }
   public var expectedMovement: String? { feedbackText("expect") }
   public var feedbackKind: String? { feedbackText("kind") }
+
+  /// Main screens show actions; the original measurements remain in Details.
+  public var primaryAction: String {
+    switch feedbackKind {
+    case "change":
+      return zones.first { $0.severity == .red }?.action
+        ?? "Add the missing readings before changing your grip."
+    case "fit": return "Try another grip or check your hand scan before making changes."
+    case "baseline": return "Record your fastball first so we can compare your changeup."
+    case "drift": return "Keep your release point steady before changing your grip."
+    case "on-target": return "Keep this grip and record another throw."
+    default: return "Add your throw readings to see what to try next."
+    }
+  }
+
+  /// A rule can name two fingers. Show that adjustment once, with both
+  /// fingers still independently selectable on the model.
+  public var secondaryActions: [FocusZone] {
+    guard feedbackKind == "change" else { return [] }
+    var seen = Set([primaryAction])
+    return zones.filter { zone in
+      guard zone.severity == .yellow, let action = zone.action else { return false }
+      return seen.insert(action).inserted
+    }
+  }
+
+  public func action(for zone: GripZoneID) -> String {
+    guard feedbackKind == "change" || feedbackKind == "on-target" else { return primaryAction }
+    guard let finding = zones.first(where: { $0.zoneId == zone }) else {
+      return "No change is suggested for this area."
+    }
+    if finding.severity == .green { return "Keep this position for your next throw." }
+    return finding.action ?? "Add the missing readings before changing this part of your grip."
+  }
 
   private func feedbackText(_ key: String) -> String? {
     guard case .object(let feedback) = extensions["gripFeedback"],

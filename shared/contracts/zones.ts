@@ -131,6 +131,8 @@ export interface FocusZone {
   severity: Severity;
   /** Why this colour, in plain words, naming the number that triggered it. */
   reason: string;
+  /** Short action for a firing rule; absent on clean checks and old records. */
+  action?: string;
   /** The ThrowRecord measurement key that triggered the rule. */
   triggeringMeasurement: string;
   /** Inclusive 0...1. Drops when the triggering measurement was null. */

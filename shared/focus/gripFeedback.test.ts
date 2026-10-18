@@ -75,6 +75,26 @@ function throwRecord(
 }
 
 describe("severity prerequisites", () => {
+  it("gives the winning thumb and secondary fingers their own short actions", () => {
+    const input = { pitchId: "four-seam", throws: rapsodo2Throws("four-seam"), zones: zonesWith() };
+    const zones = gripFocusZones(input, gripFeedback(input));
+    expect(zones.find((zone) => zone.zoneId === "thumb-pad")).toMatchObject({
+      severity: "red", action: "Rest your thumb under the ball, below the gap between your index and middle fingers.",
+    });
+    for (const zoneId of ["index-pad", "middle-pad"]) {
+      expect(zones.find((zone) => zone.zoneId === zoneId)).toMatchObject({
+        severity: "yellow", action: "Place your index and middle fingertips on the raised seams.",
+      });
+    }
+  });
+
+  it("does not prescribe a correction for checked-clean regions", () => {
+    const input = { pitchId: "four-seam", throws: [throwRecord()], zones: zonesWith() };
+    const zones = gripFocusZones(input, gripFeedback(input));
+    expect(zones.length).toBeGreaterThan(0);
+    for (const zone of zones) expect(zone).not.toHaveProperty("action");
+  });
+
   it("leaves the palm unassessed when low break has no efficiency or gyro reading", () => {
     const input = {
       pitchId: "four-seam",

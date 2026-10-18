@@ -150,13 +150,13 @@ struct GripViewerView: View {
         ToolbarItem(placement: .topBarTrailing) {
           Menu {
             Button("Hand model", systemImage: "hand.raised") { showHandModel = true }
-            Button("Model details", systemImage: "info.circle") { showDetails = true }
           } label: {
             Image(systemName: "ellipsis")
           }
         }
       }
       .safeAreaInset(edge: .bottom) {
+        HStack(spacing: 12) {
         Button {
           if let fit {
             training = studio.training(for: fit)
@@ -175,6 +175,14 @@ struct GripViewerView: View {
         )
         .disabled(loading || fit == nil)
         .accessibilityIdentifier("record-throws")
+        Button { showDetails = true } label: {
+          VStack(spacing: 4) {
+            Image(systemName: "text.alignleft").font(.title3)
+            Text("Details").font(.caption)
+          }.frame(width: 54, height: 52)
+        }.buttonStyle(.plain).tint(.mint).foregroundStyle(.mint)
+          .accessibilityIdentifier("grip-details")
+        }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(Color(red: 0.025, green: 0.045, blue: 0.04))
       }
@@ -184,7 +192,7 @@ struct GripViewerView: View {
       .fullScreenCover(isPresented: $showHandModel) { HandModelReviewView(profile: profile) }
       .sheet(isPresented: $showDetails) {
         NavigationStack {
-          ScrollView { modelDetails.padding(20) }.navigationTitle("Model details")
+          ScrollView { modelDetails.padding(20) }.navigationTitle("Grip details")
             .toolbar {
               ToolbarItem(placement: .confirmationAction) { Button("Done") { showDetails = false } }
             }
@@ -218,6 +226,17 @@ struct GripViewerView: View {
   }
   private var modelDetails: some View {
     VStack(alignment: .leading, spacing: 16) {
+      if let plan {
+        ForEach(plan.zones) { zone in
+          VStack(alignment: .leading, spacing: 6) {
+            Text(zone.title).font(.headline)
+            Text(zone.instruction).font(.subheadline).foregroundStyle(.secondary)
+            if let pressure = zone.pressure {
+              Text("Suggested pressure: \(pressure.rawValue)").font(.caption).foregroundStyle(.mint)
+            }
+          }
+        }
+      }
       Toggle("Contact points", isOn: $contacts).tint(.mint)
       if zoneSeverity == nil {
         Toggle("Show grip pressure", isOn: $showPressure).tint(.mint)

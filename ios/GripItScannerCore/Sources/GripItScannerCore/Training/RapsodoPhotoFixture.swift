@@ -1,34 +1,23 @@
 import Foundation
 
-/// Bundled captures with readings transcribed from the visible screenshot.
-/// Unknown photos never receive these readings.
+/// The baseball version of rapsodo1, using readings from the original
+/// baseball capture. Unknown photos never receive these sample values.
 public enum RapsodoPhotoFixture: String, CaseIterable, Identifiable, Sendable {
-  case softball = "rapsodo1"
-  case baseball = "rapsodo2"
+  case baseball = "rapsodo1"
 
   public var id: String { rawValue }
-  public var title: String { self == .softball ? "Softball capture" : "Baseball capture" }
-  public var imageURL: URL? { Bundle.module.url(forResource: rawValue, withExtension: "webp") }
-  /// PNG companion for reliable native image decoding on every supported device.
-  public var previewURL: URL? { Bundle.module.url(forResource: rawValue, withExtension: "png") }
+  public var title: String { "Rapsodo photo" }
+  public var imageURL: URL? { Bundle.module.url(forResource: rawValue, withExtension: "png") }
+  public var previewURL: URL? { imageURL }
 
   public func makeDraft() -> ThrowDraft {
     var draft = ThrowDraft(source: .sample)
-    switch self {
-    case .softball:
-      draft.velocityMph = "43.4"
-      draft.totalSpinRpm = "1077"
-      draft.spinDirectionClock = "06:48"
-      draft.spinEfficiencyPercent = "95.0"
-      draft.gyroDegree = "-18.2"
-    case .baseball:
-      draft.velocityMph = "77.3"
-      draft.totalSpinRpm = "1642"
-      draft.spinDirectionClock = "01:56"
-      draft.spinEfficiencyPercent = "93.8"
-      draft.horizontalBreakInches = "18.6"
-      draft.verticalBreakInches = "13.8"
-    }
+    draft.velocityMph = "77.3"
+    draft.totalSpinRpm = "1642"
+    draft.spinDirectionClock = "01:56"
+    draft.spinEfficiencyPercent = "93.8"
+    draft.horizontalBreakInches = "18.6"
+    draft.verticalBreakInches = "13.8"
     // Release height, score, and every other absent reading stay empty.
     // Active spin is derived by the measurement contract, not copied as total spin.
     return draft

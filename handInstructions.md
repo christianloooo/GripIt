@@ -26,3 +26,49 @@ Every pitch records all seven regions. White is no effort; deeper pine green is 
 | Wrist | Firm stabilization | Firm stabilization | Firm stabilization | Medium stabilization |
 
 The demo uses the approved under-ball thumb placement. Each serialized zone includes a `highlight` record with `region`, `intensity`, and `kind`; the renderer consumes these records, including side/curl/palm/wrist regions.
+
+
+## Plain-English display cues
+
+Requested by Jared on October 18 for Steps 2 and 4. These short cues paraphrase the full grip instructions above for the main screen. The original instructions and readings remain in Details. This changes wording only, never targets, contact positions, effort, rule gates or ranking.
+
+### Step 4 rule actions
+
+| Rule | Short action |
+|---|---|
+| four-seam-axis | Rest your thumb under the ball, below the gap between your index and middle fingers. |
+| four-seam-efficiency | Turn the ball so the seams cross under your index and middle fingertips. |
+| four-seam-purchase | Place your index and middle fingertips on the raised seams. |
+| four-seam-cut | Bring your index and middle fingers closer without squeezing them together. |
+| four-seam-buried | Hold the ball with your fingers and thumb, leaving a little space above your palm. |
+| two-seam-axis | Turn the ball so the two close seams run along your index and middle fingers. |
+| two-seam-run | Place your index and middle fingertips along the two close seams, one finger on each seam. |
+| two-seam-efficiency | Move your thumb under the ball, below your index and middle fingers. |
+| two-seam-purchase | Place your index and middle fingertips along their seams. |
+| slider-efficiency | Relax your index finger beside your middle finger and let your middle finger hold the seam. |
+| changeup-separation | Let the ball sit deeper in your hand while your middle and ring fingers stay on it. |
+| changeup-spin | Curl your index finger around the side of the ball near your thumb. |
+
+### Step 2 placement actions
+
+These cues correspond to the pitch and finger placements described above.
+
+- Place your index fingertip across the raised seam.
+- Place your middle fingertip across the seam beside your index finger.
+- Rest your index fingertip along the seam nearest your thumb.
+- Rest your middle fingertip along the other close seam.
+- Rest your index finger lightly beside your middle finger, off the seam.
+- Hold the seam nearest your pinky with your middle fingertip.
+- Curl your index finger around the side of the ball near your thumb.
+- Rest your middle fingertip along the seam nearest your thumb.
+- Rest your ring fingertip along the other seam, beside your middle finger.
+- Curl your pinky around the other side of the ball for light support.
+- Wrap your thumb around the lower side of the ball to support it.
+- Rest your thumb under the ball without pinching hard.
+- Rest your thumb under the ball, below the gap between your index and middle fingers.
+- Rest the side of your ring finger against the ball for light support.
+- Keep your pinky relaxed beside your ring finger, off the ball.
+- Let the ball sit comfortably in your hand without squeezing.
+- Hold the ball at a depth that feels comfortable.
+- Leave a little space between the ball and your palm.
+- Keep your wrist steady while you hold the ball.

@@ -8,6 +8,26 @@ import simd
 /// into a prebuilt value produces byte-identical data, so the saving is purely
 /// when the work happens rather than what it produces.
 final class GripRenderStateTests: XCTestCase {
+  func testFeedbackExtendsPastTheFingertipWithoutChangingContactMasks() throws {
+    let pose = try GripPoseSolver.solve(profile: SampleHandProfiles.averageRight(), pitch: .fourSeam)
+    let hand = try GripHandAsset.load()
+    let surface = try GripRenderState(pose: pose).surface
+    let column = try XCTUnwrap(GripZoneSurface.zones.firstIndex(of: .indexPad))
+    let names = GripFinger.index.jointNames
+    let start = gv(try XCTUnwrap(hand.joints.first { $0.name == names[1] }).position)
+    let end = gv(try XCTUnwrap(hand.joints.first { $0.name == names[2] }).position)
+    let middle = hand.vertices.indices.filter { vertex in
+      let p = gv(hand.vertices[vertex])
+      let along = simd_dot(p - start, end - start) / simd_length_squared(end - start)
+      return (0.35...0.8).contains(along) && surface.picking[vertex] == .indexPad
+    }
+    XCTAssertFalse(middle.isEmpty)
+    XCTAssertTrue(middle.contains { surface.feedbackWeights[$0][column] > 0.5 },
+      "The middle section of the finger needs visible feedback color")
+    XCTAssertTrue(middle.allSatisfy { surface.weights[$0][column] < 0.05 },
+      "The new coverage must not expand the original fingertip contact mask")
+  }
+
   func testFeedbackHeatmapWrapsTheFingerWhileContactShadingStaysLocalized() throws {
     let pose = try GripPoseSolver.solve(profile: SampleHandProfiles.averageRight(), pitch: .fourSeam)
     let state = try GripRenderState(pose: pose)

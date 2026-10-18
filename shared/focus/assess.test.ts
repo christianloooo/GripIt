@@ -118,6 +118,7 @@ describe("assess packs one grip change into the FocusAssessment wire type", () =
         zoneId,
         severity: "red",
         reason: "Spin efficiency reads 72 percent, below target.",
+        action: "Turn the ball so the seams cross under your index and middle fingertips.",
         triggeringMeasurement: "spinEfficiencyPercent",
         confidence: 0.5,
       })),

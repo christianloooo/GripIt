@@ -66,7 +66,14 @@ public struct GripZoneSurface: Sendable {
         let index = Self.zones.firstIndex(of: zone.zoneId)!
         let region = smooth((influence - 0.35) / 0.5) * taper
         w[index] = region * facing
-        feedback[index] = region
+        // Display coverage reaches the middle of the finger and wraps its
+        // circumference. This is a visual fade, never a coaching threshold.
+        let feedbackStart = rest[finger.jointNames[1]]!
+        let feedbackAxis = unit(end - feedbackStart)
+        let feedbackAlong = simd_dot(source - feedbackStart, feedbackAxis)
+          / simd_length(end - feedbackStart)
+        let broadTaper = smooth((feedbackAlong + 0.12) / 0.48)
+        feedback[index] = smooth((influence - 0.35) / 0.5) * broadTaper
       }
       if owner == nil {
         if source.y < 14 {

@@ -446,11 +446,19 @@ private struct ThrowPhotoReview: View {
           ThrowPhotoZoomView(image: photo.image)
             .accessibilityLabel(photo.title + ". Pinch to zoom and drag to inspect the photo.")
           if scanning {
-            LinearGradient(colors: [.clear, .mint.opacity(0.20), .mint.opacity(0.65)],
-              startPoint: .top, endPoint: .bottom)
-              .frame(height: 55)
-              .overlay(alignment: .bottom) { Rectangle().fill(.mint).frame(height: 1) }
-              .offset(y: scanPosition * max(0, bounds.size.height - 55))
+            Canvas { context, size in
+              for y in stride(from: 5.0, through: size.height, by: 10) {
+                let strength = 1 - abs(y - size.height / 2) / (size.height / 2)
+                for x in stride(from: 5.0, through: size.width, by: 10) {
+                  let dot = CGRect(x: x, y: y, width: 3, height: 3)
+                  context.fill(Path(ellipseIn: dot), with: .color(.mint.opacity(0.25 + strength * 0.6)))
+                }
+              }
+            }
+              .frame(height: 80)
+              .background(LinearGradient(colors: [.clear, .mint.opacity(0.16), .clear],
+                startPoint: .top, endPoint: .bottom))
+              .offset(y: scanPosition * max(0, bounds.size.height - 80))
               .allowsHitTesting(false).accessibilityHidden(true)
           }
         }
@@ -493,10 +501,11 @@ private struct ThrowPhotoReview: View {
   @MainActor private func prepareReadings() async {
     do {
       if !reduceMotion {
-        withAnimation(.linear(duration: 0.85)) { scanPosition = 1 }
-        try await Task.sleep(for: .milliseconds(900))
+        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: true)) { scanPosition = 1 }
+        try await Task.sleep(for: .milliseconds(300))
+      } else {
+        scanning = false
       }
-      scanning = false
       if let fixture = photo.fixture {
         let values = fixture.makeDraft()
         let readings: [(WritableKeyPath<ThrowDraft, String>, String)] = [
@@ -508,13 +517,17 @@ private struct ThrowPhotoReview: View {
         ]
         for (key, value) in readings where !value.isEmpty {
           try Task.checkCancellation()
-          if !reduceMotion { try await Task.sleep(for: .milliseconds(150)) }
+          if !reduceMotion { try await Task.sleep(for: .milliseconds(380)) }
           draft[keyPath: key] = value
           revealed += 1
         }
       }
+      scanning = false
       preparing = false
-    } catch { /* Dismissing the review cancels its animation and leaves entries untouched. */ }
+    } catch {
+      scanning = false
+      // Dismissing the review cancels the task and leaves entries untouched.
+    }
   }
 
   private func confirm() {
