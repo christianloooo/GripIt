@@ -347,9 +347,7 @@ extension TrueDepthCaptureService: AVCaptureDataOutputSynchronizerDelegate {
         let floatDepth: AVDepthData
         if capturedDepth.depthDataType == kCVPixelFormatType_DepthFloat32 {
             floatDepth = capturedDepth
-        } else if capturedDepth.availableDepthDataTypes.contains(where: {
-            $0.uint32Value == kCVPixelFormatType_DepthFloat32
-        }) {
+        } else if capturedDepth.availableDepthDataTypes.contains(kCVPixelFormatType_DepthFloat32) {
             floatDepth = capturedDepth.converting(
                 toDepthDataType: kCVPixelFormatType_DepthFloat32
             )
