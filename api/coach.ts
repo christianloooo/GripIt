@@ -16,6 +16,15 @@ import type { FocusAssessment } from "../src/contracts/assessment";
  * can open. The key stays here and the client sends an assessment instead.
  */
 
+/**
+ * Opus writes the best line, and the line is the visible payoff of the whole
+ * flow. Swap to `claude-haiku-4-5` through the environment if the pause after
+ * saving a throw is noticeable on stage; the guard downstream is what keeps
+ * either model honest. Cost is not the deciding factor: one throw is well
+ * under a cent on any of them.
+ */
+const COACH_MODEL = process.env.COACH_MODEL ?? "claude-opus-5";
+
 const CoachSchema = z.object({
   detail: z
     .string()
@@ -43,7 +52,7 @@ export async function rewriteCoaching(
   try {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.parse({
-      model: "claude-opus-5",
+      model: COACH_MODEL,
       max_tokens: 400,
       // A one-sentence rewrite needs no depth, and low effort keeps the demo
       // responsive. Thinking is on by default on this model.
