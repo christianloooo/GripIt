@@ -5,6 +5,71 @@ import XCTest
 @testable import GripIt
 
 final class GripViewerTests: XCTestCase {
+  @MainActor func testSeamLandmarksLandOnVisibleRedStitches() throws {
+    // Exercise the actual SceneKit geometry + UIImage UV path, independently
+    // of the solver's seam-distance math. A mirrored texture must fail here.
+    let pose = try GripPoseSolver.openHand(profile: SampleHandProfiles.averageRight())
+    let scene = GripSceneBuilder.scene(pose: pose)
+    scene.rootNode.childNode(withName: "measured-hand", recursively: true)?.isHidden = true
+    for node in scene.rootNode.childNode(withName: "hand-and-ball", recursively: true)!.childNodes
+    where node.name?.hasSuffix("-nail") == true { node.isHidden = true }
+    let ball = try XCTUnwrap(
+      scene.rootNode.childNode(withName: "regulation-baseball", recursively: true))
+    ball.simdPosition = .zero
+    ball.simdOrientation = simd_quatf()
+    let material = ball.geometry!.firstMaterial!
+    material.lightingModel = .constant
+    material.normal.contents = nil
+    let camera = SCNNode()
+    camera.camera = SCNCamera()
+    camera.camera!.usesOrthographicProjection = true
+    camera.camera!.orthographicScale = 4
+    camera.camera!.zNear = 0.1
+    camera.camera!.zFar = 1000
+    scene.rootNode.addChildNode(camera)
+    let renderer = SCNRenderer(device: nil, options: nil)
+    renderer.scene = scene
+    renderer.pointOfView = camera
+    for anchor: SIMD3<Float> in [
+      SIMD3(-26.84094, -2.17919, -24.63870),
+      SIMD3(-18.26992, 12.53505, -29.00574),
+      SIMD3(-6.37951, -34.82375, 8.88021),
+      SIMD3(-1.79325, -35.16069, -9.63120),
+      SIMD3(-19.94635, 25.86259, -16.29477),
+      SIMD3(17.21222, -30.31248, 10.82328),
+      SIMD3(13.35501, -32.35483, -10.34693),
+    ] {
+      camera.simdPosition = simd_normalize(anchor) * 150
+      camera.look(at: SCNVector3(anchor))
+      let image = renderer.snapshot(
+        atTime: 0, with: CGSize(width: 96, height: 96), antialiasingMode: .multisampling4X)
+      let attachment = XCTAttachment(image: image)
+      attachment.name = "Stitch landmark \(anchor)"
+      attachment.lifetime = .keepAlways
+      add(attachment)
+      let cg = try XCTUnwrap(image.cgImage)
+      var pixels = [UInt8](repeating: 0, count: 96 * 96 * 4)
+      let context = try XCTUnwrap(
+        CGContext(
+          data: &pixels, width: 96, height: 96,
+          bitsPerComponent: 8, bytesPerRow: 96 * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      context.draw(cg, in: CGRect(x: 0, y: 0, width: 96, height: 96))
+      var red = 0
+      for y in 24..<72 {
+        for x in 24..<72 {
+          let i = (y * 96 + x) * 4
+          if Double(pixels[i]) > Double(pixels[i + 1]) * 1.4
+            && Double(pixels[i]) > Double(pixels[i + 2]) * 1.4 && pixels[i] > 60
+          {
+            red += 1
+          }
+        }
+      }
+      XCTAssertGreaterThan(
+        red, 10, "The rendered stitch must coincide with seam landmark \(anchor)")
+    }
+  }
   @MainActor func testNativeSceneContainsAuthoredHandAndTexturedRegulationBall() throws {
     let profile = try SampleHandProfiles.averageRight()
     for pitch in PitchGrip.allCases {

@@ -4,11 +4,12 @@ import SwiftUI
 import simd
 
 public enum GripCamera: String, CaseIterable, Identifiable {
-  case threeQuarter, palm, thumbSide, back
+  case threeQuarter, fingers, palm, thumbSide, back
   public var id: String { rawValue }
   public var title: String {
     switch self {
     case .threeQuarter: "Reset"
+    case .fingers: "Fingers"
     case .palm: "Palm"
     case .thumbSide: "Thumb"
     case .back: "Back"
@@ -189,6 +190,7 @@ struct GripSceneView: UIViewRepresentable {
         let sign: Float = pose.handedness == .left ? -1 : 1
         switch camera {
         case .threeQuarter: cameraNode?.position = SCNVector3(-170 * sign, 155, 260)
+        case .fingers: cameraNode?.position = SCNVector3(-100 * sign, 270, 160)
         case .palm: cameraNode?.position = SCNVector3(0, 75, 300)
         case .thumbSide: cameraNode?.position = SCNVector3(290 * sign, 90, 80)
         case .back: cameraNode?.position = SCNVector3(0, 85, -290)
@@ -196,6 +198,7 @@ struct GripSceneView: UIViewRepresentable {
         if !showBall {
           switch camera {
           case .threeQuarter: cameraNode?.position = SCNVector3(-170 * sign, 120, 340)
+          case .fingers: cameraNode?.position = SCNVector3(-170 * sign, 120, 340)
           case .palm: cameraNode?.position = SCNVector3(0, 85, 360)
           case .thumbSide: cameraNode?.position = SCNVector3(350 * sign, 100, 100)
           case .back: cameraNode?.position = SCNVector3(0, 85, -360)
@@ -231,8 +234,14 @@ struct GripSceneView: UIViewRepresentable {
     skin.roughness.contents = 0.72
     skin.metalness.contents = 0
     geometry.materials = [skin]
-    let normalSurface = Array(
-      repeating: SIMD4<Float>(0.70, 0.57, 0.46, 1), count: pose.vertices.count)
+    let sourceHand = try? GripHandAsset.load()
+    let pressure =
+      sourceHand.map { GripPoseSolver.contactPressureWeights(hand: $0, pose: pose) }
+      ?? Array(repeating: 0, count: pose.vertices.count)
+    let normalSurface = pressure.map { load -> SIMD4<Float> in
+      let weight = Float(load)
+      return SIMD4(0.70 + 0.055 * weight, 0.57 + 0.065 * weight, 0.46 + 0.065 * weight, 1)
+    }
     let colorSource = colorSource(normalSurface)
     let skinGeometry = SCNGeometry(
       sources: geometry.sources + [colorSource], elements: geometry.elements)
@@ -240,7 +249,6 @@ struct GripSceneView: UIViewRepresentable {
     let hand = SCNNode(geometry: skinGeometry)
     hand.name = "measured-hand"
     group.addChildNode(hand)
-    let sourceHand = try? GripHandAsset.load()
     for finger in pose.fingers {
       let direction = simd_normalize(finger.points[3] - finger.points[2])
       guard let sourceHand,
@@ -269,7 +277,7 @@ struct GripSceneView: UIViewRepresentable {
       nail.simdOrientation = simd_quatf(basis)
       nail.geometry?.firstMaterial?.lightingModel = .physicallyBased
       nail.geometry?.firstMaterial?.diffuse.contents = UIColor(
-        red: 0.74, green: 0.61, blue: 0.54, alpha: 1)
+        red: 0.86, green: 0.79, blue: 0.73, alpha: 1)
       nail.geometry?.firstMaterial?.roughness.contents = 0.45
       // Nails belong to the same finger for picking; no severity paint on the nail plate.
       nail.categoryBitMask = 4
@@ -307,8 +315,14 @@ struct GripSceneView: UIViewRepresentable {
     markers.name = "contact-points"
     group.addChildNode(markers)
     for finger in pose.fingers
-    where showBall && finger.contact && !(pose.pitch == .circleChange && finger.finger == .thumb) {
-      let normal = simd_normalize(finger.points[3] - pose.ballCenter)
+    where showBall && finger.contact
+      && !(pose.pitch == .circleChange && [.index, .thumb].contains(finger.finger))
+    {
+      guard let sourceHand else { continue }
+      let contact = GripPoseSolver.skinContact(
+        hand: sourceHand, vertices: pose.vertices,
+        finger: finger.finger, center: pose.ballCenter)
+      let normal = simd_normalize(contact - pose.ballCenter)
       let dot = SCNNode(geometry: SCNSphere(radius: 1.3))
       dot.position = vector(pose.ballCenter + normal * 37)
       dot.geometry?.firstMaterial?.diffuse.contents = UIColor.systemMint
@@ -461,8 +475,18 @@ struct GripSceneView: UIViewRepresentable {
     -> SCNGeometry
   {
     let skin = SIMD3<Float>(0.70, 0.57, 0.46)
-    let colors = surface.weights.map { weights -> SIMD4<Float> in
+    let baseColors = base.sources(for: .color).first
+    let colors = surface.weights.enumerated().map { vertex, weights -> SIMD4<Float> in
       var color = skin
+      if let source = baseColors {
+        color = source.data.withUnsafeBytes { bytes in
+          let offset = source.dataOffset + vertex * source.dataStride
+          return SIMD3(
+            bytes.loadUnaligned(fromByteOffset: offset, as: Float.self),
+            bytes.loadUnaligned(fromByteOffset: offset + 4, as: Float.self),
+            bytes.loadUnaligned(fromByteOffset: offset + 8, as: Float.self))
+        }
+      }
       for (i, zone) in GripZoneSurface.zones.enumerated() {
         guard let band = GripSeverityBand.band(severity?[zone]) else { continue }
         let tint: SIMD3<Float>
