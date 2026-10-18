@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Adapter for the existing Step 4 API. Geometry is deliberately opaque to AI.
 public struct FocusGripPlan: Encodable, Sendable {
@@ -31,8 +32,12 @@ public struct CoachingContext: Encodable, Sendable {
   public let profile: HandProfile
   public let plan: FocusGripPlan
   public let assessment: FocusAssessment
-  public init(profile: HandProfile, plan: FocusGripPlan, assessment: FocusAssessment) {
+  public let records: [ThrowRecord]?
+  private enum CodingKeys: String, CodingKey { case profile, plan, assessment; case records = "throws" }
+  public init(profile: HandProfile, plan: FocusGripPlan, assessment: FocusAssessment,
+    records: [ThrowRecord]? = nil) {
     self.profile = profile; self.plan = plan; self.assessment = assessment
+    self.records = records
   }
 }
 public struct CoachReply: Decodable, Sendable {
@@ -40,6 +45,7 @@ public struct CoachReply: Decodable, Sendable {
   public let rewritten: Bool
   public let fit: String?
   public let reason: String?
+  public var fitReason: String? = nil
 }
 public struct AskReply: Decodable, Sendable {
   public let answer: String
@@ -51,6 +57,7 @@ public struct CoachingClient: Sendable {
   public typealias Transport = @Sendable (URLRequest) async throws -> (Data, Int)
   private let baseURL: URL?
   private let transport: Transport
+  private let responses = CoachingResponseCache()
   public var isConfigured: Bool { baseURL != nil }
 
   public init(baseURL: URL?, transport: @escaping Transport = { request in
@@ -66,7 +73,9 @@ public struct CoachingClient: Sendable {
 
   public func coach(_ context: CoachingContext) async -> CoachReply {
     do {
-      let result: CoachReply = try await post("coach", body: context, timeout: 8)
+      let result: CoachReply = try await post("coach", body: context, timeout: 10) {
+        $0.rewritten && $0.fit != nil
+      }
       guard !result.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ClientError.invalid }
       return result
     } catch {
@@ -77,12 +86,14 @@ public struct CoachingClient: Sendable {
   public func ask(_ question: String, context: CoachingContext) async -> AskReply {
     struct Body: Encodable {
       let assessment: FocusAssessment; let profile: HandProfile; let plan: FocusGripPlan; let question: String
+      let records: [ThrowRecord]?
+      private enum CodingKeys: String, CodingKey { case assessment, profile, plan, question; case records = "throws" }
     }
     do {
       let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
       guard (3...300).contains(trimmed.count) else { throw ClientError.invalid }
       let result: AskReply = try await post("ask", body: Body(assessment: context.assessment,
-        profile: context.profile, plan: context.plan, question: trimmed), timeout: 15)
+        profile: context.profile, plan: context.plan, question: trimmed, records: context.records), timeout: 15) { $0.answered }
       guard !result.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ClientError.invalid }
       return result
     } catch {
@@ -91,15 +102,30 @@ public struct CoachingClient: Sendable {
     }
   }
 
-  private func post<Body: Encodable, Output: Decodable>(_ path: String, body: Body, timeout: TimeInterval) async throws -> Output {
+  private func post<Body: Encodable, Output: Decodable & Sendable>(
+    _ path: String, body: Body, timeout: TimeInterval,
+    cacheable: @escaping @Sendable (Output) -> Bool
+  ) async throws -> Output {
     guard let baseURL else { throw ClientError.notConfigured }
     var request = URLRequest(url: baseURL.appendingPathComponent("api").appendingPathComponent(path))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = timeout
-    request.httpBody = try JSONEncoder().encode(body)
-    let (data, status) = try await transport(request)
-    guard (200..<300).contains(status) else { throw ClientError.http(status) }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    request.httpBody = try encoder.encode(body)
+    let key = "\(request.url!.absoluteString):\(SHA256.hash(data: request.httpBody!))"
+    let transport = transport
+    let preparedRequest = request
+    let data = try await responses.value(for: key, work: {
+      let (data, status) = try await transport(preparedRequest)
+      guard (200..<300).contains(status) else { throw ClientError.http(status) }
+      _ = try JSONDecoder().decode(Output.self, from: data)
+      return data
+    }, cacheable: { data in
+      guard let output = try? JSONDecoder().decode(Output.self, from: data) else { return false }
+      return cacheable(output)
+    })
     return try JSONDecoder().decode(Output.self, from: data)
   }
   private enum ClientError: Error { case notConfigured, invalid, http(Int) }
@@ -107,6 +133,40 @@ public struct CoachingClient: Sendable {
     if case ClientError.notConfigured = error { return "not-configured" }
     if case ClientError.http(let status) = error { return "http-\(status)" }
     if (error as? URLError)?.code == .timedOut { return "timeout" }
+    if let code = (error as? URLError)?.code {
+      switch code {
+      case .cannotFindHost, .dnsLookupFailed: return "host-not-found"
+      case .cannotConnectToHost, .networkConnectionLost: return "cannot-connect"
+      case .notConnectedToInternet: return "offline-or-local-network-denied"
+      default: break
+      }
+    }
     return "unavailable"
+  }
+}
+
+private actor CoachingResponseCache {
+  private struct Entry { let data: Data; let expires: Date }
+  private var values: [String: Entry] = [:]
+  private var order: [String] = []
+  private var pending: [String: Task<Data, Error>] = [:]
+
+  func value(for key: String, work: @escaping @Sendable () async throws -> Data,
+    cacheable: @escaping @Sendable (Data) -> Bool) async throws -> Data {
+    if let entry = values[key], entry.expires > Date() { return entry.data }
+    values[key] = nil
+    order.removeAll { $0 == key }
+    if let task = pending[key] { return try await task.value }
+    guard pending.count < 8 else { throw URLError(.resourceUnavailable) }
+    let task = Task { try await work() }
+    pending[key] = task
+    defer { pending[key] = nil }
+    let data = try await task.value
+    if cacheable(data) {
+      values[key] = Entry(data: data, expires: Date().addingTimeInterval(600))
+      order.append(key)
+      while order.count > 32 { values[order.removeFirst()] = nil }
+    }
+    return data
   }
 }

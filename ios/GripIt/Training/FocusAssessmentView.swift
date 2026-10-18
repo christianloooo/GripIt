@@ -16,19 +16,17 @@ struct FocusAssessmentView: View {
   @State private var questionRequest = UUID()
   @State private var answer: AskReply?
   @State private var asking = false
+  @State private var showPrototypeFlags = false
   @FocusState private var editingQuestion: Bool
 
   private var context: CoachingContext { model.context(for: assessment) }
-  private var orderedZones: [FocusZone] {
-    assessment.zones.sorted { $0.severity.numericValue > $1.severity.numericValue }
-  }
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         TrainingStepLabel(step: 4)
         HStack {
-          Text(assessment.zones.isEmpty ? "Your feedback" : "Where to focus")
+          Text("Your throw review")
             .font(.title.bold())
           Spacer()
           if model.draft.source == .sample || model.usesSampleHand {
@@ -40,7 +38,8 @@ struct FocusAssessmentView: View {
         // This is the very same pose and plan captured in Step 2. No second solve.
         GripSceneView(
           pose: model.fit.pose, showContacts: false, camera: camera,
-          reset: reset, gripPlan: model.fit.plan, zoneSeverity: assessment.severityMap,
+          reset: reset, gripPlan: model.fit.plan,
+          zoneSeverity: showPrototypeFlags ? assessment.severityMap : nil,
           selectedZone: selectedZone, onZoneSelect: { selectedZone = $0 }
         )
         .frame(height: 330)
@@ -59,26 +58,20 @@ struct FocusAssessmentView: View {
           }
         }.frame(maxWidth: .infinity)
 
-        if !assessment.zones.isEmpty {
-          HStack(spacing: 16) {
-            legend("Looks good", .green)
-            legend("Review", .yellow)
-            legend("Focus", .red)
-          }.font(.caption)
+        if !model.fit.plan.zones.isEmpty {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-              ForEach(orderedZones) { zone in
+              ForEach(model.fit.plan.zones) { zone in
                 Button {
                   selectedZone = zone.zoneId
                 } label: {
                   HStack(spacing: 6) {
-                    Circle().fill(color(zone.severity)).frame(width: 7, height: 7)
                     Text(zone.zoneId.title)
                   }.padding(.vertical, 5)
                 }
                 .buttonStyle(.bordered)
                 .tint(selectedZone == zone.zoneId ? .mint : .gray)
-                .accessibilityLabel("\(zone.zoneId.title), \(zone.severity.title)")
+                .accessibilityLabel(zone.zoneId.title)
                 .accessibilityAddTraits(selectedZone == zone.zoneId ? .isSelected : [])
               }
             }
@@ -88,12 +81,12 @@ struct FocusAssessmentView: View {
         if let selectedZone {
           VStack(alignment: .leading, spacing: 8) {
             Text(selectedZone.title).font(.headline)
-            if let zone = assessment.zones.first(where: { $0.zoneId == selectedZone }) {
-              Text(zone.reason).font(.subheadline)
-              Text("\(Int(zone.confidence * 100))% confidence")
-                .font(.caption).foregroundStyle(.secondary)
-            } else if assessment.unreachableZones.contains(selectedZone) {
-              Text("This contact needs a better fit before technique advice.").font(.subheadline)
+            if let zone = model.fit.plan.zones.first(where: { $0.zoneId == selectedZone }) {
+              Text(zone.instruction).font(.subheadline)
+              if zone.reach != .comfortable {
+                Text("Check this contact's fit before changing pressure.")
+                  .font(.caption).foregroundStyle(.orange)
+              }
             } else {
               Text("No assessment for this area.").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -102,11 +95,14 @@ struct FocusAssessmentView: View {
         }
 
         VStack(alignment: .leading, spacing: 10) {
-          Text("TRY THIS NEXT").font(.caption.bold()).foregroundStyle(.mint)
-          Text(assessment.nextAction.summary).font(.title3.bold())
-          Text(coaching?.detail ?? assessment.nextAction.detail).font(.subheadline)
+          Text("AI COACHING").font(.caption.bold()).foregroundStyle(.mint)
           if coaching?.rewritten == true {
-            Label("AI coaching", systemImage: "sparkles").font(.caption).foregroundStyle(.mint)
+            Text(coaching!.detail).font(.subheadline)
+          } else if loadingCoach {
+            HStack { ProgressView().controlSize(.small); Text("Reviewing your throws…") }
+          } else {
+            Text("Your throw data is ready. Retry coaching or review the prototype notes below.")
+              .font(.subheadline).foregroundStyle(.secondary)
           }
         }.frame(maxWidth: .infinity, alignment: .leading)
           .padding(18).background(.mint.opacity(0.09), in: RoundedRectangle(cornerRadius: 18))
@@ -156,10 +152,11 @@ struct FocusAssessmentView: View {
           }
           if let answer { Text(answer.answer).font(.subheadline).foregroundStyle(.secondary) }
           if !model.client.isConfigured
-            || (coaching?.reason != nil && coaching?.rewritten != true && coaching?.fit == nil)
+            || (!loadingCoach && coaching != nil
+              && (coaching?.rewritten != true || coaching?.fit == nil))
           {
             HStack {
-              Text("AI coaching unavailable. Showing rule feedback.").font(.caption)
+              Text(connectionMessage(coaching?.reason ?? coaching?.fitReason)).font(.caption)
                 .foregroundStyle(.secondary)
               if model.client.isConfigured {
                 Button("Retry") { coachRequest = UUID() }.font(.caption)
@@ -168,11 +165,17 @@ struct FocusAssessmentView: View {
           }
         }
 
-        DisclosureGroup("Feedback details") {
+        DisclosureGroup("Prototype rule notes") {
           VStack(alignment: .leading, spacing: 8) {
             Text(
-              "\(assessment.throwIds.count) throws · \(Int(assessment.confidence * 100))% confidence"
+              "\(assessment.throwIds.count) throws"
             )
+            Toggle("Show prototype colors", isOn: $showPrototypeFlags)
+            ForEach(Array(Set(assessment.zones.map(\.reason))).sorted(), id: \.self) { reason in
+              Text(reason)
+            }
+            Text(assessment.nextAction.summary)
+            Text(assessment.nextAction.detail)
             Text("Rules: \(assessment.ruleVersion)")
             if let consistency = assessment.consistency {
               Text(
@@ -184,7 +187,7 @@ struct FocusAssessmentView: View {
               }
             }
             Text(
-              "Uncolored areas have no assessment. Colors suggest focus areas, not proven causes.")
+              "These test rules do not measure finger faults. Their confidence values are not calibrated.")
           }.font(.caption).foregroundStyle(.secondary).padding(.top, 8)
         }
         if assessment.prototypeAdvice {
@@ -208,7 +211,7 @@ struct FocusAssessmentView: View {
       .padding(.horizontal, 20).padding(.vertical, 12).background(.ultraThinMaterial)
     }
     .onAppear {
-      selectedZone = selectedZone ?? assessment.nextAction.zoneId ?? orderedZones.first?.zoneId
+      selectedZone = selectedZone ?? model.fit.plan.zones.first?.zoneId
     }
     .task(id: coachRequest) {
       loadingCoach = true
@@ -235,17 +238,16 @@ struct FocusAssessmentView: View {
     submittedQuestion = text
     questionRequest = UUID()
   }
-  private func color(_ severity: FocusSeverity) -> Color {
-    switch severity {
-    case .green: .green
-    case .yellow: .yellow
-    case .red: .red
-    }
-  }
-  private func legend(_ title: String, _ color: Color) -> some View {
-    HStack(spacing: 5) {
-      Circle().fill(color).frame(width: 7, height: 7)
-      Text(title)
+  private func connectionMessage(_ reason: String?) -> String {
+    switch reason {
+    case "not-configured": return "AI server address is missing. This app needs a configured build."
+    case "host-not-found", "cannot-connect": return "Can't reach the coaching server. Keep the Mac server running on the same Wi-Fi."
+    case "offline-or-local-network-denied": return "Check Wi-Fi and allow Local Network access for GripIt Step 2 in iPhone Settings."
+    case "timeout": return "AI took too long. Please retry."
+    case "http-403": return "The server blocked this connection. Check the local hostname allowance."
+    case "no-api-key": return "The coaching server has no API key configured."
+    case "rejected", "unparsed": return "AI couldn't produce a usable answer. Please retry."
+    default: return "AI coaching is unavailable. Please retry."
     }
   }
 }

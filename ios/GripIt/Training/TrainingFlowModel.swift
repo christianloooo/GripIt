@@ -40,6 +40,7 @@ final class TrainingFlowModel: ObservableObject {
   @Published var draft = ThrowSessionDraft()
   @Published private(set) var errors: [String: [String: String]] = [:]
   @Published private(set) var message: String?
+  private var assessedRecords: [ThrowRecord]?
   var pitch: PitchGrip { fit.pose.pitch }
   var usesSampleHand: Bool { profile.capture.method.localizedCaseInsensitiveContains("sample") }
 
@@ -93,9 +94,11 @@ final class TrainingFlowModel: ObservableObject {
         return nil
       }
       let records = try NativeFocusEngine.records(draft, pitch: pitch, profileId: profile.profileId)
-      return try NativeFocusEngine.assess(
+      let result = try NativeFocusEngine.assess(
         pitch: pitch, records: records,
         zones: fit.plan.zones, gripPlanId: gripPlan.gripPlanId)
+      assessedRecords = records
+      return result
     } catch {
       message = error.localizedDescription
       return nil
@@ -103,7 +106,8 @@ final class TrainingFlowModel: ObservableObject {
   }
 
   func context(for assessment: FocusAssessment) -> CoachingContext {
-    CoachingContext(profile: profile, plan: gripPlan, assessment: assessment)
+    return CoachingContext(profile: profile, plan: gripPlan, assessment: assessment,
+      records: assessedRecords)
   }
 }
 

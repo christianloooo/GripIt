@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0",
+  "profileId": "sample-small-right",
+  "createdAt": "2026-10-17T00:00:00Z",
+  "handedness": "right",
+  "units": "millimeters",
+  "coordinateSystem": "gripit-hand-v1",
+  "measurements": {
+    "palm": { "widthMm": 76, "lengthMm": 70, "thicknessMm": null },
+    "fingers": {
+      "index": { "segmentsMm": [36, 23, 20], "diameterMm": null },
+      "middle": { "segmentsMm": [40, 25, 23], "diameterMm": null },
+      "ring": { "segmentsMm": [39, 24, 21], "diameterMm": null },
+      "pinky": { "segmentsMm": [33, 19, 18], "diameterMm": null },
+      "thumb": { "segmentsMm": [36, 30, 22], "diameterMm": null }
+    }
+  },
+  "landmarks": {},
+  "capture": {
+    "method": "true-depth-mediapipe",
+    "coverage": { "fraction": 1 },
+    "confidence": 0.92
+  },
+  "extensions": {}
+}

@@ -18,7 +18,7 @@ export interface GripPlan {
   instructionZones: InstructionZone[];
   fit: {
     /** Inclusive 0...1. How well the pitch fits this hand overall. */
-    confidence: number;
+    confidence: number | null;
     /** Contacts the solver could not satisfy, in its own words. */
     unresolved?: string[];
   };

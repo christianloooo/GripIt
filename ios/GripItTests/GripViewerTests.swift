@@ -4,6 +4,30 @@ import XCTest
 
 @testable import GripIt
 
+/// Opt-in phone-to-server check. Ordinary test runs never spend provider calls.
+final class LiveCoachingTests: XCTestCase {
+  func testPhoneCanReceiveCoachingAndAskFollowUp() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["GRIPIT_LIVE_COACH_SMOKE"] == "1")
+    let address = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "GripItAPIBaseURL") as? String)
+    let url = try XCTUnwrap(URL(string: address))
+    let profile = try SampleHandProfiles.averageRight()
+    let planId = "device-smoke-four-seam"
+    let records = try NativeFocusEngine.records(.sample(), pitch: .fourSeam, profileId: profile.profileId)
+    let assessment = try NativeFocusEngine.assess(pitch: .fourSeam, records: records,
+      zones: PitchGrip.fourSeam.zoneTemplates, gripPlanId: planId)
+    let context = CoachingContext(profile: profile,
+      plan: FocusGripPlan(profileId: profile.profileId, pitch: .fourSeam,
+        zones: PitchGrip.fourSeam.zoneTemplates, gripPlanId: planId),
+      assessment: assessment, records: records)
+    let client = CoachingClient(baseURL: url)
+    let reply = await client.coach(context)
+    XCTAssertTrue(reply.rewritten, "Coaching failed: \(reply.reason ?? "unknown")")
+    XCTAssertNotNil(reply.fit, "Fit explanation failed: \(reply.fitReason ?? "unknown")")
+    let answer = await client.ask("What does spin efficiency mean, and can it identify a finger fault?", context: context)
+    XCTAssertTrue(answer.answered, "Follow-up failed: \(answer.reason ?? "unknown")")
+  }
+}
+
 final class GripViewerTests: XCTestCase {
   @MainActor func testPressurePreviewUsesContinuousPineShadingAndExportsActualScenes() throws {
     let asset = try GripHandAsset.load()

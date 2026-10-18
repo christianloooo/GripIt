@@ -4,6 +4,48 @@ import XCTest
 @testable import GripItScannerCore
 
 final class CoachingClientTests: XCTestCase {
+  private actor Requests {
+    var count = 0
+    let failFirst: Bool
+    init(failFirst: Bool = false) { self.failFirst = failFirst }
+    func send(_ request: URLRequest) async throws -> (Data, Int) {
+      count += 1
+      if failFirst && count == 1 { throw URLError(.timedOut) }
+      try await Task.sleep(for: .milliseconds(20))
+      if request.url?.path == "/api/ask" {
+        return (Data(#"{"answer":"Try this again.","answered":true}"#.utf8), 200)
+      }
+      return (Data(#"{"detail":"Try this again.","rewritten":true,"fit":"Your measured fit."}"#.utf8), 200)
+    }
+  }
+
+  func testRepeatedAndConcurrentCoachingSharesOneRequest() async throws {
+    let context = try context()
+    let requests = Requests()
+    let client = CoachingClient(baseURL: URL(string: "https://example.com"), transport: requests.send)
+    async let first = client.coach(context)
+    async let second = client.coach(context)
+    let results = await [first, second]
+    XCTAssertTrue(results.allSatisfy(\.rewritten))
+    _ = await client.coach(context)
+    let count = await requests.count
+    XCTAssertEqual(count, 1)
+  }
+
+  func testFailureCanRetryAndQuestionsUseDistinctKeys() async throws {
+    let context = try context()
+    let requests = Requests(failFirst: true)
+    let client = CoachingClient(baseURL: URL(string: "https://example.com"), transport: requests.send)
+    let failed = await client.coach(context)
+    XCTAssertFalse(failed.rewritten)
+    let recovered = await client.coach(context)
+    XCTAssertTrue(recovered.rewritten)
+    _ = await client.ask("Why this finger?", context: context)
+    _ = await client.ask("Why this finger?", context: context)
+    _ = await client.ask("Why this grip?", context: context)
+    let count = await requests.count
+    XCTAssertEqual(count, 4)
+  }
   private func context() throws -> CoachingContext {
     let records = try NativeFocusEngine.records(.sample(), pitch: .fourSeam, profileId: "p")
     let assessment = try NativeFocusEngine.assess(
@@ -13,7 +55,7 @@ final class CoachingClientTests: XCTestCase {
       profile: try SampleHandProfiles.averageRight(),
       plan: FocusGripPlan(
         profileId: "p", pitch: .fourSeam, zones: PitchGrip.fourSeam.zoneTemplates,
-        gripPlanId: "g"), assessment: assessment)
+        gripPlanId: "g"), assessment: assessment, records: records)
   }
 
   func testExistingCoachEndpointAndMeasuredContext() async throws {
@@ -24,6 +66,10 @@ final class CoachingClientTests: XCTestCase {
       let body = try XCTUnwrap(
         JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any])
       let plan = try XCTUnwrap(body["plan"] as? [String: Any])
+      let records = try XCTUnwrap(body["throws"] as? [[String: Any]])
+      XCTAssertEqual(records.count, 3)
+      let readings = try XCTUnwrap(records.first?["measurements"] as? [String: Any])
+      XCTAssertEqual(readings["velocityMph"] as? Double, 82.4)
       XCTAssertEqual(plan["pitchId"] as? String, "four-seam")
       XCTAssertEqual(plan["gripPlanId"] as? String, "g")
       XCTAssertEqual((plan["instructionZones"] as? [Any])?.count, 7)

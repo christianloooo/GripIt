@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0.0",
+  "gripPlanId": "sample-four-seam-small-right",
+  "handProfileId": "sample-small-right",
+  "pitchId": "four-seam",
+  "ballTransform": {},
+  "jointTransforms": {},
+  "contacts": [],
+  "instructionZones": [
+    {
+      "zoneId": "index-pad",
+      "title": "Index finger",
+      "instruction": "Pad across the raised stitching, seam crossing underneath",
+      "pressure": "medium",
+      "role": "drive",
+      "reach": "comfortable",
+      "placement": {
+        "surface": "pad",
+        "region": "top",
+        "seam": "across",
+        "seamOffsetMm": 0,
+        "opposes": []
+      }
+    },
+    {
+      "zoneId": "middle-pad",
+      "title": "Middle finger",
+      "instruction": "Beside the index, pad also crossing the stitching",
+      "pressure": "firm",
+      "role": "drive",
+      "reach": "comfortable",
+      "placement": {
+        "surface": "pad",
+        "region": "top",
+        "seam": "across",
+        "seamOffsetMm": 0,
+        "opposes": []
+      }
+    },
+    {
+      "zoneId": "thumb-pad",
+      "title": "Thumb",
+      "instruction": "Fleshy pad underneath, on smooth leather",
+      "pressure": "light",
+      "role": "support",
+      "reach": "strained",
+      "placement": {
+        "surface": "pad",
+        "region": "underside",
+        "seam": "off",
+        "seamOffsetMm": null,
+        "opposes": ["index-pad", "middle-pad"]
+      }
+    },
+    {
+      "zoneId": "wrist",
+      "title": "Wrist",
+      "instruction": "Stay behind the ball",
+      "pressure": "firm",
+      "role": "drive",
+      "reach": "comfortable",
+      "placement": null
+    }
+  ],
+  "fit": { "confidence": 0.74, "unresolved": [] },
+  "extensions": {}
+}
