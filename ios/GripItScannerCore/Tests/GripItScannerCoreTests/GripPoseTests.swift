@@ -86,7 +86,7 @@ final class GripPoseTests: XCTestCase {
         }
       }
       for rig in pose.fingers
-      where rig.contact && !(pitch == .circleChange && [.thumb, .index].contains(rig.finger)) {
+      where rig.contact && !(pitch == .circleChange && rig.finger == .index) {
         let gap = GripPoseSolver.padVertices(
           hand: hand, vertices: pose.vertices, finger: rig.finger
         ).map { abs(simd_distance($0, pose.ballCenter) - 36.5) }.min()!
@@ -106,8 +106,37 @@ final class GripPoseTests: XCTestCase {
         "A small fingerprint patch must touch, not only one lucky surface vertex")
       XCTAssertLessThan(pose.diagnostics.maximumSkinPenetrationMm, 3)
       XCTAssertLessThan(pose.diagnostics.maximumEdgeStretch, 6)
-      if let gap = pose.diagnostics.loopGapMm {
-        XCTAssertLessThan(gap, 4)
+      let support =
+        GripPoseSolver.skinContact(
+          hand: hand, vertices: pose.vertices, finger: .thumb, center: pose.ballCenter)
+        - pose.ballCenter
+      XCTAssertLessThan(support.y, -28, "Thumb must support below the ball, not touch its side")
+      XCTAssertLessThan(
+        abs(support.x), 16, "Thumb support should sit under the central part of the ball")
+      if pitch == .slider || pitch == .circleChange {
+        for finger: GripFinger in pitch == .slider ? [.index, .middle] : [.middle, .ring] {
+          let ids = GripPoseSolver.middleContactIndices(hand: hand, finger: finger)
+          let gaps = ids.map { abs(simd_distance(pose.vertices[$0], pose.ballCenter) - 36.5) }
+            .sorted().prefix(8)
+          XCTAssertLessThan(
+            gaps.reduce(0, +) / Double(gaps.count), 1.5,
+            "Middle phalanx must wrap against the ball as well as the fingertip")
+          if !(pitch == .slider && finger == .index) {
+            let nearest = ids.sorted {
+              abs(simd_distance(pose.vertices[$0], pose.ballCenter) - 36.5)
+                < abs(simd_distance(pose.vertices[$1], pose.ballCenter) - 36.5)
+            }.prefix(12)
+            let point =
+              nearest.reduce(SIMD3<Double>.zero) { $0 + pose.vertices[$1] } / Double(nearest.count)
+            let local = pose.ballRotation.inverse.act(
+              simd_normalize(point - pose.ballCenter) * 36.5)
+            let seamGap = ball.seams.map {
+              simd_distance(SIMD3($0.position[0], $0.position[1], $0.position[2]), local)
+            }.min()!
+            XCTAssertLessThan(
+              seamGap, 3, "The middle contact must ride the seam as well as touching the ball")
+          }
+        }
       }
       for finger in pose.fingers where finger.finger != .thumb {
         XCTAssertLessThanOrEqual(abs(finger.opposition), 0.12)

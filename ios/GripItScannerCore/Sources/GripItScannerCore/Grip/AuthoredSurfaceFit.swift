@@ -12,17 +12,36 @@ extension GripPoseSolver {
     var selection = Set(
       stride(from: 0, to: hand.vertices.count, by: max(1, hand.vertices.count / 1400)))
     var padIDs: [GripFinger: Set<Int>] = [:]
+    var middleIDs: [GripFinger: Set<Int>] = [:]
     for finger in GripFinger.allCases {
       let ids = padIndices(hand: hand, finger: finger)
       let sampled = stride(from: 0, to: ids.count, by: max(1, ids.count / 90)).map { ids[$0] }
       padIDs[finger] = Set(sampled)
       selection.formUnion(sampled)
+      if wrapsMiddle(finger, pitch: pitch) {
+        let region = middleContactIndices(hand: hand, finger: finger)
+        let middle = stride(from: 0, to: region.count, by: max(1, region.count / 60)).map {
+          region[$0]
+        }
+        middleIDs[finger] = Set(middle)
+        selection.formUnion(middle)
+      }
     }
+    let thumbBones = GripFinger.thumb.jointNames.compactMap { name in
+      hand.joints.firstIndex { $0.name == name }
+    }
+    selection.formUnion(
+      hand.vertices.indices.filter { i in
+        i % 3 == 0 && thumbBones.reduce(0.0) { $0 + hand.weights[i][$1] } > 0.45
+      })
     let ids = selection.sorted()
     let padOffsets = Dictionary(
       uniqueKeysWithValues: GripFinger.allCases.map { finger in
         (finger, ids.indices.filter { padIDs[finger]!.contains(ids[$0]) })
       })
+    let middleOffsets = middleIDs.mapValues { region in
+      ids.indices.filter { region.contains(ids[$0]) }
+    }
     func score(_ fingers: [GripFingerPose], _ center: SIMD3<Double>) throws -> Double {
       let skin = try deform(
         hand: hand, fingers: fingers, scale: scale, center: center, vertexIndices: ids)
@@ -35,22 +54,25 @@ extension GripPoseSolver {
       }
       var value = 700 * maximum * maximum + collisions * 0.6
       for finger in fingers
-      where finger.contact && !(pitch == .circleChange && [.thumb, .index].contains(finger.finger))
-      {
+      where finger.contact && !(pitch == .circleChange && finger.finger == .index) {
         let gaps = padOffsets[finger.finger]!.map {
           abs(simd_distance(skin[$0], center) - ballRadius)
         }.sorted().prefix(8)
         value += 65 * gaps.reduce(0) { $0 + $1 * $1 } / Double(max(1, gaps.count))
       }
-      if pitch == .circleChange {
-        var gap = Double.infinity
-        for a in padOffsets[.index]! {
-          for b in padOffsets[.thumb]! {
-            gap = min(gap, simd_distance(skin[a], skin[b]))
-          }
-        }
-        value += 80 * gap * gap
+      for offsets in middleOffsets.values {
+        let gaps = offsets.map { abs(simd_distance(skin[$0], center) - ballRadius) }.sorted()
+          .prefix(8)
+        value += 45 * gaps.reduce(0) { $0 + $1 * $1 } / Double(max(1, gaps.count))
       }
+      // A touching thumb at the side is not a supporting thumb. Fit the actual
+      // fingerprint surface into the lower, central quadrant of the ball.
+      let thumbPoints = padOffsets[.thumb]!.map { skin[$0] }.sorted {
+        abs(simd_distance($0, center) - ballRadius) < abs(simd_distance($1, center) - ballRadius)
+      }.prefix(12)
+      let thumb = thumbPoints.reduce(SIMD3<Double>.zero, +) / Double(max(1, thumbPoints.count))
+      let support = center + unit(SIMD3<Double>(0.10, -0.92, 0.38)) * ballRadius
+      value += 14 * simd_length_squared(thumb - support)
       // Capsule clearance and synthetic bone-tip targets belong to the coarse
       // initializer. Retaining them here fights real skin contact and creates
       // floating pads. Only a small pose regularizer accompanies skin fitting.
@@ -97,7 +119,9 @@ extension GripPoseSolver {
                 axis < 3
                 ? initial[i].angles[axis] : axis == 3 ? initial[i].yaw : initial[i].opposition
               let candidate = current + sign * step
-              guard abs(candidate - original) <= 0.45 else { continue }
+              guard abs(candidate - original) <= (trial[i].finger == .thumb ? 1.2 : 0.45) else {
+                continue
+              }
               if axis < 3 {
                 let minimum = axis == 0 ? (trial[i].finger == .thumb ? 0.1 : -0.35) : 0
                 let maximum =

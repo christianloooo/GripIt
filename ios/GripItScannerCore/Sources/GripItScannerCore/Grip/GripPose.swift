@@ -74,8 +74,6 @@ public enum GripPoseSolver {
     let length = fit.length
     let measuredRoots = fit.measuredRoots
     var center = SIMD3(0, length + 8, pitch == .circleChange ? 46.0 : 48.0)
-    let thumbOpposes =
-      pitch.zoneTemplates.first { $0.zoneId == .thumbPad }?.placement?.opposes ?? []
     func upperNormal(_ finger: GripFinger) -> SIMD3<Double> {
       switch finger {
       case .index: unit(SIMD3(pitch == .slider ? 0.20 : 0.31, 0.65, 0.70))
@@ -87,8 +85,8 @@ public enum GripPoseSolver {
       fingers.map { rig in
         let f = rig.finger
         let r = ballRadius + rig.radius * (pitch.upperContacts.contains(f) ? 0.6 : 0.8)
-        if pitch == .circleChange && (f == .index || f == .thumb) {
-          return center + SIMD3(ballRadius + 6, f == .index ? -14.5 : -15.5, -7)
+        if pitch == .circleChange && f == .index {
+          return center + SIMD3(24, -27, 13)
         }
         let direction: SIMD3<Double>
         switch f {
@@ -113,12 +111,11 @@ public enum GripPoseSolver {
           }
           direction = SIMD3(-0.90, -0.28, 0.32)
         case .thumb:
-          // Bias lateral support opposite the specified contact midpoint while
-          // retaining the thumb-side offset needed by this bounded hand rig.
-          // This is an approximate opposition fit, not exact antipodal contact.
-          let opposing = thumbOpposes.compactMap(\.finger).map(upperNormal)
+          // Seed the thumb beneath the principal contacts. Actual skin support
+          // is then fitted in the lower, central quadrant of the ball.
+          let opposing = pitch.upperContacts.map(upperNormal)
           let midpoint = opposing.reduce(SIMD3<Double>.zero, +) / Double(max(1, opposing.count))
-          direction = SIMD3(0.38 - midpoint.x * 0.25, -0.85, 0.36)
+          direction = SIMD3(0.10 - midpoint.x * 0.15, -0.92, 0.38)
         }
         return center + unit(direction) * r
       }
@@ -220,7 +217,7 @@ public enum GripPoseSolver {
       )
     }
     let contacts = fingers.filter {
-      $0.contact && !(pitch == .circleChange && [.thumb, .index].contains($0.finger))
+      $0.contact && !(pitch == .circleChange && $0.finger == .index)
     }
     let padSurfaceGap =
       contacts.map { finger in
@@ -228,9 +225,9 @@ public enum GripPoseSolver {
           abs(simd_distance($0, center) - ballRadius)
         }.min() ?? Double.infinity
       }.max() ?? 0
-    let loop: Double? =
-      pitch == .circleChange
-      ? padGap(hand: hand, vertices: vertices, first: .index, second: .thumb) : nil
+    // This photo-guided changeup wraps the index beside the ball. A closed
+    // index–thumb circle is optional; it must never displace the supporting thumb.
+    let loop: Double? = nil
     return GripPose(
       pitch: pitch, handedness: profile.handedness, ballCenter: center, ballRotation: rotation,
       fingers: fingers, vertices: vertices, indices: hand.indices,
@@ -405,8 +402,9 @@ public enum GripPoseSolver {
             ? [0.9, 1.6, 1.1]
             : pitch != .circleChange && f == .pinky
               ? [1.1, 1.5, 1.0]
-              : pitch == .circleChange && f == .index ? [0.55, 1.35, 0.9] : nil,
-          minimumKnuckleCurl: pitch.upperContacts.contains(f) ? 0.65 : -0.15,
+              : pitch == .circleChange && f == .index ? [1.2, 1.6, 1.05] : nil,
+          minimumKnuckleCurl: pitch == .circleChange && f == .index
+            ? 1.0 : pitch.upperContacts.contains(f) ? 0.65 : -0.15,
           spreadLimit: f == .middle || (f == .index && pitch != .circleChange) ? 0.18 : 0.4))
     }
     return (fingers, scale, width, length, measuredRoots, limited)

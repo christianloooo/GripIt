@@ -61,17 +61,17 @@ Choose **4-seam**, **2-seam**, **Slider**, or **Changeup**. Drag to orbit, pinch
 
 - The native SceneKit renderer uses the connected, MIT-licensed WebXR hand mesh, welded and subdivided twice for a smoother surface. It does not render disconnected capsule fingers.
 - Palm width is interpreted as the MCP-to-MCP span used by Step 1, without the old website's 1.18 multiplier. Palm length, all 15 finger segment lengths, and valid measured MCP/CMC positions drive the pose. The asset's interior XR fingertip markers are calibrated to the visible mesh tips before scaling, preventing an extra modeled fingertip beyond the scanned length. Left hands mirror the canonical right-hand scene exactly once.
-- A personalized bind shape and dual-quaternion skinning retain volume during bending. Thumb base direction is bounded away from the wrist; independent bend-plane opposition lets the index and thumb form the circle-change loop.
+- A personalized bind shape and dual-quaternion skinning retain volume during bending. Thumb base direction is bounded away from the wrist; the thumb is fitted to actual skin contact underneath the ball. The changeup index curls beside the ball without forcing the supporting thumb into a side loop.
 - The project-supplied Ball.glb clean variant is normalized to a 73 mm sphere and uses its original PBR textures. Its actual texture supplies the stitch samples. Ball rotation searches for crossed seams in a four-seamer, along-finger seams in a two-seamer, slider middle-on-seam/index-on-leather, and middle/ring seam contacts for the circle change.
-- Skin overlap, edge stretching, visible pad-to-ball gaps, pad-target gaps, seam alignment, and circle-loop gaps between rendered fingertip surfaces are checked. Severe overlaps or distorted meshes are rejected. Less severe unresolved fits show an orange review message.
+- Skin overlap, edge stretching, visible pad-to-ball gaps, pad-target gaps, seam alignment, and central underside thumb support are checked. Slider index/middle and changeup middle/ring also fit their middle sections against the ball. Severe overlaps or distorted meshes are rejected. Less severe unresolved fits show an orange review message.
 
 This is an authored hand fitted to measurements, not a photogrammetric or biomechanically validated skin reconstruction. Unmeasured thickness, nails, and soft tissue remain modeled. Local pad/seam alignment is checked numerically; the full horseshoe orientation and overall anatomy still require visual review on real scanned profiles. Capsule collision penalties and vertex checks do not guarantee a completely collision-free skin surface. Pressure is described by the guide, not inferred or simulated.
 
 Xcode bundles the generated model resources directly; there is no npm step for ordinary Swift changes. To regenerate the native assets after editing the source GLBs or seam samples, run `npm ci` and `node scripts/prepare-native-grip.mjs`. Model conversion preserves the source license notices in the app resources.
 
-For Debug-only simulator previews, add `--grip-preview --pitch=changeup --camera=thumbSide` to the scheme launch arguments. `--left` previews the mirrored hand. Add `--heatmap` for labeled sample diagnostics. These entry points do not replace the scanner in Release builds.
+For Debug-only simulator previews, add `--grip-preview --pitch=changeup --camera=thumbSide` to the scheme launch arguments. `--left` previews the mirrored hand. Step 2 defaults to white-to-pine pressure shading; use **Show pressure** to toggle natural skin. These entry points do not replace the scanner in Release builds.
 
-The viewer now includes seven selectable zones and a shared diagnostic heat map. See [the native viewer contract and review steps](../docs/step-2-viewer.md) for severity input, reach tolerances, selection behavior, and limitations.
+The viewer now includes seven selectable zones, simple Step 2 pressure shading, and a separate Step 4 diagnostic heat map. See [the native viewer contract and review steps](../docs/step-2-viewer.md) for severity input, reach tolerances, selection behavior, and limitations.
 
 ## Scan flow
 

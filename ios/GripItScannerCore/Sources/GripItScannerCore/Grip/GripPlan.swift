@@ -148,14 +148,11 @@ public struct GripPlan: Codable, Sendable {
           surfaces.map { simd_distance($0, pose.ballCenter) - GripPoseSolver.ballRadius }.min()
           ?? .infinity
         let penetration = max(0, -minimumGap)
-        var error = zone.role == .clear ? penetration : max(penetration, max(0, minimumGap))
-        if pitch == .circleChange && [.indexPad, .thumbPad].contains(zone.zoneId) {
-          error = pose.diagnostics.loopGapMm ?? .infinity
-        }
+        let error = zone.role == .clear ? penetration : max(penetration, max(0, minimumGap))
         zone.shortfallMm = max(0, error)
         zone.reach = .classify(shortfallMm: error)
         zone.reachEvidence =
-          "Actual skin gap / overlap; circle-change loop uses index–thumb pad distance. 3 mm comfortable, 8 mm strained."
+          "Actual skin gap / overlap. 3 mm comfortable, 8 mm strained."
       } else if zone.zoneId == .palm, let hand {
         let points = pose.vertices.indices.filter { i in
           let v = hand.vertices[i]
@@ -213,8 +210,8 @@ extension PitchGrip {
       GripZonePlan(
         .thumbPad, instructionText(.thumbPad), .light, .support,
         place(
-          .pad, change ? .thumbSide : .underside, .off,
-          change ? [.indexPad] : slider ? [.middlePad] : [.indexPad, .middlePad])),
+          .pad, .underside, .off,
+          change ? [.middlePad, .ringSide] : slider ? [.middlePad] : [.indexPad, .middlePad])),
     ]
     if !slider {
       zones.append(
@@ -233,14 +230,15 @@ extension PitchGrip {
     case (.fourSeam, .middlePad): "Beside the index, pad also crossing the stitching."
     case (.twoSeam, .indexPad): "Pad along the thumb-side seam, following its direction."
     case (.twoSeam, .middlePad): "Pad along the other seam, toward the pinky side."
-    case (.slider, .indexPad): "Rests on smooth leather beside the middle finger, stabilising."
-    case (.slider, .middlePad): "Pad along the pinky-side seam with definite purchase."
+    case (.slider, .indexPad):
+      "Wrap the pad and middle section on leather beside the middle finger, stabilising."
+    case (.slider, .middlePad): "Wrap the pad and middle section along the pinky-side seam."
     case (.circleChange, .indexPad):
-      "Curled around the thumb-side surface, forming a loop with the thumb."
+      "Curled lightly around the thumb-side surface; keep the thumb supporting underneath."
     case (.circleChange, .middlePad): "Pad along the thumb-side seam."
     case (.circleChange, .ringSide): "Pad along the pinky-side seam. A principal contact here."
     case (.circleChange, .thumbPad):
-      "Wrapped around the lower thumb-side surface, closing the loop."
+      "Supports the lower centre of the ball with the fleshy pad; keep the index relaxed beside it."
     case (.circleChange, .pinky): "Wrapped lightly around the far side to stabilise."
     case (.circleChange, .palm): "Let the ball settle comfortably into the hand."
     case (.circleChange, .wrist): "Wrist guidance is not specified by the source."

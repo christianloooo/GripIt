@@ -126,6 +126,33 @@ extension GripPoseSolver {
         ? i : nil
     }
   }
+  /// Palmar middle-phalanx flesh used by a wrapped grip, separate from the
+  /// fingertip region so the solver must establish both contacts.
+  static func middleContactIndices(hand: GripHandAsset, finger: GripFinger) -> [Int] {
+    let a = hand.joints.firstIndex { $0.name == finger.jointNames[1] }!
+    let b = hand.joints.firstIndex { $0.name == finger.jointNames[2] }!
+    let start = gv(hand.joints[a].position)
+    let end = gv(hand.joints[b].position)
+    let direction = unit(end - start)
+    let palmar = unit(SIMD3<Double>(0, 0, 1) - direction * direction.z)
+    return hand.vertices.indices.filter { i in
+      let offset = gv(hand.vertices[i]) - start
+      let t = simd_dot(offset, direction) / simd_distance(start, end)
+      return hand.weights[i][a] > 0.45 && (0.25...0.85).contains(t)
+        && simd_dot(offset, palmar) > 0
+    }
+  }
+  static func wrapsMiddle(_ finger: GripFinger, pitch: PitchGrip) -> Bool {
+    pitch == .slider && [.index, .middle].contains(finger)
+      || pitch == .circleChange && [.middle, .ring].contains(finger)
+  }
+  public static func contactIndices(hand: GripHandAsset, finger: GripFinger, pitch: PitchGrip)
+    -> [Int]
+  {
+    let pad = padIndices(hand: hand, finger: finger)
+    return wrapsMiddle(finger, pitch: pitch)
+      ? Array(Set(pad + middleContactIndices(hand: hand, finger: finger))).sorted() : pad
+  }
   public static func skinContact(
     hand: GripHandAsset, vertices: [SIMD3<Double>],
     finger: GripFinger, center: SIMD3<Double>
