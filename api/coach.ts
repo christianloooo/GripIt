@@ -23,7 +23,15 @@ import type { FocusAssessment } from "../src/contracts/assessment";
  * either model honest. Cost is not the deciding factor: one throw is well
  * under a cent on any of them.
  */
-const COACH_MODEL = process.env.COACH_MODEL ?? "claude-opus-5";
+export const DEFAULT_COACH_MODEL = "claude-opus-5";
+
+/**
+ * `??` would not catch this: an unset key in a .env file arrives as an empty
+ * string rather than undefined, and an empty model is a 400.
+ */
+export function resolveCoachModel(value: string | undefined): string {
+  return value?.trim() || DEFAULT_COACH_MODEL;
+}
 
 const CoachSchema = z.object({
   detail: z
@@ -52,7 +60,7 @@ export async function rewriteCoaching(
   try {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.parse({
-      model: COACH_MODEL,
+      model: resolveCoachModel(process.env.COACH_MODEL),
       max_tokens: 400,
       // A one-sentence rewrite needs no depth, and low effort keeps the demo
       // responsive. Thinking is on by default on this model.
