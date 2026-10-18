@@ -10,6 +10,20 @@ struct ScannerView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private let accent = Color.mint
+    private let pinePrimary = Color(red: 0.106, green: 0.263, blue: 0.196)
+    private let pineSecondary = Color(red: 0.176, green: 0.416, blue: 0.310)
+    private let pineTint = Color(red: 0.910, green: 0.945, blue: 0.925)
+    private let pineTintBorder = Color(red: 0.769, green: 0.851, blue: 0.808)
+    private let landingCanvas = Color(red: 0.969, green: 0.976, blue: 0.969)
+    private let landingMuted = Color(red: 0.945, green: 0.961, blue: 0.949)
+    private let landingBorder = Color(red: 0.886, green: 0.910, blue: 0.894)
+    private let landingOutline = Color(red: 0.796, green: 0.835, blue: 0.808)
+    private let landingInk = Color(red: 0.059, green: 0.118, blue: 0.086)
+    private let landingMutedInk = Color(red: 0.322, green: 0.388, blue: 0.345)
+
+    private var usesLightLandingTheme: Bool {
+        model.phase == .chooseHand || model.phase == .requestingPermission
+    }
 
     var body: some View {
         Group {
@@ -26,7 +40,7 @@ struct ScannerView: View {
                 failure
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(usesLightLandingTheme ? .light : .dark)
         .animation(.easeInOut(duration: 0.2), value: model.phase)
         .onChange(of: scenePhase) { _, phase in
             // Permission and share dialogs can make the scene temporarily inactive.
@@ -39,69 +53,281 @@ struct ScannerView: View {
 
     private var handSelection: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 28) {
-                Spacer()
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 58, weight: .light))
-                    .foregroundStyle(accent)
+            landingCanvas.ignoresSafeArea()
 
-                VStack(spacing: 8) {
-                    Text("Which hand do you throw with?")
-                        .font(.largeTitle.bold())
-                        .multilineTextAlignment(.center)
-                    Text("Prop up your phone with the screen facing you. Hold your hand 30–40 cm in front of the selfie camera.")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(pinePrimary)
+                                .frame(width: 8, height: 8)
+                            Text("gripit.")
+                                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                .foregroundStyle(landingInk)
+                        }
 
-                HStack(spacing: 14) {
-                    handButton("Left", hand: .left)
-                    handButton("Right", hand: .right)
-                }
+                        Spacer()
 
-                Spacer()
-                Button("Load sample profile") {
-                    model.loadSample()
+                        HStack(spacing: 6) {
+                            Image(systemName: "camera.metering.matrix")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("TrueDepth Scan")
+                                .font(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(pinePrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(pineTint, in: Capsule())
+                        .overlay {
+                            Capsule().stroke(pineTintBorder, lineWidth: 1)
+                        }
+                    }
+                    .padding(.top, 8)
+
+                    VStack(alignment: .leading, spacing: 22) {
+                        HStack(alignment: .top) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(pineTint)
+                                    .frame(width: 46, height: 46)
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(pineTintBorder, lineWidth: 1)
+                                    }
+                                Image(systemName: "hand.raised.fill")
+                                    .font(.system(size: 21, weight: .semibold))
+                                    .foregroundStyle(pinePrimary)
+                            }
+
+                            Spacer()
+
+                            Text("STEP 01 · HAND PROFILE")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(landingMutedInk)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(landingMuted, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(landingBorder, lineWidth: 1)
+                                }
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Which hand do you throw with?")
+                                .font(.system(size: 28, weight: .bold))
+                                .tracking(-0.6)
+                                .foregroundStyle(landingInk)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text("Select your throwing hand to calibrate your 3D grip model and start the front-camera measurement scan.")
+                                .font(.subheadline)
+                                .foregroundStyle(landingMutedInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("SETUP CHECKLIST")
+                                .font(.system(size: 11, weight: .semibold))
+                                .tracking(0.8)
+                                .foregroundStyle(pinePrimary)
+
+                            setupStepRow(
+                                icon: "iphone",
+                                text: "Prop up your phone with the screen facing you."
+                            )
+                            setupStepRow(
+                                icon: "viewfinder",
+                                text: "Hold your hand 30–40 cm in front of the selfie camera."
+                            )
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(landingMuted, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(landingBorder, lineWidth: 1)
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("CHOOSE THROWING HAND")
+                                .font(.system(size: 11, weight: .semibold))
+                                .tracking(0.8)
+                                .foregroundStyle(landingMutedInk)
+
+                            HStack(spacing: 12) {
+                                handButton("Left", subtitle: "Left-handed", hand: .left)
+                                handButton("Right", subtitle: "Right-handed", hand: .right)
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            Rectangle()
+                                .fill(landingBorder)
+                                .frame(height: 1)
+                            Text("OR EXPLORE WITHOUT CAMERA")
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.7)
+                                .foregroundStyle(landingMutedInk)
+                                .lineLimit(1)
+                                .fixedSize()
+                            Rectangle()
+                                .fill(landingBorder)
+                                .frame(height: 1)
+                        }
+
+                        Button {
+                            model.loadSample()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "cube.transparent")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(pinePrimary)
+                                Text("Load sample profile")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(landingInk)
+                                Spacer()
+                                Text("Instant")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(pinePrimary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(pineTint, in: Capsule())
+                            }
+                            .padding(.horizontal, 14)
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(landingOutline, lineWidth: 1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(22)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(landingBorder, lineWidth: 1)
+                    }
+                    .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 6)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield")
+                            .font(.caption)
+                            .foregroundStyle(pinePrimary)
+                        Text("Sample mode does not use the camera. All TrueDepth scans stay on-device.")
+                            .font(.caption)
+                            .foregroundStyle(landingMutedInk)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
                 }
-                .buttonStyle(.bordered)
-                .tint(.white.opacity(0.75))
-                Text("Sample mode does not use the camera.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .frame(maxWidth: 500)
+                .frame(maxWidth: .infinity)
             }
-            .padding(28)
         }
     }
 
-    private func handButton(_ title: String, hand: Handedness) -> some View {
+    private func setupStepRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(pinePrimary)
+                .frame(width: 26, height: 26)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(landingBorder, lineWidth: 1)
+                }
+
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(landingInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func handButton(_ title: String, subtitle: String, hand: Handedness) -> some View {
         Button {
             model.start(hand: hand)
         } label: {
-            Text(title)
-                .font(.title3.bold())
-                .frame(maxWidth: .infinity, minHeight: 54)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.14))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(x: hand == .left ? -1 : 1, y: 1)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.78))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.title3.bold())
+                        .foregroundStyle(.white)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.78))
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+            .background(pinePrimary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(pineSecondary, lineWidth: 1)
+            }
+            .shadow(color: pinePrimary.opacity(0.18), radius: 8, x: 0, y: 4)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(accent)
-        .foregroundStyle(.black)
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private var permissionCheck: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 18) {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(accent)
+            landingCanvas.ignoresSafeArea()
+            VStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(pineTint)
+                        .frame(width: 52, height: 52)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(pineTintBorder, lineWidth: 1)
+                        }
+                    ProgressView()
+                        .controlSize(.regular)
+                        .tint(pinePrimary)
+                }
                 Text("Checking camera…")
-                    .font(.title2.bold())
+                    .font(.title3.bold())
+                    .foregroundStyle(landingInk)
                 Text("GripIt uses the front TrueDepth camera to measure your hand. Images and depth data stay on this iPhone.")
+                    .font(.subheadline)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(landingMutedInk)
             }
-            .padding(32)
+            .padding(28)
+            .frame(maxWidth: 420)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(landingBorder, lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 6)
+            .padding(24)
         }
     }
 
