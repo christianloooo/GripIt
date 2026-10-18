@@ -218,7 +218,7 @@ struct GripSceneView: UIViewRepresentable {
     let scene = SCNScene()
     let root = scene.rootNode
     let license = SCNNode()
-    license.name = "Hand mesh license — Immersive Web / GripIt\n" + GripHandAsset.licenseText
+    license.name = "Hand mesh provenance — supplied Blender rig\n" + GripHandAsset.licenseText
     root.addChildNode(license)
     let group = SCNNode()
     group.name = "hand-and-ball"

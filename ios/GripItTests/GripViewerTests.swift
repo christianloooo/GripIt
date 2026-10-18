@@ -117,7 +117,7 @@ extension GripViewerTests {
     XCTAssertTrue(scene.write(to: file, options: nil, delegate: nil, progressHandler: nil))
     XCTAssertTrue(
       try SCNScene(url: file, options: nil).rootNode.childNodes.contains {
-        $0.name?.contains("Copyright (c) 2019 Amazon") == true
+        $0.name?.contains("Rigged Hands.blend") == true
       })
     XCTAssertNotNil(
       try SCNScene(url: file, options: nil).rootNode.childNode(

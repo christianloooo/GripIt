@@ -3,7 +3,8 @@ import simd
 
 extension GripPoseSolver {
   static func deform(
-    hand: GripHandAsset, fingers: [GripFingerPose], scale: SIMD3<Double>, center: SIMD3<Double>
+    hand: GripHandAsset, fingers: [GripFingerPose], scale: SIMD3<Double>, center: SIMD3<Double>,
+    vertexIndices: [Int]? = nil
   ) throws -> [SIMD3<Double>] {
     struct BoneMap {
       let source: SIMD3<Double>
@@ -37,13 +38,15 @@ extension GripPoseSolver {
         maps[ids[j]] = BoneMap(
           source: joints[ids[j]], open: open[j], direction: direction,
           axialScale: rig.lengths[segment] / simd_distance(a, b),
-          radialScale: rig.radius / (rig.finger == .thumb ? 10 : rig.finger == .pinky ? 6.5 : 8.5),
+          radialScale: rig.radius / (hand.authoredFingerRadii?[rig.finger.rawValue]
+            ?? (rig.finger == .thumb ? 10 : rig.finger == .pinky ? 6.5 : 8.5)),
           real: q, dual: dual, thumbBase: rig.finger == .thumb && j == 0,
           proximalFinger: rig.finger != .thumb && j == 0)
       }
     }
-    return try hand.vertices.enumerated().map { i, source in
+    return try (vertexIndices ?? Array(hand.vertices.indices)).map { i in
       if i % 512 == 0 { try Task.checkCancellation() }
+      let source = hand.vertices[i]
       let original = gv(source)
       let palm = original * scale
       var bind = SIMD3<Double>.zero
@@ -71,7 +74,8 @@ extension GripPoseSolver {
           let blend = t * t * (3 - 2 * t)
           radial.z *= (scale.z / map.radialScale) * (1 - blend) + blend
         }
-        let fraction = map.thumbBase ? max(0, min(1, (bindRadialDistance - 14) / 16)) : 0
+        let fraction = map.thumbBase && hand.preserveAuthoredAnatomy != true
+          ? max(0, min(1, (bindRadialDistance - 14) / 16)) : 0
         let palmShare = fraction * fraction * (3 - 2 * fraction)
         let weight = sourceWeight * (1 - palmShare)
         bind +=

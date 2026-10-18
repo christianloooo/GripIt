@@ -194,6 +194,10 @@ struct GripViewerView: View {
             }
           }
           if let pose, !loading {
+            if pose.diagnostics.adjustedProportions {
+              Text("Scan proportions adjusted conservatively to preserve the model’s natural anatomy.")
+                .font(.caption).foregroundStyle(.secondary)
+            }
             if pose.diagnostics.needsReview {
               Label(
                 "Approximate fit — inspect before copying", systemImage: "exclamationmark.triangle"
@@ -225,12 +229,12 @@ struct GripViewerView: View {
             Text(pitch.depth).foregroundStyle(.secondary)
           }
           Text(
-            "A 73 mm baseball and your measured finger lengths drive the fit. Skin, nails, palm thickness, and finger thickness are modeled; this is not a reconstruction of your exact skin. Intended pressure is first-pass guidance for coach review, not measured pressure. A grip illustration does not predict pitch movement."
+            "A 73 mm baseball and scan-guided proportions drive the fit. Length adjustments are limited to preserve the supplied hand’s anatomy. Unknown thickness retains the original model’s volume. This is a personalized generic model, not a reconstruction of your exact skin. Pressure is illustrative. A grip illustration does not predict pitch movement."
           )
           .font(.caption).foregroundStyle(.secondary)
           DisclosureGroup("Model credits") {
             Text(
-              "Hand: Immersive Web WebXR Input Profiles, MIT. Baseball: project-supplied Ball.glb, clean variant with its PBR textures. Hand surface subdivided and proportioned; ball normalized to 73 mm. Licenses are bundled with the app."
+              "Hand: supplied Rigged Hands.blend, open Hand.R and its painted skeletal weights. Source provenance is bundled with the app. Baseball: project-supplied Ball.glb, normalized to 73 mm with its PBR textures."
             )
             .font(.caption).foregroundStyle(.secondary)
           }

@@ -47,6 +47,7 @@ public struct GripFitDiagnostics: Sendable {
   public let modeledThickness: Bool
   public let usedMeasuredRoots: Bool
   public let seams: [GripSeamFit]
+  public var adjustedProportions = false
   public var needsReview: Bool {
     maximumContactGapMm > 6 || maximumSkinPenetrationMm > 3 || maximumPadSurfaceGapMm > 3
       || (loopGapMm ?? 0) > 5
@@ -158,6 +159,11 @@ public enum GripPoseSolver {
       let others = fingers.enumerated().filter { $0.offset != i }.map(\.element)
       optimize(&fingers[i], center: center, others: others, multistart: true)
     }
+    if hand.preserveAuthoredAnatomy == true {
+      let refined = try fitAuthoredSurface(hand: hand, fingers: fingers, scale: scale, center: center, pitch: pitch)
+      fingers = refined.fingers
+      center = refined.center
+    }
     let rotation = orientBall(ball, pitch: pitch, fingers: fingers, center: center)
     let vertices = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
     var stretch = 1.0
@@ -206,7 +212,8 @@ public enum GripPoseSolver {
             $0.measurement(profile).diameterMm == nil
           }, usedMeasuredRoots: measuredRoots,
         seams: inspectSeams(
-          ball, pitch: pitch, fingers: fingers, center: center, rotation: rotation)))
+          ball, pitch: pitch, fingers: fingers, center: center, rotation: rotation),
+        adjustedProportions: fit.limited))
   }
   /// Neutral anatomy review uses the same personalized bind surface as the grip renderer.
   /// No baseball or inverse-kinematics target can hide a malformed base hand here.
@@ -248,12 +255,13 @@ public enum GripPoseSolver {
       diagnostics: GripFitDiagnostics(
         maximumContactGapMm: 0, maximumSkinPenetrationMm: 0,
         maximumPadSurfaceGapMm: 0, maximumEdgeStretch: 1, loopGapMm: nil,
-        modeledThickness: true, usedMeasuredRoots: fit.measuredRoots, seams: []))
+        modeledThickness: true, usedMeasuredRoots: fit.measuredRoots, seams: [],
+        adjustedProportions: fit.limited))
   }
   private static func initialFit(profile: HandProfile, pitch: PitchGrip, hand: GripHandAsset) throws
     -> (
       fingers: [GripFingerPose], scale: SIMD3<Double>, width: Double, length: Double,
-      measuredRoots: Bool
+      measuredRoots: Bool, limited: Bool
     )
   {
     guard profile.coordinateSystem == "gripit-hand-v1" else {
@@ -271,22 +279,48 @@ public enum GripPoseSolver {
       rest["index-finger-phalanx-proximal"]!, rest["pinky-finger-phalanx-proximal"]!)
     let restLength = simd_length(
       (rest["index-finger-phalanx-proximal"]! + rest["pinky-finger-phalanx-proximal"]!) / 2)
-    let scale = SIMD3(
-      width / restWidth, length / restLength,
+    let preserve = hand.preserveAuthoredAnatomy == true
+    let uniform = width / restWidth
+    var limited = false
+    func bounded(_ requested: Double, reference: Double, lo: Double, hi: Double) -> Double {
+      let result = min(reference * hi, max(reference * lo, requested))
+      if abs(result - requested) > 0.001 { limited = true }
+      return result
+    }
+    // Unknown depth is not a thin-palm measurement. Preserve the source anatomy.
+    let scale = preserve ? SIMD3(
+      uniform,
+      bounded(length / restLength, reference: uniform, lo: 0.9, hi: 1.1),
+      profile.measurements.palm.thicknessMm.map {
+        bounded($0 / hand.palmReferenceThickness, reference: uniform, lo: 0.85, hi: 1.15)
+      } ?? uniform
+    ) : SIMD3(uniform, length / restLength,
       (profile.measurements.palm.thicknessMm ?? 14) / hand.palmReferenceThickness)
     func palm(_ p: SIMD3<Double>) -> SIMD3<Double> { p * scale }
     var measuredRoots = false
     var fingers: [GripFingerPose] = []
     for f in GripFinger.allCases {
       let m = f.measurement(profile)
-      let lengths = m.segmentsMm
+      var lengths = m.segmentsMm
       guard lengths.count == 3, lengths.allSatisfy({ $0.isFinite && (6...65).contains($0) }),
         lengths.max()! / lengths.min()! < 4
       else {
         throw GripError.invalid(
           "\(f.title) segment measurements are invalid. Scan the whole finger again.")
       }
-      let diameter = m.diameterMm ?? (f == .thumb ? 16 : f == .pinky ? 11 : 13.5) * width / 62
+      if preserve {
+        let references = f.jointNames.map { rest[$0]! }
+        lengths = lengths.enumerated().map { i, measured in
+          bounded(measured, reference: simd_distance(references[i], references[i + 1]) * uniform,
+            lo: 0.8, hi: 1.2)
+        }
+      }
+      let authoredDiameter = hand.authoredFingerRadii?[f.rawValue].map { $0 * 2 * uniform }
+      let requestedDiameter = m.diameterMm ?? authoredDiameter
+        ?? (f == .thumb ? 16 : f == .pinky ? 11 : 13.5) * width / 62
+      let diameter = preserve && authoredDiameter != nil
+        ? bounded(requestedDiameter, reference: authoredDiameter!, lo: 0.85, hi: 1.15)
+        : requestedDiameter
       guard diameter.isFinite, (5...30).contains(diameter) else {
         throw GripError.invalid("Invalid \(f.title) thickness.")
       }
@@ -300,7 +334,17 @@ public enum GripPoseSolver {
             "\(f.title) base depth is inconsistent with the palm. Rescan with the whole hand visible."
           )
         }
-        root = SIMD3(m.xMm, m.yMm, m.zMm)
+        let measured = SIMD3(m.xMm, m.yMm, m.zMm)
+        if preserve {
+          // Keep the authored MCP arch/thenar pad. Sparse surface landmarks
+          // must not independently drag the finger bases through the palm.
+          let delta = measured - root
+          let offset = SIMD3(
+            min(3, max(-3, delta.x * 0.35)), min(3, max(-3, delta.y * 0.35)),
+            min(3, max(-3, delta.z * 0.35)))
+          root += offset
+          if simd_distance(root, measured) > 0.1 { limited = true }
+        } else { root = measured }
         measuredRoots = true
       }
       fingers.append(
@@ -313,7 +357,7 @@ public enum GripPoseSolver {
           contact: pitch.upperContacts.contains(f) || f == .thumb
             || (pitch == .circleChange && f == .pinky)))
     }
-    return (fingers, scale, width, length, measuredRoots)
+    return (fingers, scale, width, length, measuredRoots, limited)
   }
   static func forward(_ rig: GripFingerPose) -> [SIMD3<Double>] {
     var points = [rig.points[0]]

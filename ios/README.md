@@ -1,5 +1,10 @@
 # GripIt TrueDepth scanner
 
+The native Step 2 viewer now uses the supplied Blender `Hand.R` mesh and its
+painted skeleton, with conservative scan-guided length adjustments and the
+model's original palm volume. See [supplied hand integration](../docs/supplied-hand-rig.md)
+for the active asset pipeline; this supersedes the older native WebXR refinement notes below.
+
 This native SwiftUI demo uses the front TrueDepth camera for metric hand measurements. MediaPipe identifies 21 hand landmarks. `GripItScannerCore` handles projection, guided coverage, aggregation, and `HandProfile` JSON.
 
 Camera and depth frames are processed in memory. The app does not save photos, video, or depth maps.

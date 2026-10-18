@@ -47,6 +47,8 @@ public struct GripHandAsset: Decodable, Sendable {
   public let weights: [[Double]]
   public let joints: [Joint]
   public let indices: [UInt32]
+  public let authoredFingerRadii: [String: Double]?
+  public let preserveAuthoredAnatomy: Bool?
   private static let cached: Result<Self, Error> = Result { try GripResources.decode("grip-hand") }
   public static func load() throws -> Self { try cached.get() }
 }

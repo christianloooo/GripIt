@@ -1,21 +1,16 @@
-MIT License
+# Supplied hand asset
 
-Copyright (c) 2019 Amazon
+Source: user-supplied `hand-rig.zip`, containing `Rigged Hands.blend`.
+Selected mesh: `Hand.R`; selected armature: `Hand_Right`.
+Source Blender SHA-256: d44937772db352fa0130693c9889469f709ccaaf14a428ca73e1039fa71503e4.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished
-to do so, subject to the following conditions:
+The archive did not include an author or license notice. This notice records
+provenance; it does not assign the previous WebXR model's MIT license to this
+model. Preserve the original source's terms when they are supplied.
 
-The above copyright notice and this permission notice (including the next
-paragraph) shall be included in all copies or substantial portions of the
-Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
-OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
-OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Changes: selected the authored open right hand, adopted its matching visible
+bone pose as the bind pose, retained painted skin weights, renamed bones for
+the app, trimmed the long forearm to a short closed wrist, reduced triangle
+count for mobile, normalized the MCP span to a 62 mm reference, and exported
+a GLB and the native dense-weight resource. Geometry is personalized at runtime
+with bounded changes; it is not the user's exact scanned surface.
