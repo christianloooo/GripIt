@@ -34,3 +34,24 @@ it("requires enough stable measurements instead of accepting a noisy scan", () =
     ]),
   ).toBe(false);
 });
+it("rejects moving thumb attachments even when segment lengths stay stable", () => {
+  const first = structuredClone(DEFAULT_MEASUREMENTS);
+  first.knuckles = {
+    thumb: [28, -50, -24],
+    index: [30, 0, -24],
+    middle: [8, 0, -24],
+    ring: [-14, -3, -24],
+    pinky: [-29, -10, -24],
+  };
+  const shifted = structuredClone(first);
+  shifted.knuckles!.thumb[0] += 24;
+  expect(
+    stableMeasurements([...Array(5).fill(first), ...Array(5).fill(shifted)]),
+  ).toBe(false);
+});
+it("rejects incomplete landmark sets without crashing the scan", () => {
+  expect(
+    assessDetection({ landmarks: [[]], worldLandmarks: [[]], handedness: [] })
+      .message,
+  ).toMatch("Incomplete");
+});

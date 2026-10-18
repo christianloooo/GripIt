@@ -1,5 +1,6 @@
 import { FINGERS, LANDMARK_CHAINS } from "./grip";
 import type { Landmark, Measurements } from "./grip";
+import { validateMeasurements } from "./handDiagnostics";
 import { measureWithBaseball } from "./ballReference";
 import type { BallReference } from "./ballReference";
 export type ScanFeedback = {
@@ -29,6 +30,17 @@ export function assessDetection(result: Detection): {
   if (result.worldLandmarks.length !== 1)
     return {
       message: "Show only one hand so its measurements stay consistent.",
+    };
+  if (
+    result.landmarks[0]?.length !== 21 ||
+    result.worldLandmarks[0]?.length !== 21 ||
+    [...result.landmarks[0], ...result.worldLandmarks[0]].some(
+      (p) => !Number.isFinite(p.x + p.y + p.z),
+    )
+  )
+    return {
+      message:
+        "Incomplete hand landmarks. Keep every fingertip and thumb visible.",
     };
   const image = result.landmarks[0],
     world = result.worldLandmarks[0],
@@ -72,7 +84,13 @@ export function assessDetection(result: Detection): {
             dist(chain[2], chain[3])) >
         0.88,
     );
-  if (!open)
+  const thumb = LANDMARK_CHAINS.thumb;
+  const thumbStraight =
+    dist(thumb[0], thumb[3]) /
+    (dist(thumb[0], thumb[1]) +
+      dist(thumb[1], thumb[2]) +
+      dist(thumb[2], thumb[3]));
+  if (!open || !Number.isFinite(thumbStraight) || thumbStraight < 0.78)
     return {
       message:
         "Straighten and spread your fingers. Relax the thumb to the side.",
@@ -94,8 +112,10 @@ export function assessDetection(result: Detection): {
       landmarks: image,
     };
   try {
+    const measurements = measureWithBaseball(image, result.ball);
+    validateMeasurements(measurements);
     return {
-      measurements: measureWithBaseball(image, result.ball),
+      measurements,
       hand: category.categoryName,
       landmarks: image,
       message: "Good view. Hold steady while the measurements settle.",
@@ -112,18 +132,45 @@ export function assessDetection(result: Detection): {
 }
 export function stableMeasurements(samples: Measurements[]) {
   if (samples.length < 8) return false;
-  // The reference finger's total length is fixed by calibration, so checking
-  // only that total would always report a stable scan. Check every segment.
+  const stable = (values: number[], tolerance: number) => {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return (
+      values.every(Number.isFinite) &&
+      Math.sqrt(
+        values.reduce((sum, n) => sum + (n - mean) ** 2, 0) / values.length,
+      ) < tolerance
+    );
+  };
+  const meanWidth =
+    samples.reduce((sum, m) => sum + m.palmWidth, 0) / samples.length;
+  if (
+    !stable(
+      samples.map((m) => m.palmWidth),
+      meanWidth * 0.08,
+    ) ||
+    !stable(
+      samples.map((m) => m.palmLength ?? 72),
+      meanWidth * 0.08,
+    )
+  )
+    return false;
+  if (samples.some((m) => m.knuckles)) {
+    if (!samples.every((m) => m.knuckles)) return false;
+    for (const finger of FINGERS)
+      for (const axis of [0, 1, 2])
+        if (
+          !stable(
+            samples.map((m) => m.knuckles![finger][axis]),
+            meanWidth * 0.06,
+          )
+        )
+          return false;
+  }
   return FINGERS.every((finger) =>
     [0, 1, 2].every((joint) => {
       const values = samples.map((s) => s.segments[finger][joint]);
-      const average = values.reduce((sum, n) => sum + n, 0) / values.length;
-      const deviation = Math.sqrt(
-        values.reduce((sum, n) => sum + (n - average) ** 2, 0) / values.length,
-      );
-      return (
-        Number.isFinite(average) && average > 0 && deviation / average < 0.12
-      );
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      return mean > 0 && stable(values, mean * 0.12);
     }),
   );
 }

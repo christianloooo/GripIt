@@ -1,0 +1,10 @@
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const root = new URL("../", import.meta.url);
+const dist = new URL("dist/", root);
+if (!existsSync(new URL("index.html", dist))) throw new Error("Run npm run build first.");
+const web = new URL("ios/GripIt/Web/", root);
+rmSync(web, { recursive: true, force: true });
+mkdirSync(web, { recursive: true });
+cpSync(dist, web, { recursive: true });
+console.log(`Bundled offline studio: ${fileURLToPath(web)}`);

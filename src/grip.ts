@@ -361,6 +361,19 @@ function collisionEnergy(
   }
   return energy;
 }
+function preferredYaw(rig: FingerRig) {
+  // A scanned thumb CMC sits near the wrist. A fixed 60-degree yaw made
+  // those thumbs point across the palm rather than toward the ball support.
+  return rig.name === "thumb"
+    ? Math.max(
+        -0.8,
+        Math.min(
+          1.4,
+          Math.atan2(rig.root.x - rig.target.x, rig.target.y - rig.root.y),
+        ),
+      )
+    : 0;
+}
 function optimizeFinger(
   rig: FingerRig,
   others: FingerRig[],
@@ -371,8 +384,7 @@ function optimizeFinger(
     updateRig(rig, ball.position);
     return (
       rig.error ** 2 * OBJECTIVE_WEIGHTS.position +
-      (jointEnergy(rig.angles) +
-        ((rig.yaw - (rig.name === "thumb" ? 1.05 : 0)) / 0.8) ** 2) *
+      (jointEnergy(rig.angles) + ((rig.yaw - preferredYaw(rig)) / 0.8) ** 2) *
         OBJECTIVE_WEIGHTS.joint +
       collisionEnergy(rig, others, ball, 1) * OBJECTIVE_WEIGHTS.collision
     );
@@ -380,7 +392,7 @@ function optimizeFinger(
   let best = [...rig.angles],
     bestYaw = rig.yaw,
     bestCost = Infinity;
-  const nominalYaw = rig.name === "thumb" ? 1.05 : 0;
+  const nominalYaw = preferredYaw(rig);
   const seeds = multiStart
     ? [
         [0, 0.8, 1],
@@ -437,9 +449,7 @@ export function gripObjective(fingers: FingerRig[], ball: BallPose) {
   const position = fingers.reduce((sum, r) => sum + r.error ** 2, 0);
   const joint = fingers.reduce(
     (sum, r) =>
-      sum +
-      jointEnergy(r.angles) +
-      ((r.yaw - (r.name === "thumb" ? 1.05 : 0)) / 0.8) ** 2,
+      sum + jointEnergy(r.angles) + ((r.yaw - preferredYaw(r)) / 0.8) ** 2,
     0,
   );
   const collision = fingers.reduce(

@@ -2,6 +2,10 @@
 
 A browser-based grip studio with automatic hand measurement from a baseball reference, a rigged 3D hand, and a regulation-scale textured baseball.
 
+## iOS app
+
+The `feat/ios-swift-app` branch includes a SwiftUI iPhone/iPad app with the studio bundled in WebKit, camera authorization, and native JSON sharing. Run `npm run ios:prepare`, then `npm run ios:open`. Select your signing team and device in Xcode. See [iOS setup and architecture](ios/README.md).
+
 ## Run
 
 Requires Node.js 22.12+ or Node.js 24.
@@ -47,11 +51,17 @@ A single camera does not establish the absolute depth difference between the bal
 
 ## Rendering and position accuracy
 
-The default hand is the authored, rigged `generic-hand/right.glb` from the MIT-licensed Immersive Web WebXR Input Profiles assets. It is cloned, transformed to a canonical right-hand coordinate frame, proportioned, and retargeted to the solver's FK anchors. The original artist topology stays connected as fingers move. Tests verify that all 20 finger joint/tip anchors agree with solver positions and that the actual skinned vertices remain finite. The canonical hand has palm +Z, fingers +Y, and thumb +X; left-handed rendering mirrors X once.
+The default hand is the authored, rigged `generic-hand/right.glb` from the MIT-licensed Immersive Web WebXR Input Profiles assets. It is cloned, transformed to a canonical right-hand coordinate frame, proportioned, and retargeted to the solver's FK anchors. The bind skin is reshaped to measured segment lengths using the original skin weights before posing. Minimum segment rotations retain the authored thumb roll. Tests verify that all 20 finger joint/tip anchors agree with solver positions, and actual skin checks reject excessive stretching and collapse. The canonical hand has palm +Z, fingers +Y, and thumb +X; left-handed rendering mirrors X once.
 
 This establishes **renderer/solver agreement**, not anatomical or biomechanical correctness. A generic mesh is not the user's exact skin. Soft-tissue deformation, contact pressure, tendon coupling, release motion, and full thumb opposition are not reconstructed. Some fits remain unresolved; the viewer shows the largest target gap and flags those configurations.
 
-A repaired procedural surface is available as an asset-load fallback. Its bounding volume adapts to the hand and pose, preventing the old fixed-box clipping. Its scalar-field workspace is reused to reduce memory churn, and only valid generated triangles are uploaded. A regression test checks that a large-hand fallback has no open boundary edges.
+Scans are checked against all four pitch models before replacing the current hand. Rejected scans leave the previous selection intact. Unexpected hand rendering failures display a rejection message instead of silently substituting a procedural model. The older procedural surface remains in the repository for its geometry regression tests.
+
+## Failure logging
+
+Open **Failure log** in the header to review, download, or clear the last 50 failures stored in this browser. Scan entries include frame rejection counts when available. Model entries include measurements and available deformation metrics. Video and images are not logged or uploaded. Failures from before this feature existed cannot be recovered.
+
+[FAILURE_LOG.md](FAILURE_LOG.md) records the warped-thumb investigation, changes, verification, and remaining limits. Deformation checks reject severe stretching/collapse; they do not establish anatomical accuracy or full skin collision clearance. Thumb fits with a target gap over 12 mm or capsule penetration beyond 2 mm are rejected.
 
 ## The supplied baseball asset
 
