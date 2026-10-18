@@ -49,9 +49,9 @@ struct GripViewerView: View {
           Spacer()
           Text(profile.capture.method.contains("sample") ? "SAMPLE HAND" : "YOUR HAND")
             .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundStyle(.mint)
+            .foregroundStyle(GripItTheme.accent)
             .padding(.horizontal, 9).padding(.vertical, 6)
-            .background(.mint.opacity(0.09), in: Capsule())
+            .background(GripItTheme.accent.opacity(0.09), in: Capsule())
         }
         Picker("Pitch type", selection: $pitch) {
           ForEach(PitchGrip.allCases) { p in Text(p.shortTitle).tag(p) }
@@ -67,7 +67,7 @@ struct GripViewerView: View {
               grid.move(to: CGPoint(x: 0, y: y))
               grid.addLine(to: CGPoint(x: size.width, y: y))
             }
-            context.stroke(grid, with: .color(.mint.opacity(0.055)), lineWidth: 0.5)
+            context.stroke(grid, with: .color(GripItTheme.accent.opacity(0.055)), lineWidth: 0.5)
           }.allowsHitTesting(false)
           if let pose {
             GripSceneView(
@@ -83,12 +83,12 @@ struct GripViewerView: View {
           }
           VStack(alignment: .leading, spacing: 5) {
             Text("GRIP EXPLORER").font(.system(size: 9, weight: .bold, design: .monospaced))
-              .foregroundStyle(.mint)
+              .foregroundStyle(GripItTheme.accent)
             Text("Drag to rotate · Pinch to zoom").font(.system(size: 10)).foregroundStyle(
-              .white.opacity(0.5))
+              GripItTheme.secondary)
           }.padding(14).allowsHitTesting(false)
           if loading {
-            ProgressView("Building your grip…").tint(.mint)
+            ProgressView("Building your grip…").tint(GripItTheme.accent)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
           if let error {
@@ -97,9 +97,8 @@ struct GripViewerView: View {
           }
         }
         .frame(maxWidth: .infinity).frame(minHeight: 360, maxHeight: .infinity)
-        .background(Color(red: 0.035, green: 0.075, blue: 0.065))
+        .gripitGlassSurface(radius: 24)
         .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(.mint.opacity(0.13), lineWidth: 1))
         HStack(spacing: 12) {
           Menu {
             ForEach(GripCamera.allCases) { angle in
@@ -128,7 +127,7 @@ struct GripViewerView: View {
           } label: {
             Label("Effort", systemImage: showPressure ? "circle.lefthalf.filled" : "circle")
           }.accessibilityIdentifier("toggle-grip-effort")
-        }.font(.caption.weight(.semibold)).buttonStyle(.bordered).tint(.mint)
+        }.font(.caption.weight(.semibold)).buttonStyle(GripItGlassButtonStyle()).tint(GripItTheme.accent)
         if showPressure && zoneSeverity == nil {
           HStack(spacing: 9) {
             Text("NO EFFORT")
@@ -138,12 +137,11 @@ struct GripViewerView: View {
             )
             .frame(height: 5).clipShape(Capsule())
             Text("MORE EFFORT")
-          }.font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+          }.font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundStyle(GripItTheme.secondary)
         }
       }
       .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
-      .background(Color(red: 0.025, green: 0.045, blue: 0.04))
-      .preferredColorScheme(.dark)
+      .gripitScreen()
       .navigationTitle("Grip studio").navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) { Button("Done") { dismiss() } }
@@ -170,8 +168,8 @@ struct GripViewerView: View {
           }
           .font(.headline).frame(maxWidth: .infinity, minHeight: 40)
         }
-        .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(
-          Color(red: 0.025, green: 0.12, blue: 0.09)
+        .buttonStyle(GripItGlassButtonStyle(kind: .primary)).tint(GripItTheme.accent).foregroundStyle(
+          GripItTheme.text
         )
         .disabled(loading || fit == nil)
         .accessibilityIdentifier("record-throws")
@@ -180,11 +178,11 @@ struct GripViewerView: View {
             Image(systemName: "text.alignleft").font(.title3)
             Text("Details").font(.caption)
           }.frame(width: 54, height: 52)
-        }.buttonStyle(.plain).tint(.mint).foregroundStyle(.mint)
+        }.buttonStyle(GripItGlassButtonStyle(kind: .quiet)).tint(GripItTheme.accent).foregroundStyle(GripItTheme.accent)
           .accessibilityIdentifier("grip-details")
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(Color(red: 0.025, green: 0.045, blue: 0.04))
+        .background(GripItBackdrop())
       }
       .navigationDestination(isPresented: $showThrows) {
         if let training { ThrowEntryView(model: training) }
@@ -192,12 +190,13 @@ struct GripViewerView: View {
       .fullScreenCover(isPresented: $showHandModel) { HandModelReviewView(profile: profile) }
       .sheet(isPresented: $showDetails) {
         NavigationStack {
-          ScrollView { modelDetails.padding(20) }.navigationTitle("Grip details")
+          ScrollView { modelDetails.padding(20) }
+            .gripitScreen().navigationTitle("Grip details")
             .toolbar {
               ToolbarItem(placement: .confirmationAction) { Button("Done") { showDetails = false } }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.dark).tint(GripItTheme.text)
       }
     }
     .task(id: pitch) {
@@ -230,16 +229,16 @@ struct GripViewerView: View {
         ForEach(plan.zones) { zone in
           VStack(alignment: .leading, spacing: 6) {
             Text(zone.title).font(.headline)
-            Text(zone.instruction).font(.subheadline).foregroundStyle(.secondary)
+            Text(zone.instruction).font(.subheadline).foregroundStyle(GripItTheme.secondary)
             if let pressure = zone.pressure {
-              Text("Suggested pressure: \(pressure.rawValue)").font(.caption).foregroundStyle(.mint)
+              Text("Suggested pressure: \(pressure.rawValue)").font(.caption).foregroundStyle(GripItTheme.accent)
             }
           }
         }
       }
-      Toggle("Contact points", isOn: $contacts).tint(.mint)
+      Toggle("Contact points", isOn: $contacts).tint(GripItTheme.accent)
       if zoneSeverity == nil {
-        Toggle("Show grip pressure", isOn: $showPressure).tint(.mint)
+        Toggle("Show grip pressure", isOn: $showPressure).tint(GripItTheme.accent)
       }
       if activeSeverity != nil {
         Text(
@@ -247,17 +246,17 @@ struct GripViewerView: View {
             ? "Darker green illustrates firmer grip pressure. This is not measured force."
             : "Uncolored zones have no assessment. Colors do not establish a pitch's cause."
         )
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.caption).foregroundStyle(GripItTheme.secondary)
       }
       VStack(alignment: .leading, spacing: 8) {
         Text(pitch.title).font(.headline)
         Text(pitch.orientation)
-        Text(pitch.depth).foregroundStyle(.secondary)
+        Text(pitch.depth).foregroundStyle(GripItTheme.secondary)
       }
       if let pose, !loading {
         if pose.diagnostics.adjustedProportions {
           Text("Proportions adjusted to preserve natural anatomy.")
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.caption).foregroundStyle(GripItTheme.secondary)
         }
         if pose.diagnostics.needsReview {
           Text(
@@ -265,14 +264,14 @@ struct GripViewerView: View {
               format: "Pad gap %.1f mm · Ball overlap %.1f mm",
               pose.diagnostics.maximumPadSurfaceGapMm, pose.diagnostics.maximumSkinPenetrationMm)
           )
-          .font(.caption).foregroundStyle(.secondary)
+          .font(.caption).foregroundStyle(GripItTheme.secondary)
           if pose.diagnostics.maximumContactGapMm > 6 {
             Text("Some fingers cannot reach their intended positions.")
               .font(.caption).foregroundStyle(.orange)
           }
           if let gap = pose.diagnostics.loopGapMm {
             Text(String(format: "Index–thumb spacing %.1f mm", gap))
-              .font(.caption).foregroundStyle(.secondary)
+              .font(.caption).foregroundStyle(GripItTheme.secondary)
           }
           if pose.diagnostics.seams.contains(where: \.needsReview) {
             Text("Seam alignment needs review.").font(.caption).foregroundStyle(.orange)
@@ -282,15 +281,15 @@ struct GripViewerView: View {
       if let zone = plan?.zones.first(where: { $0.zoneId == selectedZone }), !loading {
         Text("\(zone.title): \(zone.reach.rawValue) reach")
           .font(.subheadline)
-        Text(zone.reachEvidence).font(.caption).foregroundStyle(.secondary)
+        Text(zone.reachEvidence).font(.caption).foregroundStyle(GripItTheme.secondary)
       }
       Text("Personalized model, not an exact skin scan. Pressure is illustrative.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.caption).foregroundStyle(GripItTheme.secondary)
       DisclosureGroup("Model credits") {
         Text(
           "Hand: supplied Rigged Hands.blend, Hand.R. Source provenance is bundled with the app. Baseball: supplied Ball.glb, scaled to 73 mm."
         )
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.caption).foregroundStyle(GripItTheme.secondary)
       }
     }.padding(.top, 12)
   }
@@ -336,7 +335,7 @@ struct HandModelReviewView: View {
         Text(
           "\(profile.capture.method.contains("sample") ? "REFERENCE HAND" : "YOUR HAND") · \(profile.handedness.rawValue.uppercased())"
         )
-        .font(.caption.weight(.semibold)).foregroundStyle(.mint)
+        .font(.caption.weight(.semibold)).foregroundStyle(GripItTheme.accent)
         ZStack {
           if let pose {
             GripSceneView(
@@ -349,7 +348,7 @@ struct HandModelReviewView: View {
             ProgressView("Building the hand surface…")
           }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-          .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 24))
+          .gripitGlassSurface(radius: 24)
           .clipShape(RoundedRectangle(cornerRadius: 24))
         HStack {
           ForEach(GripCamera.allCases) { angle in
@@ -357,28 +356,28 @@ struct HandModelReviewView: View {
               camera = angle
               reset += 1
             }
-            .buttonStyle(.bordered).tint(camera == angle ? .mint : .gray)
+            .buttonStyle(GripItGlassButtonStyle()).opacity(camera == angle ? 1 : 0.65)
             .lineLimit(1).minimumScaleFactor(0.65)
           }
         }.frame(maxWidth: .infinity)
         HStack {
           Text("Finger bend").font(.subheadline)
-          Slider(value: $flexion, in: 0...0.6, step: 0.1).tint(.mint)
+          Slider(value: $flexion, in: 0...0.6, step: 0.1).tint(GripItTheme.accent)
             .accessibilityLabel("Review finger joint flexion")
         }
         Text("Drag to rotate · Pinch to zoom")
-          .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+          .font(.caption).foregroundStyle(GripItTheme.secondary).frame(maxWidth: .infinity)
         DisclosureGroup("Model details") {
           VStack(alignment: .leading, spacing: 12) {
-            Toggle("Show mesh", isOn: $wireframe).tint(.mint)
+            Toggle("Show mesh", isOn: $wireframe).tint(GripItTheme.accent)
             if let exportURL {
               ShareLink("Export 3D hand", item: exportURL).font(.subheadline)
             }
             Text("Personalized model, not an exact skin scan.")
-              .font(.caption).foregroundStyle(.secondary)
+              .font(.caption).foregroundStyle(GripItTheme.secondary)
           }.padding(.top, 8)
         }
-      }.padding(20).background(.black).preferredColorScheme(.dark)
+      }.padding(20).gripitScreen()
         .navigationTitle("Hand model").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
     }.onAppear {

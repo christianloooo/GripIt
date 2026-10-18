@@ -11,8 +11,6 @@ struct FocusAssessmentView: View {
   @State private var showHeatmap = true
   @State private var showDetails = false
 
-  private let canvas = Color(red: 0.025, green: 0.045, blue: 0.04)
-
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
@@ -22,7 +20,7 @@ struct FocusAssessmentView: View {
           Spacer()
           Text(model.pitch.shortTitle.uppercased())
             .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundStyle(.mint)
+            .foregroundStyle(GripItTheme.accent)
         }
 
         // Reuse the solved pose, plan and surface data from Step 2.
@@ -35,7 +33,7 @@ struct FocusAssessmentView: View {
             for y in stride(from: 0.0, through: size.height, by: 28) {
               grid.move(to: CGPoint(x: 0, y: y)); grid.addLine(to: CGPoint(x: size.width, y: y))
             }
-            context.stroke(grid, with: .color(.mint.opacity(0.055)), lineWidth: 0.5)
+            context.stroke(grid, with: .color(GripItTheme.accent.opacity(0.055)), lineWidth: 0.5)
           }.allowsHitTesting(false)
           GripSceneView(
             pose: model.fit.pose, showContacts: false, camera: camera, reset: reset,
@@ -48,15 +46,14 @@ struct FocusAssessmentView: View {
           .accessibilityLabel("Interactive \(model.pitch.title) hand with throw feedback")
           VStack(alignment: .leading, spacing: 5) {
             Text("THROW REVIEW").font(.system(size: 9, weight: .bold, design: .monospaced))
-              .foregroundStyle(.mint)
+              .foregroundStyle(GripItTheme.accent)
             Text("Drag to rotate · Tap a point to explore")
-              .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+              .font(.system(size: 10)).foregroundStyle(GripItTheme.secondary)
           }.padding(14).allowsHitTesting(false)
         }
         .frame(height: 440)
-        .background(Color(red: 0.035, green: 0.075, blue: 0.065))
+        .gripitGlassSurface(radius: 24)
         .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(.mint.opacity(0.13), lineWidth: 1))
 
         HStack {
           Menu {
@@ -75,7 +72,7 @@ struct FocusAssessmentView: View {
           Button { showHeatmap.toggle() } label: {
             Label("Heatmap", systemImage: showHeatmap ? "circle.lefthalf.filled" : "circle")
           }.accessibilityIdentifier("toggle-feedback-heatmap")
-        }.font(.caption.weight(.semibold)).buttonStyle(.bordered).tint(.mint)
+        }.font(.caption.weight(.semibold)).buttonStyle(GripItGlassButtonStyle()).tint(GripItTheme.accent)
 
         HStack(spacing: 14) {
           legend("Start here", .red)
@@ -86,7 +83,7 @@ struct FocusAssessmentView: View {
 
         VStack(alignment: .leading, spacing: 12) {
           Text("TRY THIS FIRST")
-            .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.mint)
+            .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(GripItTheme.accent)
           Text(assessment.primaryAction).font(.headline)
           if !assessment.secondaryActions.isEmpty {
             Text("THEN CHECK")
@@ -99,16 +96,16 @@ struct FocusAssessmentView: View {
                   Spacer(minLength: 0)
                   Image(systemName: "chevron.right").font(.caption)
                 }.foregroundStyle(.white)
-              }.buttonStyle(.plain)
+              }.buttonStyle(GripItGlassButtonStyle(kind: .quiet))
             }
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(18)
-        .background(.mint.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
+        .gripitGlassSurface(radius: 20)
 
       }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 20)
     }
-    .background(canvas).preferredColorScheme(.dark).tint(.mint)
+    .gripitScreen().tint(GripItTheme.accent)
     .navigationTitle("Feedback").navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       HStack(spacing: 12) {
@@ -116,17 +113,17 @@ struct FocusAssessmentView: View {
         HStack { Text("Record another throw"); Spacer(); Image(systemName: "arrow.up.right") }
           .font(.headline).frame(maxWidth: .infinity, minHeight: 40)
       }
-      .buttonStyle(.borderedProminent).tint(.mint)
-      .foregroundStyle(Color(red: 0.025, green: 0.12, blue: 0.09))
+      .buttonStyle(GripItGlassButtonStyle(kind: .primary)).tint(GripItTheme.accent)
+      .foregroundStyle(GripItTheme.text)
       Button { showDetails = true } label: {
         VStack(spacing: 4) {
           Image(systemName: "text.alignleft").font(.title3)
           Text("Details").font(.caption)
         }.frame(width: 54, height: 52)
-      }.buttonStyle(.plain).foregroundStyle(.mint)
+      }.buttonStyle(GripItGlassButtonStyle(kind: .quiet)).foregroundStyle(GripItTheme.accent)
         .accessibilityIdentifier("feedback-details")
       }
-      .padding(.horizontal, 16).padding(.vertical, 10).background(canvas)
+      .padding(.horizontal, 16).padding(.vertical, 10).background(GripItBackdrop())
     }
     .sheet(isPresented: $showDetails) { feedbackDetails }
     .onAppear {
@@ -150,9 +147,9 @@ struct FocusAssessmentView: View {
             VStack(alignment: .leading, spacing: 8) {
               Text("\(finding.zoneId.title) · \(finding.severity.title)").font(.headline)
               Text(assessment.action(for: finding.zoneId)).font(.subheadline)
-              Text(finding.reason).font(.subheadline).foregroundStyle(.secondary)
+              Text(finding.reason).font(.subheadline).foregroundStyle(GripItTheme.secondary)
               if let zone = model.fit.plan.zones.first(where: { $0.zoneId == finding.zoneId }) {
-                Text(zone.instruction).font(.caption).foregroundStyle(.secondary)
+                Text(zone.instruction).font(.caption).foregroundStyle(GripItTheme.secondary)
               }
             }
           }
@@ -164,17 +161,17 @@ struct FocusAssessmentView: View {
           detail("About the colors",
             "Red is the first adjustment to try; yellow shows another check to review next; green is a check with no change suggested. Uncolored areas have no assessment. Colors are not measured finger pressure.")
         }.padding(20)
-      }.navigationTitle("Throw details").navigationBarTitleDisplayMode(.inline)
+      }.gripitScreen().navigationTitle("Throw details").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) {
           Button("Done") { showDetails = false }
         } }
-    }.preferredColorScheme(.dark).tint(.mint)
+    }.preferredColorScheme(.dark).tint(GripItTheme.text)
   }
 
   private func detail(_ title: String, _ body: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(title).font(.headline)
-      Text(body).font(.subheadline).foregroundStyle(.secondary)
+      Text(body).font(.subheadline).foregroundStyle(GripItTheme.secondary)
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
 }

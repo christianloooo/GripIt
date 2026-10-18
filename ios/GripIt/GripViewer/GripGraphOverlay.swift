@@ -1,6 +1,7 @@
 import GripItScannerCore
 import SceneKit
 import UIKit
+import SwiftUI
 
 @MainActor private final class GripNodeButton: UIButton {
   let disc = UIView()
@@ -35,7 +36,7 @@ import UIKit
 
 /// Screen-space callouts stay attached to the posed skin while the camera orbits.
 @MainActor final class GripGraphOverlay: UIView {
-  private let pine = UIColor(red: 0.38, green: 0.91, blue: 0.72, alpha: 1)
+  private let pine = UIColor(GripItTheme.accent)
   private var markers: [GripZoneID: GripNodeButton] = [:]
   private var zones: [GripZonePlan] = []
   private var selected: GripZoneID?
@@ -63,7 +64,7 @@ import UIKit
     connection.lineWidth = 1.5
     connection.lineJoin = .round
     layer.addSublayer(connection)
-    card.backgroundColor = UIColor(red: 0.055, green: 0.115, blue: 0.10, alpha: 0.98)
+    card.backgroundColor = UIColor(GripItTheme.surface).withAlphaComponent(UIAccessibility.isReduceTransparencyEnabled ? 1 : 0.94)
     card.layer.cornerRadius = 20
     card.layer.borderWidth = 1
     card.layer.borderColor = pine.withAlphaComponent(0.4).cgColor
@@ -88,7 +89,7 @@ import UIKit
     heading.font = .systemFont(ofSize: 20, weight: .bold)
     heading.textColor = .white
     instruction.font = .systemFont(ofSize: 14, weight: .medium)
-    instruction.textColor = UIColor.white.withAlphaComponent(0.86)
+    instruction.textColor = UIColor(GripItTheme.text)
     instruction.numberOfLines = 0
     instruction.accessibilityIdentifier = "grip-node-instruction"
     effort.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
@@ -111,7 +112,7 @@ import UIKit
     addSubview(card)
     hint.text = "Tap a numbered point to explore the grip"
     hint.font = .systemFont(ofSize: 12, weight: .medium)
-    hint.textColor = UIColor.white.withAlphaComponent(0.55)
+    hint.textColor = UIColor(GripItTheme.secondary)
     hint.textAlignment = .center
     hint.isUserInteractionEnabled = false
     addSubview(hint)
@@ -149,7 +150,7 @@ import UIKit
         active ? UIColor(red: 0.025, green: 0.12, blue: 0.09, alpha: 1) : .white, for: .normal)
       button.isSelected = active
       button.disc.backgroundColor =
-        active ? pine : UIColor(red: 0.06, green: 0.14, blue: 0.12, alpha: 0.9)
+        active ? pine : UIColor(GripItTheme.surface)
       button.disc.layer.borderColor =
         (active ? UIColor.white : pine.withAlphaComponent(0.5)).cgColor
       button.status.isHidden = true

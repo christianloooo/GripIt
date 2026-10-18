@@ -15,6 +15,7 @@ struct ThrowEntryView: View {
   @State private var photoMessage: String?
   @State private var reviewedThrow: ReviewedPhotoThrow?
   @FocusState private var editing: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -24,10 +25,10 @@ struct ThrowEntryView: View {
             TrainingStepLabel(step: 3)
             Text("Record your throw.").font(.title.bold())
             Text("Add a photo of your \(model.pitch.shortTitle.lowercased()) readings, or enter them below.")
-              .font(.subheadline).foregroundStyle(.secondary)
+              .font(.subheadline).foregroundStyle(GripItTheme.secondary)
             if model.usesSampleHand {
               Label("Sample hand", systemImage: "hand.raised")
-                .font(.caption).foregroundStyle(.mint)
+                .font(.caption).foregroundStyle(GripItTheme.accent)
             }
           }.padding(.vertical, 6)
         }.listRowBackground(Color.clear)
@@ -40,18 +41,18 @@ struct ThrowEntryView: View {
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 40)
             }
-            .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(ThrowPhotoStyle.ink)
+            .buttonStyle(GripItGlassButtonStyle(kind: .primary))
             .accessibilityIdentifier("upload-throw-photo")
             .disabled(loadingPhoto)
             Button { showFiles = true } label: {
               Image(systemName: "folder").frame(width: 40, height: 40)
             }
-            .buttonStyle(.bordered).tint(.mint)
+            .buttonStyle(GripItGlassButtonStyle()).tint(GripItTheme.accent)
             .accessibilityLabel("Choose photo from Files")
             .disabled(loadingPhoto)
           }
           if loadingPhoto {
-            ProgressView("Opening photo…").font(.caption).tint(.mint)
+            ProgressView("Opening photo…").font(.caption).tint(GripItTheme.accent)
           }
           if let photoMessage {
             Text(photoMessage).font(.caption).foregroundStyle(.orange)
@@ -69,7 +70,7 @@ struct ThrowEntryView: View {
         if model.draft.source == .sample {
           Section {
             HStack {
-              Label("Sample throws", systemImage: "flask").foregroundStyle(.mint)
+              Label("Sample throws", systemImage: "flask").foregroundStyle(GripItTheme.accent)
               Spacer()
               Button("Use real throws") { requestReplacement(sample: false) }
                 .font(.subheadline.weight(.semibold))
@@ -114,14 +115,14 @@ struct ThrowEntryView: View {
           }
           if model.draft.source != .sample {
             Button("Use sample throws") { requestReplacement(sample: true) }
-              .foregroundStyle(.secondary)
+              .foregroundStyle(GripItTheme.secondary)
           }
         } footer: {
           Text("One throw is enough. Three or more lets us check consistency.")
         }.listRowBackground(ThrowPhotoStyle.surface)
       }
       .scrollContentBackground(.hidden).scrollDismissesKeyboard(.interactively)
-      .background(ThrowPhotoStyle.background).preferredColorScheme(.dark).tint(.mint)
+      .gripitScreen().tint(GripItTheme.accent)
       .navigationTitle(model.pitch.shortTitle).navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItemGroup(placement: .keyboard) {
@@ -138,7 +139,7 @@ struct ThrowEntryView: View {
               feedback = result
               showFeedback = true
             } else if let first = model.draft.rows.first(where: { model.errors[$0.id] != nil }) {
-              withAnimation { proxy.scrollTo(first.id, anchor: .top) }
+              withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(first.id, anchor: .top) }
             }
           } label: {
             HStack {
@@ -147,9 +148,9 @@ struct ThrowEntryView: View {
               Image(systemName: "arrow.up.right")
             }.font(.headline).frame(maxWidth: .infinity, minHeight: 40)
           }
-          .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(ThrowPhotoStyle.ink)
+          .buttonStyle(GripItGlassButtonStyle(kind: .primary))
           .accessibilityIdentifier("see-feedback")
-        }.padding(.horizontal, 20).padding(.vertical, 12).background(ThrowPhotoStyle.background)
+        }.padding(.horizontal, 20).padding(.vertical, 12).background(GripItBackdrop())
       }
       .onChange(of: model.draft.rows.count) { _, _ in scrollToLatest(proxy) }
       .onChange(of: pickedPhoto) { _, item in
@@ -213,10 +214,10 @@ struct ThrowEntryView: View {
               Text(photo.title).font(.caption.weight(.semibold))
               Text(photo.fixture == nil ? "YOUR PHOTO" : "SAMPLE PHOTO")
                 .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                .tracking(1).foregroundStyle(.mint)
+                .tracking(1).foregroundStyle(GripItTheme.accent)
             }.frame(width: 166, alignment: .leading)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(GripItGlassButtonStyle(kind: .quiet))
           .accessibilityLabel("Review \(photo.title)")
           .accessibilityIdentifier("throw-photo-\(photo.fixture?.rawValue ?? photo.id.uuidString)")
         }
@@ -276,7 +277,7 @@ struct ThrowEntryView: View {
 
   private func scrollToLatest(_ proxy: ScrollViewProxy) {
     if let last = model.draft.rows.last, last.velocityMph.isEmpty {
-      withAnimation { proxy.scrollTo(last.id, anchor: .top) }
+      withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(last.id, anchor: .top) }
     }
   }
 
@@ -294,7 +295,7 @@ struct ThrowEntryView: View {
           .focused($editing).frame(minWidth: 70, maxWidth: 110)
           .accessibilityLabel(title).accessibilityIdentifier("\(id)-\(key)")
         if !unit.isEmpty, !clock {
-          Text(unit).font(.caption).foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
+          Text(unit).font(.caption).foregroundStyle(GripItTheme.secondary).frame(width: 28, alignment: .trailing)
         }
       }
       if let error = model.errors[id]?[key] {
@@ -305,9 +306,8 @@ struct ThrowEntryView: View {
 }
 
 private enum ThrowPhotoStyle {
-  static let background = Color(red: 0.025, green: 0.045, blue: 0.04)
-  static let surface = Color(red: 0.035, green: 0.075, blue: 0.065)
-  static let ink = Color(red: 0.025, green: 0.12, blue: 0.09)
+  static let surface = GripItTheme.surface
+  static let ink = GripItTheme.background
 }
 
 struct SessionThrowPhoto: Identifiable {
@@ -387,7 +387,7 @@ private struct ThrowPhotoReview: View {
               reading("Release height", value: $draft.releaseHeightFeet, unit: "ft", key: "releaseHeightFeet")
               reading("Rapsodo score", value: $draft.rapsodoScore, unit: "", key: "rapsodoScore")
               Text("Leave readings that are absent from the photo empty.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(GripItTheme.secondary)
             }
             .padding(.vertical, 6)
           }
@@ -399,7 +399,7 @@ private struct ThrowPhotoReview: View {
         }
         .scrollDismissesKeyboard(.interactively)
       }
-      .background(ThrowPhotoStyle.background).preferredColorScheme(.dark).tint(.mint)
+      .gripitScreen().tint(GripItTheme.accent)
       .navigationTitle("Review readings").navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
@@ -420,9 +420,9 @@ private struct ThrowPhotoReview: View {
               Image(systemName: "checkmark")
             }.font(.headline).frame(maxWidth: .infinity, minHeight: 40)
           }
-          .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(ThrowPhotoStyle.ink)
+          .buttonStyle(GripItGlassButtonStyle(kind: .primary))
           .disabled(preparing).accessibilityIdentifier("confirm-photo-readings")
-        }.padding(.horizontal, 20).padding(.vertical, 12).background(ThrowPhotoStyle.background)
+        }.padding(.horizontal, 20).padding(.vertical, 12).background(GripItBackdrop())
       }
       .task { await prepareReadings() }
     }
@@ -432,15 +432,15 @@ private struct ThrowPhotoReview: View {
     VStack(alignment: .leading, spacing: 7) {
       Text(pitchTitle.uppercased())
         .font(.system(size: 9, weight: .bold, design: .monospaced))
-        .tracking(1).foregroundStyle(.mint)
+        .tracking(1).foregroundStyle(GripItTheme.accent)
       Text(preparing ? "Preparing readings" : "Check your readings")
         .font(.headline)
       Text(photo.fixture == nil
         ? "Enter the values visible in your photo."
         : "Confirm each value against this sample photo.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.caption).foregroundStyle(GripItTheme.secondary)
       if preparing && photo.fixture != nil {
-        Text("\(revealed) readings ready").font(.caption2.monospacedDigit()).foregroundStyle(.mint)
+        Text("\(revealed) readings ready").font(.caption2.monospacedDigit()).foregroundStyle(GripItTheme.accent)
       }
     }.accessibilityElement(children: .combine)
   }
@@ -448,18 +448,18 @@ private struct ThrowPhotoReview: View {
   private var photoPanel: some View {
     VStack(alignment: .leading, spacing: 10) {
       GeometryReader { bounds in
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
           ThrowPhotoZoomView(image: photo.image)
             .accessibilityLabel(photo.title + ". Pinch to zoom and drag to inspect the photo.")
           if scanning {
-            scanBeam
-              .offset(y: scanPosition * max(0, bounds.size.height - 4))
+            scanBeam(height: bounds.size.height)
+              .offset(x: scanPosition * max(0, bounds.size.width - 48))
               .allowsHitTesting(false)
               .accessibilityHidden(true)
             Label("SCANNING RAPSODO PHOTO", systemImage: "viewfinder")
               .font(.system(size: 9, weight: .bold, design: .monospaced))
               .tracking(0.6)
-              .foregroundStyle(.mint)
+              .foregroundStyle(GripItTheme.accent)
               .padding(.horizontal, 10)
               .padding(.vertical, 7)
               .background(.black.opacity(0.76), in: Capsule())
@@ -469,16 +469,16 @@ private struct ThrowPhotoReview: View {
           }
         }
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(.mint.opacity(0.18), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(GripItTheme.edge, lineWidth: 1))
       }
       .aspectRatio(photoAspectRatio, contentMode: .fit)
       .background(ThrowPhotoStyle.surface, in: RoundedRectangle(cornerRadius: 18))
       Text(photo.title).font(.caption.weight(.semibold))
       Label("Pinch to zoom", systemImage: "arrow.up.left.and.arrow.down.right")
-        .font(.system(size: 10)).foregroundStyle(.secondary)
+        .font(.system(size: 10)).foregroundStyle(GripItTheme.secondary)
       if photo.fixture != nil {
         Text("SAMPLE PHOTO").font(.system(size: 8, weight: .semibold, design: .monospaced))
-          .tracking(1).foregroundStyle(.mint)
+          .tracking(1).foregroundStyle(GripItTheme.accent)
       }
     }
   }
@@ -488,25 +488,26 @@ private struct ThrowPhotoReview: View {
     return photo.image.size.width / photo.image.size.height
   }
 
-  private var scanBeam: some View {
-    Rectangle()
-      .fill(LinearGradient(
-        colors: [.clear, .mint.opacity(0.12), .mint.opacity(0.82), .mint.opacity(0.12), .clear],
-        startPoint: .top,
-        endPoint: .bottom
-      ))
-      .frame(height: 42)
-      .overlay(alignment: .center) {
-        Rectangle().fill(.mint.opacity(0.9)).frame(height: 1)
+  private func scanBeam(height: CGFloat) -> some View {
+    // A vertical dotted band travels across the photo while readings appear.
+    Canvas { context, size in
+      for x in stride(from: 6.0, through: size.width - 6, by: 9) {
+        for y in stride(from: 6.0, through: size.height - 6, by: 9) {
+          let dot = CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3)
+          context.fill(Path(ellipseIn: dot), with: .color(GripItTheme.text.opacity(0.7)))
+        }
       }
-      .shadow(color: .mint.opacity(0.55), radius: 8)
-      .frame(maxWidth: .infinity)
+    }
+    .background(LinearGradient(
+      colors: [.clear, GripItTheme.accent.opacity(0.32), .clear],
+      startPoint: .leading, endPoint: .trailing))
+    .frame(width: 48, height: height)
   }
 
   private func reading(_ title: String, value: Binding<String>, unit: String, key: String,
     required: Bool = false, punctuation: Bool = false) -> some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text(title).font(.caption).foregroundStyle(.secondary)
+      Text(title).font(.caption).foregroundStyle(GripItTheme.secondary)
       HStack(spacing: 3) {
         TextField(required ? (key == "spinDirectionClock" ? "12:30" : "Required") : "Optional", text: value)
           .font(.system(.body, design: .monospaced).weight(.medium))
@@ -514,12 +515,12 @@ private struct ThrowPhotoReview: View {
           .textInputAutocapitalization(.never).autocorrectionDisabled()
           .focused($editing).disabled(preparing)
           .accessibilityLabel(title).accessibilityIdentifier("photo-\(key)")
-        Text(unit).font(.system(size: 10)).foregroundStyle(.secondary)
+        Text(unit).font(.system(size: 10)).foregroundStyle(GripItTheme.secondary)
       }
       .padding(.horizontal, 10).padding(.vertical, 12)
-      .background(ThrowPhotoStyle.surface, in: RoundedRectangle(cornerRadius: 10))
-      .overlay(RoundedRectangle(cornerRadius: 10)
-        .stroke(errors[key] == nil ? Color.mint.opacity(value.wrappedValue.isEmpty ? 0.08 : 0.3) : Color.orange, lineWidth: 1))
+      .gripitGlassSurface(radius: 12)
+      .overlay(RoundedRectangle(cornerRadius: 12)
+        .stroke(errors[key] == nil ? GripItTheme.accent.opacity(value.wrappedValue.isEmpty ? 0.08 : 0.3) : Color.orange, lineWidth: 1))
       if let error = errors[key] { Text(error).font(.caption2).foregroundStyle(.orange) }
     }
   }
@@ -590,7 +591,7 @@ private final class ThrowPhotoZoomScrollView: UIScrollView, UIScrollViewDelegate
     showsHorizontalScrollIndicator = false
     showsVerticalScrollIndicator = false
     bouncesZoom = true
-    backgroundColor = UIColor(red: 0.02, green: 0.035, blue: 0.03, alpha: 1)
+    backgroundColor = UIColor(GripItTheme.surface)
     addSubview(photoView)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

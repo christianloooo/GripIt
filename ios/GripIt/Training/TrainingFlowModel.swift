@@ -132,11 +132,11 @@ struct TrainingStepLabel: View {
       Text("STEP \(step) OF 4").font(.caption2.weight(.semibold))
       Spacer()
       ForEach(1...4, id: \.self) { index in
-        Capsule().fill(index <= step ? Color.mint : Color.white.opacity(0.2))
+        Capsule().fill(index <= step ? GripItTheme.accent : Color.white.opacity(0.2))
           .frame(width: 22, height: 4)
       }
     }
-    .foregroundStyle(.secondary)
+    .foregroundStyle(GripItTheme.secondary)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Step \(step) of 4")
   }

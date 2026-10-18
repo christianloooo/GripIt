@@ -38,7 +38,7 @@ struct GripSceneView: UIViewRepresentable {
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeUIView(context: Context) -> SCNView {
     let view = SCNView()
-    view.backgroundColor = arcadeStyle ? .clear : UIColor(white: 0.10, alpha: 1)
+    view.backgroundColor = arcadeStyle ? .clear : UIColor(GripItTheme.surface)
     view.antialiasingMode = .multisampling4X
     view.allowsCameraControl = true
     view.defaultCameraController.inertiaEnabled = true
@@ -191,7 +191,7 @@ struct GripSceneView: UIViewRepresentable {
       if changed {
         let scene = GripSceneBuilder.scene(pose: pose, showBall: showBall)
         if arcade { GripSceneBuilder.applyArcadeStyle(scene, pose: pose) }
-        view.backgroundColor = arcade ? .clear : UIColor(white: 0.10, alpha: 1)
+        view.backgroundColor = arcade ? .clear : UIColor(GripItTheme.surface)
         showingArcade = arcade
         view.scene = scene
         content = scene.rootNode.childNode(withName: "hand-and-ball", recursively: false)

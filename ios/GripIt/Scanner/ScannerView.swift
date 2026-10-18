@@ -13,21 +13,17 @@ struct ScannerView: View {
     @State private var showProfileDetails = false
     @State private var importError: String?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let accent = Color.mint
-    private let pinePrimary = Color(red: 0.106, green: 0.263, blue: 0.196)
-    private let pineSecondary = Color(red: 0.176, green: 0.416, blue: 0.310)
-    private let pineTint = Color(red: 0.910, green: 0.945, blue: 0.925)
-    private let pineTintBorder = Color(red: 0.769, green: 0.851, blue: 0.808)
-    private let landingCanvas = Color(red: 0.969, green: 0.976, blue: 0.969)
-    private let landingMuted = Color(red: 0.945, green: 0.961, blue: 0.949)
-    private let landingBorder = Color(red: 0.886, green: 0.910, blue: 0.894)
-    private let landingInk = Color(red: 0.059, green: 0.118, blue: 0.086)
-    private let landingMutedInk = Color(red: 0.322, green: 0.388, blue: 0.345)
-
-    private var usesLightLandingTheme: Bool {
-        model.phase == .chooseHand || model.phase == .requestingPermission || model.phase == .complete
-    }
+    private let accent = GripItTheme.accent
+    private let pinePrimary = GripItTheme.text
+    private let pineSecondary = GripItTheme.secondary
+    private let pineTint = GripItTheme.surface
+    private let pineTintBorder = GripItTheme.edge
+    private let landingCanvas = GripItTheme.background
+    private let landingBorder = GripItTheme.edge
+    private let landingInk = GripItTheme.text
+    private let landingMutedInk = GripItTheme.secondary
 
     var body: some View {
         Group {
@@ -57,7 +53,8 @@ struct ScannerView: View {
             if let profile = model.profile { GripViewerView(profile: profile).id(try? HandProfileCodec.encode(profile)) }
         }
         .sheet(isPresented: $showProfileDetails) { profileDetails }
-        .preferredColorScheme(usesLightLandingTheme ? .light : .dark)
+        .preferredColorScheme(.dark)
+        .foregroundStyle(GripItTheme.text).tint(GripItTheme.text)
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("--scan-results-preview"), model.phase == .chooseHand {
@@ -66,7 +63,7 @@ struct ScannerView: View {
             }
         }
         #endif
-        .animation(.easeInOut(duration: 0.2), value: model.phase)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.phase)
         .onChange(of: scenePhase) { _, phase in
             // Permission and share dialogs can make the scene temporarily inactive.
             // End capture only when the app actually moves to the background.
@@ -78,72 +75,64 @@ struct ScannerView: View {
 
     private var handSelection: some View {
         ZStack {
-            landingCanvas.ignoresSafeArea()
+            GripItBackdrop()
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 36) {
                     pageHeader
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("A better grip starts here.")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(pineSecondary)
-                        Text("Your hand.\nYour grip.")
-                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                            .tracking(-1)
-                            .foregroundStyle(landingInk)
-                        Text("Scan your throwing hand to find your fit.")
-                            .font(.body)
-                            .foregroundStyle(landingMutedInk)
-                    }
-                    handIllustration
-                        .frame(maxWidth: .infinity)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Throwing hand")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(landingInk)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Find your\ngrip.")
+                            .font(.system(size: 44, weight: .semibold))
+                            .tracking(-1.5).foregroundStyle(landingInk)
+                        Text("Scan your throwing hand to get started.")
+                            .font(.subheadline).foregroundStyle(landingMutedInk)
+                            .lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true)
+                            .padding(.top, 16)
+                        handIllustration
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 34)
+                            .accessibilityHidden(true)
+                        Text("Your throwing hand")
+                            .font(.subheadline.weight(.medium)).foregroundStyle(landingInk)
+                            .padding(.bottom, 12)
                         HStack(spacing: 4) {
                             handChoice("Left", hand: .left)
                             handChoice("Right", hand: .right)
                         }
-                        .padding(4)
-                        .background(landingMuted, in: RoundedRectangle(cornerRadius: 14))
-                        Text("Prop up your phone. Keep your whole hand in view.")
-                            .font(.footnote)
-                            .foregroundStyle(landingMutedInk)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .padding(5)
+                        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 18))
+                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(landingBorder, lineWidth: 1))
                     }
+                    .padding(24).gripitGlassSurface(radius: 26)
                 }
-                .padding(24)
-                .frame(maxWidth: 500)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 24)
+                .frame(maxWidth: 500).frame(maxWidth: .infinity)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 14) {
+            VStack(spacing: 8) {
                 Button { model.start(hand: model.selectedHand) } label: {
-                    primaryLabel("Scan my hand", icon: "scan-line")
+                    primaryLabel("Scan my hand", icon: "arrow-right")
                 }
-                .buttonStyle(ScanPrimaryButtonStyle())
+                .buttonStyle(GripItGlassButtonStyle(kind: .primary))
                 .accessibilityIdentifier("start-hand-scan")
-                Button {
-                    model.loadSample()
-                } label: {
-                    Text("Try a sample hand").font(.subheadline.weight(.medium))
-                        .frame(minHeight: 44)
+                Button { model.loadSample() } label: {
+                    Text("Try a sample hand").font(.subheadline).frame(minHeight: 36)
                 }
-                .foregroundStyle(landingMutedInk)
+                .buttonStyle(GripItGlassButtonStyle(kind: .quiet))
                 .accessibilityIdentifier("load-sample-hand")
+                Label("Your scan stays on your phone", systemImage: "lock")
+                    .font(.caption).foregroundStyle(landingMutedInk)
+                    .padding(.bottom, 6)
             }
             .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 8)
             .frame(maxWidth: 500).frame(maxWidth: .infinity)
-            .background(landingCanvas)
+            .background(GripItTheme.background.opacity(0.88))
         }
     }
 
     private var pageHeader: some View {
         HStack {
             HStack(spacing: 8) {
-                Circle().fill(pinePrimary).frame(width: 9, height: 9)
                 Text("gripit.").font(.system(.title3, design: .rounded, weight: .heavy))
                     .foregroundStyle(landingInk)
             }
@@ -162,7 +151,7 @@ struct ScannerView: View {
                 lucide("ellipsis", size: 22)
                     .foregroundStyle(landingMutedInk)
                     .frame(width: 44, height: 44)
-                    .background(.white, in: Circle())
+                    .background(.white.opacity(0.06), in: Circle())
                     .overlay(Circle().stroke(landingBorder, lineWidth: 1))
             }
             .accessibilityLabel("Hand profile options")
@@ -171,15 +160,11 @@ struct ScannerView: View {
 
     private var handIllustration: some View {
         ZStack {
-            Circle().fill(pineTint.opacity(0.65)).frame(width: 136, height: 136)
-            Circle().stroke(pineTintBorder.opacity(0.6), lineWidth: 1).frame(width: 158, height: 158)
-            lucide("hand", size: 76)
-                .foregroundStyle(pinePrimary)
-                .scaleEffect(x: model.selectedHand == .left ? -1 : 1, y: 1)
-            lucide("scan-line", size: 132).foregroundStyle(pinePrimary.opacity(0.16))
-        }
-        .frame(height: 160)
-        .animation(.easeInOut(duration: 0.2), value: model.selectedHand)
+            GripItScanCorners().stroke(GripItTheme.accent.opacity(0.7), lineWidth: 2)
+            lucide("hand", size: 68)
+                .foregroundStyle(GripItTheme.text)
+                .rotationEffect(.degrees(-20))
+        }.frame(width: 90, height: 90)
     }
 
     private func handChoice(_ title: String, hand: Handedness) -> some View {
@@ -190,13 +175,14 @@ struct ScannerView: View {
                 Text(title).font(.subheadline.weight(.semibold))
                 if selected { lucide("check", size: 16) }
             }
-            .foregroundStyle(selected ? pinePrimary : landingMutedInk)
+            .foregroundStyle(selected ? landingInk : landingMutedInk)
             .frame(maxWidth: .infinity, minHeight: 48)
-            .background(selected ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 10))
+            .background(selected ? GripItTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(selected ? 0.24 : 0), lineWidth: 1))
             .shadow(color: .black.opacity(selected ? 0.04 : 0), radius: 3, y: 1)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GripItGlassButtonStyle(kind: .quiet))
         .accessibilityLabel("\(title) throwing hand")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("select-\(hand.rawValue)-hand")
@@ -214,13 +200,12 @@ struct ScannerView: View {
             Spacer(minLength: 8)
             lucide(icon)
         }
-        .frame(maxWidth: .infinity, minHeight: 24)
-        .padding(.horizontal, 20).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, minHeight: 40)
     }
 
     private var permissionCheck: some View {
         ZStack {
-            landingCanvas.ignoresSafeArea()
+            GripItBackdrop()
             VStack(spacing: 16) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -244,7 +229,7 @@ struct ScannerView: View {
             }
             .padding(28)
             .frame(maxWidth: 420)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .gripitGlassSurface(radius: 18)
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(landingBorder, lineWidth: 1)
@@ -356,7 +341,7 @@ struct ScannerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
-        .background(.black.opacity(0.74), in: RoundedRectangle(cornerRadius: 18))
+        .gripitGlassSurface(radius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.white.opacity(0.16), lineWidth: 1)
@@ -371,7 +356,7 @@ struct ScannerView: View {
             SkeletonCoverageView(fractions: model.jointFractions)
                 .frame(width: 64)
                 .padding(8)
-                .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 12))
+                .gripitGlassSurface(radius: 12)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -387,13 +372,13 @@ struct ScannerView: View {
 
             }
             .padding(14)
-            .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 16))
+            .gripitGlassSurface(radius: 16)
         }
     }
 
     private var results: some View {
         ZStack {
-            landingCanvas.ignoresSafeArea()
+            GripItBackdrop()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
                     pageHeader
@@ -429,7 +414,7 @@ struct ScannerView: View {
                             }
                         }
                         .padding(22)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+                        .gripitGlassSurface(radius: 20)
                         .overlay(RoundedRectangle(cornerRadius: 20).stroke(landingBorder, lineWidth: 1))
                         Button { showProfileDetails = true } label: {
                             HStack(spacing: 10) {
@@ -441,7 +426,7 @@ struct ScannerView: View {
                             .foregroundStyle(landingMutedInk)
                             .frame(minHeight: 48).contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(GripItGlassButtonStyle(kind: .quiet))
                         .accessibilityIdentifier("view-hand-measurements")
                         if isSampleProfile {
                             Text("Example measurements, not a scan of your hand.")
@@ -458,10 +443,11 @@ struct ScannerView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 10) {
                 Button { showGrips = true } label: { primaryLabel("Explore my grips") }
-                    .buttonStyle(ScanPrimaryButtonStyle())
+                    .buttonStyle(GripItGlassButtonStyle(kind: .primary))
                     .disabled(model.profile == nil)
                     .accessibilityIdentifier("explore-my-grips")
                 Button("Scan again") { model.reset() }
+                    .buttonStyle(GripItGlassButtonStyle(kind: .quiet))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(landingMutedInk).frame(minHeight: 44)
             }
@@ -499,16 +485,16 @@ struct ScannerView: View {
                             ShareLink(item: url) {
                                 primaryLabel("Export hand profile", icon: "upload")
                             }
-                            .buttonStyle(ScanPrimaryButtonStyle())
+                            .buttonStyle(GripItGlassButtonStyle(kind: .primary))
                         } else {
                             Button("Prepare export") { model.exportProfile() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(GripItGlassButtonStyle())
                         }
                     }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
                 }
             }
             .foregroundStyle(landingInk)
-            .background(landingCanvas.ignoresSafeArea())
+            .background(GripItBackdrop())
             .navigationTitle("Hand measurements")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -517,7 +503,7 @@ struct ScannerView: View {
                 }
             }
         }
-        .preferredColorScheme(.light)
+        .gripitScreen()
         .presentationDragIndicator(.visible)
     }
 
@@ -594,7 +580,7 @@ struct ScannerView: View {
 
     private var failure: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            GripItBackdrop()
             VStack(spacing: 22) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 46))
@@ -610,28 +596,28 @@ struct ScannerView: View {
                     Button("Open Settings") {
                         UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(GripItGlassButtonStyle(kind: .primary))
                     .tint(accent)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(GripItTheme.text)
 
                     Button("Try again") {
                         model.start(hand: model.selectedHand)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(GripItGlassButtonStyle())
                     .tint(.white)
                 } else {
                     Button("Try again") {
                         model.start(hand: model.selectedHand)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(GripItGlassButtonStyle(kind: .primary))
                     .tint(accent)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(GripItTheme.text)
                 }
 
                 Button("Choose another hand") {
                     model.reset()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(GripItGlassButtonStyle())
                 .tint(.white)
 
                 Button("Load sample profile") {
@@ -730,7 +716,7 @@ struct ScannerView: View {
     private func valueCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 12, content: content)
             .padding(16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .gripitGlassSurface(radius: 16)
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(landingBorder, lineWidth: 1))
     }
 
@@ -759,16 +745,4 @@ private struct FingerResult: Identifiable {
     let name: String
     let measurement: FingerMeasurements
     var id: String { name }
-}
-
-/// A single primary action, shared by the scan and completion screens.
-private struct ScanPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var enabled
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.white)
-            .background(Color(red: 0.106, green: 0.263, blue: 0.196),
-                        in: RoundedRectangle(cornerRadius: 14))
-            .opacity(enabled ? (configuration.isPressed ? 0.84 : 1) : 0.45)
-    }
 }
