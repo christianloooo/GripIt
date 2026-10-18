@@ -12,3 +12,8 @@ ios/build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
+
+# Secrets. Never commit a key.
+.env
+.env.*
+!.env.example
