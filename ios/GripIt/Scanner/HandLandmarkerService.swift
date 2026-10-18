@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import CoreVideo
 import Foundation
 import MediaPipeTasksVision
@@ -17,6 +18,8 @@ final class HandLandmarkerService {
     private let handLandmarker: HandLandmarker
     private let inferenceLock = NSLock()
     private var lastTimestampMilliseconds = -1
+    private let imageContext = CIContext(options: [.cacheIntermediates: false])
+    private var uprightBuffer: CVPixelBuffer?
 
     init() throws {
         guard let modelPath = Bundle.main.path(
@@ -70,7 +73,11 @@ final class HandLandmarkerService {
             )
         }
 
-        let image = try MPImage(pixelBuffer: pixelBuffer, orientation: orientation)
+        // Physically rotate before inference. MediaPipe projects orientation-metadata
+        // results back to the original input axes; passing .up here instead makes
+        // the model/mapper coordinate contract explicit and version-independent.
+        let preparedBuffer = try prepareUpright(pixelBuffer, orientation: orientation)
+        let image = try MPImage(pixelBuffer: preparedBuffer, orientation: .up)
         let result = try handLandmarker.detect(
             videoFrame: image,
             timestampInMilliseconds: timestampMilliseconds
@@ -100,6 +107,37 @@ final class HandLandmarkerService {
             handCount: handCount
         )
     }
+
+    func prepareUpright(
+        _ input: CVPixelBuffer, orientation: UIImage.Orientation
+    ) throws -> CVPixelBuffer {
+        guard orientation != .up else { return input }
+        let exif: Int32
+        switch orientation {
+        case .left: exif = 8
+        case .right: exif = 6
+        case .down: exif = 3
+        default: throw HandLandmarkerServiceError.mirroredOrientationUnsupported
+        }
+        let oriented = CIImage(cvPixelBuffer: input).oriented(forExifOrientation: exif)
+        let width = Int(oriented.extent.width)
+        let height = Int(oriented.extent.height)
+        if uprightBuffer == nil || CVPixelBufferGetWidth(uprightBuffer!) != width
+            || CVPixelBufferGetHeight(uprightBuffer!) != height {
+            var buffer: CVPixelBuffer?
+            let attributes = [kCVPixelBufferIOSurfacePropertiesKey as String: [:]] as CFDictionary
+            guard CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
+                                      attributes, &buffer) == kCVReturnSuccess,
+                  let buffer else { throw HandLandmarkerServiceError.imagePreparationFailed }
+            uprightBuffer = buffer
+        }
+        guard let uprightBuffer else { throw HandLandmarkerServiceError.imagePreparationFailed }
+        let image = oriented.transformed(by: CGAffineTransform(
+            translationX: -oriented.extent.minX, y: -oriented.extent.minY
+        ))
+        imageContext.render(image, to: uprightBuffer)
+        return uprightBuffer
+    }
 }
 
 private extension UIImage.Orientation {
@@ -119,11 +157,14 @@ private enum HandLandmarkerServiceError: LocalizedError {
     case mirroredOrientationUnsupported
     case invalidTimestamp(Int)
     case nonMonotonicTimestamp(previous: Int, current: Int)
+    case imagePreparationFailed
 
     var errorDescription: String? {
         switch self {
         case .missingModel:
             "The bundled hand_landmarker.task model is missing."
+        case .imagePreparationFailed:
+            "The camera frame could not be prepared for hand tracking."
         case .unsupportedPixelFormat:
             "MediaPipe requires a 32BGRA camera pixel buffer."
         case .mirroredOrientationUnsupported:

@@ -73,6 +73,8 @@ final class ScannerViewModel: ObservableObject {
 
     func stop() {
         generation = UUID()
+        capture.onFrame = nil
+        capture.onError = nil
         capture.stop()
         points = []
         if phase == .scanning || phase == .requestingPermission {
@@ -139,6 +141,9 @@ final class ScannerViewModel: ObservableObject {
         if let result = update.profile {
             profile = result
             phase = .complete
+            generation = UUID()
+            capture.onFrame = nil
+            capture.onError = nil
             capture.stop()
             points = []
             exportProfile()
@@ -167,6 +172,7 @@ private final class ScannerFrameProcessor {
     private var consecutiveViewFrames = 0
     private var previousView: ScanView?
     private var counts: [ScanView: Int] = [:]
+    private var stability = MeasurementStabilityGate()
 
     init(hand: Handedness) { self.hand = hand }
 
@@ -213,6 +219,7 @@ private final class ScannerFrameProcessor {
             let expectedView = session.coverage.snapshot.currentView
             guard observedView == expectedView else {
                 consecutiveViewFrames = 0
+                stability.reset()
                 throw Guidance(session.coverage.snapshot.nextInstruction)
             }
             if previousView == observedView { consecutiveViewFrames += 1 }
@@ -220,8 +227,10 @@ private final class ScannerFrameProcessor {
             guard consecutiveViewFrames >= 3 else { throw Guidance("Hold still.") }
             joints.record(validLandmarks: Set(mapped.landmarks.keys), view: observedView)
             guard depthCount == 21 else {
+                stability.reset()
                 throw Guidance("Depth \(depthCount)/21. Spread your fingers and adjust the angle slightly.")
             }
+            guard stability.accept(mapped.landmarks) else { throw Guidance("Hold still while measurements settle.") }
             try session.accept(ScanObservation(
                 view: observedView, handedness: hand,
                 landmarks: mapped.landmarks, frameConfidence: detection.confidence
@@ -249,8 +258,13 @@ private final class ScannerFrameProcessor {
                 message = "Scan complete. Compare these measurements with a ruler."
                 diagnostics += " · " + ScanView.requiredOrder.map { "\($0.rawValue): \(counts[$0, default: 0])" }.joined(separator: " · ")
             }
-        } catch let guidance as Guidance { message = guidance.text }
-        catch { message = error.localizedDescription }
+        } catch let guidance as Guidance {
+            message = guidance.text
+            if points.isEmpty || depthCount != 21 { stability.reset() }
+        } catch {
+            stability.reset()
+            message = error.localizedDescription
+        }
         let view = session.coverage.snapshot.currentView
         let fractions = Dictionary(uniqueKeysWithValues: HandLandmarkName.allCases.map { name in
             (name, view.map { joints.snapshot.fraction(for: name, in: $0) } ?? 1)

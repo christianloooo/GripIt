@@ -10,7 +10,7 @@ struct SkeletonCoverageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Current view coverage")
+            Text("Depth samples this view")
                 .font(.caption.weight(.semibold))
 
             Canvas { context, size in

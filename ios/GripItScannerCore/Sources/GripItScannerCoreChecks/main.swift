@@ -233,6 +233,14 @@ func fullObservation(
 }
 
 func checkAggregationAndSession() throws {
+    var stability = MeasurementStabilityGate()
+    let steady = fullObservation(view: .palm).landmarks
+    try expect(!stability.accept(steady), "One frame must not establish stability")
+    try expect(!stability.accept(steady), "Two frames must not establish stability")
+    try expect(stability.accept(steady), "Three matching metric frames must settle")
+    try expect(!stability.accept(fullObservation(view: .palm, offset: (50, 0, 0)).landmarks), "A moving hand must not advance")
+    try expect(!stability.accept([:]), "Missing landmarks must reset stability")
+
     let measurements = try HandMeasurementAggregator().measure([
         fullObservation(view: .palm, scale: 1),
         fullObservation(view: .palm, scale: 1.02),

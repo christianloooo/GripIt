@@ -24,6 +24,10 @@ The iOS app does not require `npm`, `npm run ios:prepare`, a local web server, o
 7. Press **Run**.
 8. Allow camera access when prompted.
 
+If the phone prompts for Developer Mode, enable it in Settings > Privacy & Security > Developer Mode, restart, and reconnect. Accept the Trust prompts on both the iPhone and Mac. Each teammate can connect their phone and repeat Run with a Personal Team. The installed app can then launch from the Home Screen after disconnecting.
+
+You can download this branch as a source ZIP from GitHub using Code > Download ZIP. The ZIP contains an Xcode project, not a signed installer. Personal Team signing is performed locally for each device.
+
 The project intentionally has no committed development team. Its default bundle identifiers are:
 
 - App: `com.jyshum.gripit.scanner`
@@ -38,6 +42,12 @@ The simulator has no TrueDepth camera. Use it only for non-camera UI checks. Fin
 3. Complete the views in order: palm, thumb side, back, pinky side.
 4. Keep the whole hand visible until each view fills.
 5. Review or export the resulting `HandProfile` JSON.
+
+The small skeleton shows valid depth samples for the current view, including individual joints from a frame that is incomplete elsewhere. Overall progress advances only after a complete 21-joint frame also passes the view and metric stability checks. A filled skeleton alone does not mean the scan is finished.
+
+Thickness is currently unavailable and remains `null`. Hand label confidence is a tracking score, not measurement accuracy. Validate measurements against a ruler before using the profile elsewhere.
+
+RGB pixels are explicitly rotated upright before MediaPipe inference with `.up` orientation. Output points are then mapped once back to the original unmirrored sensor space for depth lookup. Calibration lens-distortion correction is applied before metric projection.
 
 The analysis coordinates stay unmirrored. Only the selfie preview is mirrored. The scan requires synchronized RGB and depth frames. It does not fall back to RGB-only scale estimation.
 
