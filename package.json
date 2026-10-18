@@ -7,13 +7,14 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "vitest run --exclude '**/.worktrees/**'",
+    "test": "vitest run --exclude '**/.worktrees/**' --exclude 'backend/**'",
     "format": "prettier --write src README.md index.html vite.config.ts tsconfig.json package.json",
     "postinstall": "node scripts/copy-mediapipe.mjs",
     "predev": "node scripts/prepare-mediapipe.mjs",
     "prebuild": "node scripts/prepare-mediapipe.mjs",
     "ios:prepare": "npm run build && node scripts/prepare-ios.mjs",
     "ios:focus": "node scripts/build-native-focus.mjs",
+    "photo:dev": "node --experimental-strip-types scripts/photo-demo-server.ts",
     "ios:open": "open ios/GripIt.xcodeproj"
   },
   "dependencies": {

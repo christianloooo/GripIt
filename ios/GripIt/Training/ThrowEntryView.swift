@@ -113,10 +113,8 @@ struct ThrowEntryView: View {
           Button { model.addThrow() } label: {
             Label("Add another throw", systemImage: "plus")
           }
-          if model.draft.source != .sample {
-            Button("Use sample throws") { requestReplacement(sample: true) }
-              .foregroundStyle(GripItTheme.secondary)
-          }
+          Button("Add sample throw") { requestSampleThrow() }
+            .foregroundStyle(GripItTheme.secondary).accessibilityIdentifier("add-sample-throw")
         } footer: {
           Text("One throw is enough. Three or more lets us check consistency.")
         }.listRowBackground(ThrowPhotoStyle.surface)
@@ -181,6 +179,7 @@ struct ThrowEntryView: View {
           Button("Replace entries", role: .destructive) {
             switch pending {
             case .session(let sample): model.replaceDraft(sample: sample)
+            case .sampleThrow: model.addSampleThrow()
             case .photo(let result): appendPhotoThrow(result)
             }
             replacement = nil
@@ -247,7 +246,7 @@ struct ThrowEntryView: View {
     }
     photoMessage = nil
     let photo = SessionThrowPhoto(title: "Photo \(model.photos.count - RapsodoPhotoFixture.allCases.count + 1)",
-      image: image, fixture: fixture)
+      image: image, fixture: fixture, originalData: preview)
     model.photos.append(photo)
     selectedPhoto = photo
   }
@@ -273,6 +272,11 @@ struct ThrowEntryView: View {
   private func requestReplacement(sample: Bool) {
     if model.hasEntries { replacement = .session(sample: sample) }
     else { model.replaceDraft(sample: sample) }
+  }
+
+  private func requestSampleThrow() {
+    if model.draft.source != .sample && model.hasEntries { replacement = .sampleThrow }
+    else { model.addSampleThrow() }
   }
 
   private func scrollToLatest(_ proxy: ScrollViewProxy) {
@@ -315,7 +319,42 @@ struct SessionThrowPhoto: Identifiable {
   let title: String
   let image: UIImage
   let fixture: RapsodoPhotoFixture?
+  let originalData: Data?
   var source: ThrowSource { fixture == nil ? .manual : .sample }
+
+  init(title: String, image: UIImage, fixture: RapsodoPhotoFixture?, originalData: Data? = nil) {
+    self.title = title
+    self.image = image
+    self.fixture = fixture
+    self.originalData = originalData ?? fixture?.imageURL.flatMap { try? Data(contentsOf: $0) }
+  }
+
+  func upload() throws -> (data: Data, contentType: String) {
+    if let data = originalData, data.count <= 4 * 1024 * 1024, image.imageOrientation == .up {
+      if data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]) { return (data, "image/png") }
+      if data.starts(with: [255, 216, 255]) { return (data, "image/jpeg") }
+    }
+    // Normalize camera orientation and bound large/HEIC uploads before sending.
+    let width = image.size.width * image.scale
+    let height = image.size.height * image.scale
+    guard width > 0, height > 0 else { throw PhotoReadingError.invalidPhoto }
+    let scale = min(1, 2400 / max(width, height))
+    let size = CGSize(width: width * scale, height: height * scale)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let normalized = UIGraphicsImageRenderer(size: size, format: format).image { context in
+      UIColor.white.setFill()
+      context.fill(CGRect(origin: .zero, size: size))
+      image.draw(in: CGRect(origin: .zero, size: size))
+    }
+    for quality in [0.9, 0.7] {
+      if let data = normalized.jpegData(compressionQuality: quality), data.count <= 4 * 1024 * 1024 {
+        return (data, "image/jpeg")
+      }
+    }
+    throw PhotoReadingError.invalidPhoto
+  }
 
   static var bundled: [Self] {
     RapsodoPhotoFixture.allCases.compactMap { fixture in
@@ -332,14 +371,13 @@ private struct ReviewedPhotoThrow {
 
 private enum ThrowEntryReplacement {
   case session(sample: Bool)
+  case sampleThrow
   case photo(ReviewedPhotoThrow)
 }
 
 private extension ThrowDraft {
   var hasNoPhotoReadings: Bool {
-    [velocityMph, totalSpinRpm, spinDirectionClock, spinEfficiencyPercent, gyroDegree,
-      horizontalBreakInches, verticalBreakInches, releaseHeightFeet, rapsodoScore]
-      .allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    !hasReadings
   }
 }
 
@@ -357,6 +395,10 @@ private struct ThrowPhotoReview: View {
   @State private var revealed = 0
   @State private var errors: [String: String] = [:]
   @State private var errorMessage: String?
+  @State private var readingFailed = false
+  @State private var attempt = 0
+  @State private var photoResponse: PhotoReadResponse?
+  @State private var upload: (data: Data, contentType: String)?
   @FocusState private var editing: Bool
 
   init(photo: SessionThrowPhoto, pitchTitle: String, onConfirm: @escaping (ThrowDraft) -> Void) {
@@ -389,6 +431,13 @@ private struct ThrowPhotoReview: View {
               reading("Rapsodo score", value: $draft.rapsodoScore, unit: "", key: "rapsodoScore")
               Text("Leave readings that are absent from the photo empty.")
                 .font(.caption).foregroundStyle(GripItTheme.secondary)
+              if let response = photoResponse, !preparing, !response.warnings.isEmpty {
+                DisclosureGroup("Photo reading details") {
+                  ForEach(response.warnings, id: \.self) { warning in
+                    Text(warning).font(.caption).foregroundStyle(GripItTheme.secondary)
+                  }
+                }.font(.caption)
+              }
             }
             .padding(.vertical, 6)
           }
@@ -414,6 +463,10 @@ private struct ThrowPhotoReview: View {
       .safeAreaInset(edge: .bottom) {
         VStack(alignment: .leading, spacing: 8) {
           if let errorMessage { Text(errorMessage).font(.caption).foregroundStyle(.orange) }
+          if readingFailed && !preparing {
+            Button("Try reading photo again") { attempt += 1 }
+              .buttonStyle(GripItGlassButtonStyle()).accessibilityIdentifier("retry-photo-reading")
+          }
           Button(action: confirm) {
             HStack {
               Text("Confirm readings")
@@ -425,7 +478,7 @@ private struct ThrowPhotoReview: View {
           .disabled(preparing).accessibilityIdentifier("confirm-photo-readings")
         }.padding(.horizontal, 20).padding(.vertical, 12).background(GripItBackdrop())
       }
-      .task { await prepareReadings() }
+      .task(id: attempt) { await prepareReadings() }
     }
   }
 
@@ -434,14 +487,18 @@ private struct ThrowPhotoReview: View {
       Text(pitchTitle.uppercased())
         .font(.system(size: 9, weight: .bold, design: .monospaced))
         .tracking(1).foregroundStyle(GripItTheme.accent)
-      Text(preparing ? "Preparing readings" : "Check your readings")
+      Text(preparing ? (photoResponse == nil ? "Reading your photo" : "Adding readings") : "Check your readings")
         .font(.headline)
       Text(photo.fixture == nil
-        ? "Enter the values visible in your photo."
+        ? "Check each value against your photo before adding this throw."
         : "Confirm each value against this sample photo.")
         .font(.caption).foregroundStyle(GripItTheme.secondary)
-      if preparing && photo.fixture != nil {
-        Text("\(revealed) readings ready").font(.caption2.monospacedDigit()).foregroundStyle(GripItTheme.accent)
+      if preparing {
+        if photoResponse == nil {
+          ProgressView("Reading visible numbers…").font(.caption).tint(GripItTheme.accent)
+        } else {
+          Text("\(revealed) readings ready").font(.caption2.monospacedDigit()).foregroundStyle(GripItTheme.accent)
+        }
       }
     }.accessibilityElement(children: .combine)
   }
@@ -457,7 +514,7 @@ private struct ThrowPhotoReview: View {
               // Read the same clock used to reveal the values. This avoids
               // restarting an implicit animation whenever a field updates.
               let elapsed = scanStartedAt?.duration(to: .now) ?? .zero
-              let progress = min(max(elapsed / scanDuration, 0), 1)
+              let progress = max(elapsed / scanDuration, 0).truncatingRemainder(dividingBy: 1)
               let position = progress <= 0.5 ? progress * 2 : (1 - progress) * 2
               scanBeam(height: bounds.size.height)
                 .offset(x: position * max(0, bounds.size.width - 48))
@@ -534,21 +591,36 @@ private struct ThrowPhotoReview: View {
   }
 
   @MainActor private func prepareReadings() async {
+    preparing = true
+    readingFailed = false
+    errorMessage = nil
+    errors = [:]
+    revealed = 0
+    scanStartedAt = .now
+    scanning = !reduceMotion
     do {
       try Task.checkCancellation()
-      guard let fixture = photo.fixture else {
-        // Unrecognized photos remain manual entry, with no invented readings.
-        scanning = false
-        preparing = false
-        return
+      if photoResponse == nil {
+        guard let address = Bundle.main.object(forInfoDictionaryKey: "GripItAPIBaseURL") as? String,
+          let baseURL = URL(string: address), baseURL.host != nil
+        else { throw PhotoReadingError.notConfigured }
+        let encoded = try upload ?? photo.upload()
+        upload = encoded
+        let client = PhotoReadingClient(baseURL: baseURL)
+        let result = try await client.read(image: encoded.data, contentType: encoded.contentType,
+          requestId: photo.id.uuidString)
+        try Task.checkCancellation()
+        photoResponse = result
       }
-      let values = fixture.makeDraft()
+      guard let photoResponse else { throw PhotoReadingError.invalidResponse }
+      let values = photoResponse.makeDraft(source: photo.source)
       let readings: [(WritableKeyPath<ThrowDraft, String>, String)] = [
         (\.velocityMph, values.velocityMph), (\.totalSpinRpm, values.totalSpinRpm),
         (\.spinDirectionClock, values.spinDirectionClock),
         (\.spinEfficiencyPercent, values.spinEfficiencyPercent), (\.gyroDegree, values.gyroDegree),
         (\.horizontalBreakInches, values.horizontalBreakInches),
         (\.verticalBreakInches, values.verticalBreakInches),
+        (\.releaseHeightFeet, values.releaseHeightFeet), (\.rapsodoScore, values.rapsodoScore),
       ].filter { !$0.1.isEmpty }
       let clock = ContinuousClock()
       let startedAt = clock.now
@@ -562,14 +634,22 @@ private struct ThrowPhotoReview: View {
           try await clock.sleep(until: deadline, tolerance: .zero)
         }
         try Task.checkCancellation()
-        draft[keyPath: reading.0] = reading.1
+        // A retry fills blanks, preserving anything the user already corrected.
+        if draft[keyPath: reading.0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          draft[keyPath: reading.0] = reading.1
+        }
         revealed += 1
       }
       scanning = false
       preparing = false
-    } catch {
+    } catch is CancellationError {
       scanning = false
       // Dismissing the review cancels the task and leaves entries untouched.
+    } catch {
+      scanning = false
+      preparing = false
+      readingFailed = true
+      errorMessage = (error as? PhotoReadingError)?.localizedDescription ?? PhotoReadingError.unavailable.localizedDescription
     }
   }
 

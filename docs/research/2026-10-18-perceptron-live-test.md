@@ -76,3 +76,13 @@ Saved artifacts:
 The scripts use an isolated local venv and key 2. The hand/OCR harness reuses saved results for identical labels rather than rerunning calls, and applies a request-count ceiling and conservative cost reservation using authenticated model limits/prices. Budget constants are test spending controls, not coaching thresholds. Review the ledger before intentionally making additional paid requests.
 
 Official client reference: https://docs.perceptron.inc/perceptron-mk1.5/guides/python/getting-started
+
+## Implementation check after the standalone evaluation
+
+The production extractor and local HTTP wrapper were tested together on October 18. An actual request containing only the bundled baseball image and field instructions returned all six displayed readings correctly; gyro, height and score remained null. The full local HTTP round trip took approximately 1.48 seconds. A second identical HTTP request reused the result, so only one paid provider call occurred. Its estimated model cost was $0.00040695 from returned token usage, not an account billing check.
+
+The earlier Node fetch authentication smoke test also succeeded. Including that call and the production HTTP check, the local ledger contains 14 completed inferences with an estimated total of $0.0085128 against the $5 authorization. Evidence is in the ignored `work/experiments/perceptron-20261018/production-ocr-http-smoke.json` and updated usage-ledger.json.
+
+The app's photo path now requests extraction rather than using fixture values, with confirmation, retry and manual fallback. Native account/token wiring and durable plan enforcement depend on Claude's separate backend work. A signed iOS build-for-testing succeeded; this is not yet a physical-phone touch/network check. Hand scanning, fit geometry and the feedback engine remain as before.
+
+Structured response and completion checks follow the official protocol: https://docs.perceptron.inc/perceptron-mk1.5/capabilities/structured-outputs

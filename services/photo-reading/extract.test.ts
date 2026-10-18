@@ -140,4 +140,18 @@ describe("Perceptron photo extraction", () => {
     await vi.advanceTimersByTimeAsync(PROVIDER_TIMEOUT_MS);
     await expectation;
   });
+
+  it("bounds provider response size", async () => {
+    await expect(reader(new Response("x".repeat(65 * 1024)))(input))
+      .rejects.toMatchObject({ code: "invalid_extraction" });
+  });
+
+  it("keeps the timeout active while waiting for the response body", async () => {
+    vi.useFakeTimers();
+    const body = new ReadableStream<Uint8Array>();
+    const result = reader(new Response(body))(input);
+    const expectation = expect(result).rejects.toMatchObject({ code: "provider_timeout" });
+    await vi.advanceTimersByTimeAsync(PROVIDER_TIMEOUT_MS);
+    await expectation;
+  });
 });

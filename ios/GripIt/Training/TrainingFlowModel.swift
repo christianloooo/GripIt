@@ -76,6 +76,12 @@ final class TrainingFlowModel: ObservableObject {
     draft.rows.append(ThrowDraft(source: draft.source))
   }
 
+  func addSampleThrow() {
+    draft = draft.appendingSampleThrow()
+    errors = [:]
+    message = nil
+  }
+
   func removeThrow(_ id: String) {
     guard draft.rows.count > 1 else { return }
     draft.rows.removeAll { $0.id == id }
@@ -89,13 +95,7 @@ final class TrainingFlowModel: ObservableObject {
   }
 
   var hasEntries: Bool {
-    draft.rows.contains {
-      ![
-        $0.velocityMph, $0.totalSpinRpm, $0.spinDirectionClock,
-        $0.spinEfficiencyPercent, $0.gyroDegree, $0.horizontalBreakInches,
-        $0.verticalBreakInches, $0.releaseHeightFeet, $0.rapsodoScore,
-      ].allSatisfy(\.isEmpty)
-    }
+    draft.rows.contains(where: \.hasReadings)
   }
 
   func assessment() -> FocusAssessment? {

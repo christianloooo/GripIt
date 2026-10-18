@@ -1,121 +1,70 @@
-# Native Steps 1 through 4
+# Native training flow
 
-The integrated test copy is `.worktrees/step-2-teammate-demo`, branch
-`integration/native-grip-flow`. Open `ios/GripIt.xcodeproj` there. The local
-installed app is **GripIt Step 2**. The Xcode scheme remains **GripIt**.
+GripIt is the SwiftUI iPhone app at `/Users/jshum/Desktop/code-folders/gripit/ios/GripIt.xcodeproj`. Open that project for the demo. The browser UI under src/ is a separate surface.
 
-## Try the flow
+## What runs where
 
-1. Scan, import a hand profile, or choose **Load sample profile**.
-2. Choose **Explore my grips**, select a pitch, and tap **Record throws**.
-3. Record the selected pitch on Rapsodo and enter its readings. For a quick
-   demonstration, choose **Use sample throws** instead.
-4. Tap **See feedback**. Rotate the same fitted hand and select a grip zone.
-5. Read the AI interpretation or ask a follow-up question. Prototype rule notes
-   and their color overlay are optional, inside a disclosure.
-6. **Record another throw** returns to entry with the previous throws preserved.
-   Back navigation also preserves drafts when switching between the four pitches.
+1. MediaPipe finds hand landmarks on the phone. TrueDepth and camera calibration map synchronized observations into measured millimeters. Existing coverage, identity and stability gates produce HandProfile.
+2. GripPoseSolver fits the selected grip. GripStudioSession caches the solved pose and derived rendering data per hand and pitch. The native SceneKit view supports rotation, zoom and interactive finger tips.
+3. A selected report photo is sent to the photo service. Perceptron Mk1.5 reads visible numbers, and the app fills the existing editable draft. The user checks and confirms before a throw is added. Sample and personal throws retain their separate source behavior.
+4. NativeFocusEngine evaluates all included rows for the selected pitch in the current session, using per-metric medians. It reuses the Step 2 model and displays the deterministic rules' heatmap and next action. Saved account history is not automatically added to the current assessment.
 
-The Rapsodo values are entered manually. There is no Rapsodo account connection
-or automatic recording/import. Sample throws retain their label after edits.
-Replacing entries with sample data or a fresh real session requires confirmation.
+AI coaching and chat are removed. Perceptron reads report numbers only; it does not supply hand dimensions, render meshes, calculate severity or write coaching advice. The existing JavaScriptCore rule bundle remains authoritative for feedback.
 
-## Existing AI server
+## Photo reading
 
-The native app calls `/api/coach` and `/api/ask` in this integrated copy.
-It never contains an AI key. Set the **GripIt** target's user-defined build setting
-`GRIPIT_API_BASE_URL` to the server's origin, then rebuild. The Info.plist expands
-this into `GripItAPIBaseURL`.
+Both uploads and the bundled baseball photo go through real extraction. Exact bundled-image recognition is retained only for the sample label/source. It does not supply the photo-reading answers.
 
-For local testing, start this copy's server. The existing ignored Step 4 `.env`
-is read from its current location without copying its key:
+The provider key stays on the server. POST /api/photos/read accepts JPEG/PNG bytes, Content-Type and an Idempotency-Key. The native client allows 45 seconds; the provider call allows 30 seconds. Reusing a successful request ID with the same image reuses the result, avoiding another paid call. There are no automatic paid retries.
+
+Missing/unreadable values remain blank, including height and gyro angle when the image does not show them. Extraction does not derive one displayed number from another. Existing confirmed-throw processing may still calculate gyro/efficiency as before. The user can correct any field before confirmation. Small chart labels can require manual entry; automatic chart cropping has not been implemented.
+
+The dotted scan bar crosses outward in one second and returns in one second. It continues while the network request is running. Once actual values arrive, the app reveals them across a two-second pass. Reduce Motion skips animation and reveal delay. A provider request is not guaranteed to finish in two seconds.
+
+Failures stop animation and unlock manual entry, with a Retry button. Retry keeps existing user corrections. Dismissing the review cancels its task and adds no throw. Confirmation still runs the existing input validator and source-replacement protection.
+
+Add sample throw adds one existing demo reading at a time, retaining earlier throws and filling empty rows first. Further taps cycle the existing three demo readings with fresh throw IDs. Switching from personal entries asks before replacement. This is local sample data, not photo extraction, and makes no provider call.
+
+## Local photo development service
+
+The helper under scripts/photo-demo-server.ts is for local OCR development while Claude builds the authenticated backend. It has no account or plan service and must not be publicly deployed. Its bounded in-memory retry cache does not replace durable account usage enforcement.
+
+From the original repository folder:
 
 ```sh
-cd /Users/jshum/Desktop/code-folders/gripit/.worktrees/step-2-teammate-demo
-env __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=Jareds-MacBook-Pro.local GRIPIT_DEV_ENV_DIR=/Users/jshum/Desktop/code-folders/gripit/.worktrees/step-4-assessment npm run dev -- --port 5173 --strictPort
+npm install
+npm run photo:dev
 ```
 
-The hostname allow-list is required: without it Vite rejects phone requests with
-HTTP 403. The config allows both the configured hostname and its lowercase
-spelling because URLSession lowercases it and Vite compares explicit hosts
-case-sensitively. Both spellings were tested; no wildcard host access is enabled.
-The key stays in that server's ignored `.env`. This test copy has a local Debug
-URL of `http://Jareds-MacBook-Pro.local:5173`. Keep the iPhone and Mac on the same
-network, allow local network access when prompted, and keep the server running.
-The machine-specific URL and signing settings are not part of shared commits.
-A production HTTPS API URL can use the same native client later.
-For a separate setup, copy `.env.example` to `.env` in this copy and set the
-server key there; omit `GRIPIT_DEV_ENV_DIR` when starting that server.
+The default address is http://127.0.0.1:5173. Configure a server-only PERCEPTRON_API_KEY in the ignored .env file. This local test setup also recognizes the verified PERCEPTRON_API_KEY2 entry. Malformed/missing credentials stop startup without printing them.
 
-If AI is unavailable or declines, the rule engine's original feedback remains
-available under prototype notes. AI explanations never decide the colors. Unassessed zones remain
-untinted, and contacts the fitted hand cannot reach do not receive technique
-advice. The current coaching rules remain prototype guidance.
+For an iPhone on the same Wi-Fi, explicitly allow LAN access:
 
-## Responsiveness
+```sh
+GRIPIT_PHOTO_HOST=0.0.0.0 npm run photo:dev
+```
 
-Each hand session keeps one fitted pose and plan per pitch and shares in-flight
-fitting work. Changing pitch and returning reuses the result. Step 4 renders the
-already fitted pose without running the solver again. A new hand session gets
-a fresh cache. Accepted AI generations are cached in the server for ten minutes,
-up to 256 entries; duplicate in-flight calls share work. The native client also
-caches complete successful responses for ten minutes, up to 32 entries per hand
-session. Failures and partial native responses are not cached. Retry can recover
-missing coaching or fit text. Provider calls time out after six seconds with no
-automatic retries; native coaching waits up to ten seconds.
+The native GripItAPIBaseURL comes from the target's GRIPIT_API_BASE_URL build setting. The current local signing configuration uses http://Jareds-MacBook-Pro.local:5173. The phone and Mac must be reachable on the same network; allow the local-network prompt. Do not run Vite on the same port at the same time. Stop this helper when no longer testing.
 
-Server keys hash the actual prompt/input, model, token limit and credential
-fingerprint. Native keys hash the complete sorted request, using the exact
-records captured when assessment ran. IDs alone never determine cache identity.
-The caches are bounded and process-local. They do not persist across app/server
-restarts or span multiple server instances. There is no database, durable session
-save, account system, cloud sync, or hosted deployment in this pass.
+GET /health reports mode local-photo-development. The helper rejects browser-origin requests, validates image headers/body size, and sanitizes provider failures. It binds only to loopback unless LAN access is explicitly configured. It never logs image bytes or keys.
 
-`GET /api/health` returns service availability. Request IDs, timing headers and
-generation cache status help distinguish networking, provider and cache behavior.
-Logs omit questions, prompts, measurements and keys. Request validation and a
-256 KiB body limit apply in both development and exported handlers. Before public
-hosting, add authenticated ownership, shared rate limits and a shared cache.
+Do not commit local signing, bundle IDs or base-URL changes in ios/GripIt.xcodeproj/project.pbxproj or ios/GripIt/Info.plist.
 
-## AI and deterministic responsibilities
+## MongoDB collaboration
 
-Deterministic code validates units, computes summaries, checks modeled contact
-reach and retains versioned prototype rules. The AI receives actual throw
-readings, their computed summaries, measured hand dimensions and grip intent.
-It can interpret those observations, question the unvalidated sample-rule
-suggestion, explain general principles from the supplied research context, and
-name missing evidence. It is no longer limited to rewriting one preset sentence.
-It cannot observe finger force or release mechanics from this static model.
+Claude's separate backend worktree is `/Users/jshum/.codex/worktrees/c9ea/gripit`, branch claude/mongodb-backend. It owns real accounts, saved progress, server-side usage and the no-charge demo upgrade. Codex owns the extractor and native client/UI. See docs/collaboration/README.md and backend-contract.md for the exact split and current status.
 
-The selected zone shows the grip instruction rather than repeating a shared
-efficiency warning. The original rule colors are off by default and can be
-inspected under **Prototype rule notes**. See [pitch-rule-research.md](pitch-rule-research.md)
-for evidence, limitations and the rule review backlog. No sample thresholds were
-promoted to validated coaching rules.
+Approved daily limits are Free: 3 photo scans and 3 throw reviews, Pro: 20 each, resetting at UTC midnight. A local sample row costs neither operation; a new completed review counts once. Native account/usage screens are a later integration milestone and are not supplied by the standalone helper. No payment provider is involved.
 
-The original rule source was imported from Step 4 commit `c49cdab`. Native model
-updates through `2f1e31e` are merged. The
-native JavaScript bundle can be regenerated with `npm run ios:focus`. Xcode
-builds use the committed bundle and do not require Node.
+## Checks
 
-## Verification of this integration
+Run checks serially to keep the Mac responsive:
 
-- 82 native core tests passed. The seven coaching tests also passed after the
-  final raw-record payload changes.
-- 79 web tests and the web production build passed. The existing web bundle-size
-  warning remains.
-- Signed iOS app and signed build-for-testing passed. App installation and normal
-  launch succeeded with the preserved personal bundle ID.
-- Live local coaching, fit explanations and follow-up API calls succeeded.
-  A repeated accepted coaching request took approximately 6–7 ms versus 4–5 s cold.
-- Review findings for timestamp cache misses, partial-result Retry and numeric
-  validation were fixed and rechecked.
-- An opt-in device test in `LiveCoachingTests` reproduced the phone HTTP 403.
-  Its first run also exposed a missing framework runtime search path, now fixed.
-  The second run reached HTTP but was blocked by the lowercase hostname. The
-  server now accepts that spelling, verified through health and coaching calls.
-  After the user raised concern about repeated launches, automatic phone runs
-  stopped. The device test has not been rerun after the server fix. Normal tests skip live API calls
-  unless `GRIPIT_LIVE_COACH_SMOKE=1` is supplied to the test process.
-- On-phone feedback appearance, gestures and the full interaction flow still
-  need a manual smoke test of the installed build.
+```sh
+npm test -- --maxWorkers=2
+npx tsc -b
+DEVELOPER_DIR=/Users/jshum/Desktop/Xcode.app/Contents/Developer /Users/jshum/Desktop/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --package-path ios/GripItScannerCore --scratch-path /private/tmp/gripit-mvp-core --jobs 2
+/Users/jshum/Desktop/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project ios/GripIt.xcodeproj -scheme GripIt -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/gripit-mvp-ios -jobs 2 build-for-testing
+```
+
+Run npm run ios:focus whenever shared rule code changes. This integration does not change those rules. Mocked HTTP tests do not make paid API requests. Live OCR evidence is recorded separately under the ignored work/experiments directory, with a sanitized research summary under docs/research. Compilation does not verify the physical camera, phone network permission or full touch flow.

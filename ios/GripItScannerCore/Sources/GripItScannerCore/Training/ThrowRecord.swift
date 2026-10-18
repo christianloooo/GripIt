@@ -17,6 +17,12 @@ public struct ThrowDraft: Codable, Sendable, Identifiable, Equatable {
   public init(source: ThrowSource = .manual) {
     id = "\(source == .sample ? "sample-" : "")throw-\(UUID().uuidString)"
   }
+
+  public var hasReadings: Bool {
+    [velocityMph, totalSpinRpm, spinDirectionClock, spinEfficiencyPercent, gyroDegree,
+      horizontalBreakInches, verticalBreakInches, releaseHeightFeet, rapsodoScore]
+      .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  }
 }
 
 public struct ThrowSessionDraft: Codable, Sendable, Equatable {
@@ -28,6 +34,18 @@ public struct ThrowSessionDraft: Codable, Sendable, Equatable {
     self.source = source
     sessionId = "\(source == .sample ? "sample-" : "")session-\(UUID().uuidString)"
     rows = [ThrowDraft(source: source)]
+  }
+
+  /// The caller confirms source replacement first. Existing personal data is
+  /// never copied into a sample session; each added row gets its own identity.
+  public func appendingSampleThrow() -> Self {
+    var session = source == .sample ? self : Self(source: .sample)
+    let samples = Self.sample().rows
+    let next = samples[session.rows.filter(\.hasReadings).count % samples.count]
+    if let empty = session.rows.firstIndex(where: { !$0.hasReadings }) {
+      session.rows[empty] = next
+    } else { session.rows.append(next) }
+    return session
   }
 
   public static func sample() -> Self {
