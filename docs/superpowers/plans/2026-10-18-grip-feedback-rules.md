@@ -156,12 +156,16 @@ export function gripFeedback(input: {
 }): GripFeedback;
 ```
 
-### Staying unblocked by Carter
+### Carter's contract has landed
 
-`horizontalBreakInches` and `verticalBreakInches` land in Carter's contract task.
-`metrics.ts` reads them through a locally declared structural type that marks
-both optional, so this track compiles and tests before his change merges and
-lights up automatically after. No shared edit, no merge conflict.
+Merged as `f731f7a`. `horizontalBreakInches` and `verticalBreakInches` are on
+`ThrowRecord["measurements"]` as `number | null`, and the efficiency-versus-gyro
+XOR is gone, so both read independently. No structural workaround is needed and
+the four break-dependent rules can be built directly.
+
+One item from his brief is still open: `releaseHeightFeet` remains non-nullable,
+and neither demo screenshot shows it. Photo import will need it nullable or
+prompted for. It does not block this track, since no rule reads release height.
 
 ### Attaching without touching Swift
 
