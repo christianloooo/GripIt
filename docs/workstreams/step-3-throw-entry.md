@@ -77,6 +77,14 @@ Exact coaching ranges are not part of this branch.
 - Refresh behavior is explicit. Data is either restored locally or clearly described as temporary.
 - Existing and new tests pass.
 
+## Implementation
+
+The grip screen now links to `SessionTable` with **Next: record throws**. The component is independent of the scanner and 3D renderer. `src/throwEntry.ts` defines the v1 `ThrowRecord` type, input validation, sample sessions, and record serialization. `src/exportThrows.ts` exports a plain array of contract records and supports the existing iOS export bridge when available.
+
+`SessionTable.onSaved(records)` is the local handoff for Step 4. It receives validated records only. The optional `handProfileId` goes under `extensions["gripit.throwEntry"]`; the current legacy scanner provides no shared profile ID. `spinDirectionClock` follows the fixture's decimal-clock convention: `12:30` maps to `12.5`. Exactly one of `spinEfficiencyPercent` and `gyroDegree` is numeric; the other is `null`. Blank optional score becomes `null`, while a typed zero stays zero. Source is `manual` or `sample`; demo IDs keep the `sample-` prefix.
+
+Session history is in memory, clearly labeled in the UI. Re-saving retains IDs and replaces that saved session. Exports remain usable after closing the app. `npm test` covers the fixture shape, boundary validation, sample provenance, manual and gyro entry, session grouping, mode switching, export paths, and navigation back to the selected grip. `npm run build` verifies TypeScript and the browser bundle.
+
 ## Coordination rules
 
 Do not place display-only strings in persisted numeric fields. Do not add assessment results to `ThrowRecord`. Step 4 owns analysis.
