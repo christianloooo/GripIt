@@ -8,7 +8,7 @@ import type { ThrowRecord } from "../throwEntry";
 import { rapsodo2Throws, sampleSessionThrows } from "./demoFixtures";
 import { plan } from "./fitFixtures";
 import { GRIP_RULES, GRIP_RULE_VERSION } from "./gripRules";
-import { gripFeedback } from "./gripFeedback";
+import { gripFeedback, gripFocusZones } from "./gripFeedback";
 
 // Zones come from the committed grip-plan fixture rather than a new hand
 // invented here. That fixture ships thumb-pad as `strained`, so every test
@@ -73,6 +73,31 @@ function throwRecord(
     extensions: {},
   };
 }
+
+describe("severity prerequisites", () => {
+  it("leaves the palm unassessed when low break has no efficiency or gyro reading", () => {
+    const input = {
+      pitchId: "four-seam",
+      throws: [throwRecord({ spinDirectionClock: 12, verticalBreakInches: 10,
+        spinEfficiencyPercent: null, gyroDegree: null })],
+      zones: zonesWith(),
+    };
+    const feedback = gripFeedback(input);
+    expect(feedback.ruleId).toBe("four-seam-buried");
+    expect(gripFocusZones(input, feedback).some((zone) => zone.zoneId === "palm")).toBe(false);
+  });
+
+  it("colors the palm when low break has the required in-range efficiency reading", () => {
+    const input = {
+      pitchId: "four-seam",
+      throws: [throwRecord({ spinDirectionClock: 12, verticalBreakInches: 10 })],
+      zones: zonesWith(),
+    };
+    const feedback = gripFeedback(input);
+    expect(feedback.ruleId).toBe("four-seam-buried");
+    expect(gripFocusZones(input, feedback).find((zone) => zone.zoneId === "palm")?.severity).toBe("red");
+  });
+});
 
 describe("no-data", () => {
   it("returns no-data and names no zone when there are no throws", () => {
@@ -197,6 +222,13 @@ describe("baseline gate", () => {
 });
 
 describe("drift gate", () => {
+  it("does not turn missing screenshot heights into a release drift", () => {
+    const input = { pitchId: "four-seam", zones: zonesWith(),
+      throws: [throwRecord({ releaseHeightFeet: 5 }),
+        throwRecord({ releaseHeightFeet: null }), throwRecord({ releaseHeightFeet: 7 })] };
+    expect(gripFeedback(input).kind).not.toBe("drift");
+  });
+
   function drifting(heights: readonly number[]): ThrowRecord[] {
     return heights.map((releaseHeightFeet) =>
       throwRecord({ releaseHeightFeet }),

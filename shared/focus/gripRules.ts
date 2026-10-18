@@ -1,4 +1,5 @@
-import type { ZoneId } from "../contracts/zones";
+import type { FocusZone, ZoneId } from "../contracts/zones";
+import type { ThrowRecord } from "../throwEntry";
 import { clockHoursApart, type DerivedMetrics } from "./metrics";
 import type { PitchTarget, Range } from "./targets";
 
@@ -13,9 +14,22 @@ export interface Deviation {
   magnitude: number; // normalised, 0 means on target, bigger is worse
 }
 
+/** What this rule actually checks, including the inputs its guards need. */
+interface RuleReading {
+  metric: keyof Omit<DerivedMetrics, "throwCount">;
+  measurement: keyof ThrowRecord["measurements"];
+  label: string;
+  unit?: string;
+  target?: Exclude<keyof PitchTarget, "pitchId" | "source">;
+  baseline?: keyof Omit<DerivedMetrics, "throwCount">;
+  guard?: "axis" | "axis-and-efficiency";
+  requiresMinimum?: boolean;
+}
+
 export interface GripRule {
   id: string;
   pitchIds: readonly string[];
+  reading: RuleReading;
   detect(
     m: DerivedMetrics,
     t: PitchTarget,
@@ -140,6 +154,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "four-seam-axis",
     pitchIds: FOUR_SEAM,
+    reading: { metric: "spinDirectionClock", measurement: "spinDirectionClock", label: "Spin axis", target: "axisClock" },
     detect(m, t) {
       if (m.spinDirectionClock === null) return null;
       const miss = axisDistance(m.spinDirectionClock, t.axisClock);
@@ -158,6 +173,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "four-seam-efficiency",
     pitchIds: FOUR_SEAM,
+    reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent", guard: "axis" },
     detect(m, t) {
       // The axis rule owns an off-target axis. One fix at a time.
       if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
@@ -178,6 +194,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "four-seam-purchase",
     pitchIds: FOUR_SEAM,
+    reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", target: "spinPerMph" },
     detect(m, t) {
       const spm = m.spinPerMph;
       if (spm === null) return null;
@@ -195,6 +212,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "four-seam-cut",
     pitchIds: FOUR_SEAM,
+    reading: { metric: "horizontalBreakInches", measurement: "horizontalBreakInches", label: "Horizontal break", unit: " inches", target: "horizontalBreakInches", guard: "axis" },
     detect(m, t) {
       // Horizontal break on a fastball is downstream of the spin axis: an
       // axis at 1:56 rather than 12:00 produces arm-side run as a direct
@@ -221,6 +239,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "four-seam-buried",
     pitchIds: FOUR_SEAM,
+    reading: { metric: "verticalBreakInches", measurement: "verticalBreakInches", label: "Vertical break", unit: " inches", target: "verticalBreakInches", guard: "axis-and-efficiency", requiresMinimum: true },
     detect(m, t) {
       // Low vertical break follows from an off axis or low efficiency more
       // often than from palm depth, so this rule only speaks when neither of
@@ -248,6 +267,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "two-seam-axis",
     pitchIds: TWO_SEAM,
+    reading: { metric: "spinDirectionClock", measurement: "spinDirectionClock", label: "Spin axis", target: "axisClock" },
     detect(m, t) {
       if (m.spinDirectionClock === null) return null;
       const miss = axisDistance(m.spinDirectionClock, t.axisClock);
@@ -266,6 +286,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "two-seam-run",
     pitchIds: TWO_SEAM,
+    reading: { metric: "horizontalBreakInches", measurement: "horizontalBreakInches", label: "Horizontal break", unit: " inches", target: "horizontalBreakInches", guard: "axis" },
     detect(m, t) {
       // An off axis explains weak run better than seam placement does, and
       // two-seam-axis owns that case. Correctness must not depend on ranking.
@@ -287,6 +308,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "two-seam-efficiency",
     pitchIds: TWO_SEAM,
+    reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent", guard: "axis" },
     detect(m, t) {
       // The axis rule owns an off-target axis. One fix at a time.
       if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
@@ -307,6 +329,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "two-seam-purchase",
     pitchIds: TWO_SEAM,
+    reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", target: "spinPerMph" },
     detect(m, t) {
       const spm = m.spinPerMph;
       if (spm === null) return null;
@@ -330,6 +353,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "slider-efficiency",
     pitchIds: SLIDER,
+    reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent" },
     detect(m, t) {
       const eff = m.spinEfficiencyPercent;
       if (eff === null) return null;
@@ -364,6 +388,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "changeup-separation",
     pitchIds: CHANGEUP,
+    reading: { metric: "velocityMph", measurement: "velocityMph", label: "Changeup velocity", unit: " mph", target: "velocitySeparationMph", baseline: "velocityMph" },
     detect(m, t, baseline) {
       if (!baseline) return null;
       const velocity = m.velocityMph;
@@ -386,6 +411,7 @@ export const GRIP_RULES: readonly GripRule[] = [
   {
     id: "changeup-spin",
     pitchIds: CHANGEUP,
+    reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", baseline: "spinPerMph" },
     // No target argument is read: a changeup has no absolute spin target.
     detect(m, _t, baseline) {
       if (!baseline) return null;
@@ -403,9 +429,64 @@ export const GRIP_RULES: readonly GripRule[] = [
       );
     },
     change:
-      "Curl the index finger around the thumb-side surface rather than placing it over the top.",
+      "Wrap the index finger's inner middle/distal surface around the thumb-side centre of the ball, close to the equator, opposite the pinky. Keep the tip softly curled rather than pointing away.",
     zones: ["index-pad"],
     expect: "Spin drops.",
-    source: `${CHANGEUP_BASELINE_SOURCE}, so the comparison point is the baseline's own spin per mph and no threshold is written here; ${PRP_SOURCE}; handInstructions.md (curl the index around the thumb-side surface rather than placing it over the top).`,
+    source: `${CHANGEUP_BASELINE_SOURCE}, so the comparison point is the baseline's own spin per mph and no threshold is written here; ${PRP_SOURCE}; handInstructions.md (inner middle/distal surface around the thumb-side centre, opposite the pinky; tip softly curled).`,
   },
 ];
+
+
+function hasReading(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasRange(range: Range | undefined): range is Range {
+  return !!range && (hasReading(range.min) || hasReading(range.max));
+}
+
+/** Availability and shared-cause guards apply to every severity color. */
+export function ruleReadingAvailable(
+  rule: GripRule,
+  m: DerivedMetrics,
+  t: PitchTarget,
+  baseline: DerivedMetrics | null,
+): boolean {
+  const reading = rule.reading;
+  const value = m[reading.metric];
+  if (!hasReading(value)) return false;
+  if (reading.target && !hasRange(t[reading.target])) return false;
+  if (reading.requiresMinimum &&
+      (!reading.target || !hasReading(t[reading.target]?.min))) return false;
+  if (reading.baseline && (!baseline || !hasReading(baseline[reading.baseline]))) return false;
+  if (reading.guard) {
+    if (!hasReading(m.spinDirectionClock) || !hasRange(t.axisClock) ||
+        axisDistance(m.spinDirectionClock, t.axisClock) > 0) return false;
+    if (reading.guard === "axis-and-efficiency" &&
+        (!hasReading(m.spinEfficiencyPercent) || !hasRange(t.efficiencyPercent) ||
+         distanceOutside(m.spinEfficiencyPercent, t.efficiencyPercent) > 0)) return false;
+  }
+  return true;
+}
+
+/**
+ * A null detector alone is not evidence of a clean check. Require its data
+ * and shared-cause guards without changing detection, targets, or ranking.
+ */
+export function checkedRuleReading(
+  rule: GripRule,
+  m: DerivedMetrics,
+  t: PitchTarget,
+  baseline: DerivedMetrics | null,
+): Pick<FocusZone, "reason" | "triggeringMeasurement"> | null {
+  if (!ruleReadingAvailable(rule, m, t, baseline)) return null;
+  if (rule.detect(m, t, baseline) !== null) return null;
+  const reading = rule.reading;
+  const value = m[reading.metric]!;
+  const formatted = reading.metric === "spinDirectionClock" ? clockText(value) : value;
+  const comparison = reading.baseline ? ` against the fastball's ${baseline![reading.baseline]}${reading.unit ?? ""}` : "";
+  return {
+    reason: `${reading.label} reads ${formatted}${reading.unit ?? ""}${comparison}. This check found no deviation.`,
+    triggeringMeasurement: reading.measurement,
+  };
+}

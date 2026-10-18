@@ -8,6 +8,17 @@ import simd
 /// into a prebuilt value produces byte-identical data, so the saving is purely
 /// when the work happens rather than what it produces.
 final class GripRenderStateTests: XCTestCase {
+  func testFeedbackHeatmapWrapsTheFingerWhileContactShadingStaysLocalized() throws {
+    let pose = try GripPoseSolver.solve(profile: SampleHandProfiles.averageRight(), pitch: .fourSeam)
+    let state = try GripRenderState(pose: pose)
+    let index = try XCTUnwrap(GripZoneSurface.zones.firstIndex(of: .indexPad))
+    XCTAssertEqual(state.surface.feedbackWeights.count, pose.vertices.count)
+    XCTAssertTrue(zip(state.surface.weights, state.surface.feedbackWeights).contains {
+      $0.0[index] < 0.05 && $0.1[index] > 0.5
+    }, "Feedback must remain visible on the finger away from its occluded ball contact")
+    XCTAssertTrue(state.surface.feedbackWeights.flatMap { $0 }.allSatisfy { $0.isFinite && (0...1).contains($0) })
+  }
+
   func testPrebuiltStateMatchesWhatTheViewUsedToComputeInline() throws {
     let profile = try SampleHandProfiles.averageRight()
     let hand = try GripHandAsset.load()

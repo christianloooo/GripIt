@@ -25,7 +25,8 @@ public enum NativeFocusEngine {
   }
 
   public static func assess(pitch: PitchGrip, records: [ThrowRecord], zones: [GripZonePlan],
-    gripPlanId: String) throws -> FocusAssessment
+    gripPlanId: String, baseline: [ThrowRecord] = [],
+    handedness: Handedness = .right) throws -> FocusAssessment
   {
     guard !records.isEmpty, records.allSatisfy({ $0.pitchId == pitch.rawValue && $0.schemaVersion.hasPrefix("1.") }) else {
       throw GripError.invalid("Enter at least one valid throw for this pitch.")
@@ -35,9 +36,11 @@ public enum NativeFocusEngine {
       let `throws`: [ThrowRecord]
       let zones: [GripZonePlan]
       let gripPlanId: String
+      let baseline: [ThrowRecord]
+      let handedness: Handedness
     }
     return try call("assessJSON", input: Input(pitchId: pitch.rawValue, throws: records,
-      zones: zones, gripPlanId: gripPlanId))
+      zones: zones, gripPlanId: gripPlanId, baseline: baseline, handedness: handedness))
   }
 
   private static func call<Input: Encodable, Output: Decodable>(_ function: String, input: Input) throws -> Output {

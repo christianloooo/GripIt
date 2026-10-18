@@ -61,7 +61,8 @@ var GripItFocus = (() => {
       "releaseHeightFeet",
       "release height",
       0,
-      10
+      10,
+      true
     );
     const enteredSpinEfficiency = number(
       "spinEfficiencyPercent",
@@ -253,6 +254,7 @@ var GripItFocus = (() => {
     {
       id: "four-seam-axis",
       pitchIds: FOUR_SEAM,
+      reading: { metric: "spinDirectionClock", measurement: "spinDirectionClock", label: "Spin axis", target: "axisClock" },
       detect(m, t) {
         if (m.spinDirectionClock === null) return null;
         const miss = axisDistance(m.spinDirectionClock, t.axisClock);
@@ -270,6 +272,7 @@ var GripItFocus = (() => {
     {
       id: "four-seam-efficiency",
       pitchIds: FOUR_SEAM,
+      reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent", guard: "axis" },
       detect(m, t) {
         if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
         const eff = m.spinEfficiencyPercent;
@@ -288,6 +291,7 @@ var GripItFocus = (() => {
     {
       id: "four-seam-purchase",
       pitchIds: FOUR_SEAM,
+      reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", target: "spinPerMph" },
       detect(m, t) {
         const spm = m.spinPerMph;
         if (spm === null) return null;
@@ -305,6 +309,7 @@ var GripItFocus = (() => {
     {
       id: "four-seam-cut",
       pitchIds: FOUR_SEAM,
+      reading: { metric: "horizontalBreakInches", measurement: "horizontalBreakInches", label: "Horizontal break", unit: " inches", target: "horizontalBreakInches", guard: "axis" },
       detect(m, t) {
         if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
         const h = m.horizontalBreakInches;
@@ -323,6 +328,7 @@ var GripItFocus = (() => {
     {
       id: "four-seam-buried",
       pitchIds: FOUR_SEAM,
+      reading: { metric: "verticalBreakInches", measurement: "verticalBreakInches", label: "Vertical break", unit: " inches", target: "verticalBreakInches", guard: "axis-and-efficiency", requiresMinimum: true },
       detect(m, t) {
         if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
         const eff = m.spinEfficiencyPercent;
@@ -345,6 +351,7 @@ var GripItFocus = (() => {
     {
       id: "two-seam-axis",
       pitchIds: TWO_SEAM,
+      reading: { metric: "spinDirectionClock", measurement: "spinDirectionClock", label: "Spin axis", target: "axisClock" },
       detect(m, t) {
         if (m.spinDirectionClock === null) return null;
         const miss = axisDistance(m.spinDirectionClock, t.axisClock);
@@ -362,6 +369,7 @@ var GripItFocus = (() => {
     {
       id: "two-seam-run",
       pitchIds: TWO_SEAM,
+      reading: { metric: "horizontalBreakInches", measurement: "horizontalBreakInches", label: "Horizontal break", unit: " inches", target: "horizontalBreakInches", guard: "axis" },
       detect(m, t) {
         if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
         const h = m.horizontalBreakInches;
@@ -380,6 +388,7 @@ var GripItFocus = (() => {
     {
       id: "two-seam-efficiency",
       pitchIds: TWO_SEAM,
+      reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent", guard: "axis" },
       detect(m, t) {
         if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
         const eff = m.spinEfficiencyPercent;
@@ -398,6 +407,7 @@ var GripItFocus = (() => {
     {
       id: "two-seam-purchase",
       pitchIds: TWO_SEAM,
+      reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", target: "spinPerMph" },
       detect(m, t) {
         const spm = m.spinPerMph;
         if (spm === null) return null;
@@ -420,6 +430,7 @@ var GripItFocus = (() => {
     {
       id: "slider-efficiency",
       pitchIds: SLIDER,
+      reading: { metric: "spinEfficiencyPercent", measurement: "spinEfficiencyPercent", label: "Spin efficiency", unit: " percent", target: "efficiencyPercent" },
       detect(m, t) {
         const eff = m.spinEfficiencyPercent;
         if (eff === null) return null;
@@ -453,6 +464,7 @@ var GripItFocus = (() => {
     {
       id: "changeup-separation",
       pitchIds: CHANGEUP,
+      reading: { metric: "velocityMph", measurement: "velocityMph", label: "Changeup velocity", unit: " mph", target: "velocitySeparationMph", baseline: "velocityMph" },
       detect(m, t, baseline) {
         if (!baseline) return null;
         const velocity = m.velocityMph;
@@ -473,6 +485,7 @@ var GripItFocus = (() => {
     {
       id: "changeup-spin",
       pitchIds: CHANGEUP,
+      reading: { metric: "spinPerMph", measurement: "totalSpinRpm", label: "Spin per mph", baseline: "spinPerMph" },
       // No target argument is read: a changeup has no absolute spin target.
       detect(m, _t, baseline) {
         if (!baseline) return null;
@@ -485,12 +498,43 @@ var GripItFocus = (() => {
           SCALE.spinPerMph
         );
       },
-      change: "Curl the index finger around the thumb-side surface rather than placing it over the top.",
+      change: "Wrap the index finger's inner middle/distal surface around the thumb-side centre of the ball, close to the equator, opposite the pinky. Keep the tip softly curled rather than pointing away.",
       zones: ["index-pad"],
       expect: "Spin drops.",
-      source: `${CHANGEUP_BASELINE_SOURCE}, so the comparison point is the baseline's own spin per mph and no threshold is written here; ${PRP_SOURCE}; handInstructions.md (curl the index around the thumb-side surface rather than placing it over the top).`
+      source: `${CHANGEUP_BASELINE_SOURCE}, so the comparison point is the baseline's own spin per mph and no threshold is written here; ${PRP_SOURCE}; handInstructions.md (inner middle/distal surface around the thumb-side centre, opposite the pinky; tip softly curled).`
     }
   ];
+  function hasReading(value) {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  function hasRange(range) {
+    return !!range && (hasReading(range.min) || hasReading(range.max));
+  }
+  function ruleReadingAvailable(rule, m, t, baseline) {
+    const reading = rule.reading;
+    const value = m[reading.metric];
+    if (!hasReading(value)) return false;
+    if (reading.target && !hasRange(t[reading.target])) return false;
+    if (reading.requiresMinimum && (!reading.target || !hasReading(t[reading.target]?.min))) return false;
+    if (reading.baseline && (!baseline || !hasReading(baseline[reading.baseline]))) return false;
+    if (reading.guard) {
+      if (!hasReading(m.spinDirectionClock) || !hasRange(t.axisClock) || axisDistance(m.spinDirectionClock, t.axisClock) > 0) return false;
+      if (reading.guard === "axis-and-efficiency" && (!hasReading(m.spinEfficiencyPercent) || !hasRange(t.efficiencyPercent) || distanceOutside(m.spinEfficiencyPercent, t.efficiencyPercent) > 0)) return false;
+    }
+    return true;
+  }
+  function checkedRuleReading(rule, m, t, baseline) {
+    if (!ruleReadingAvailable(rule, m, t, baseline)) return null;
+    if (rule.detect(m, t, baseline) !== null) return null;
+    const reading = rule.reading;
+    const value = m[reading.metric];
+    const formatted = reading.metric === "spinDirectionClock" ? clockText(value) : value;
+    const comparison = reading.baseline ? ` against the fastball's ${baseline[reading.baseline]}${reading.unit ?? ""}` : "";
+    return {
+      reason: `${reading.label} reads ${formatted}${reading.unit ?? ""}${comparison}. This check found no deviation.`,
+      triggeringMeasurement: reading.measurement
+    };
+  }
 
   // shared/focus/targets.ts
   var PITCH_TARGETS = {
@@ -707,12 +751,44 @@ var GripItFocus = (() => {
       headline: hasRules ? "Every reading for this pitch is inside its target range. Keep throwing it." : "No grip rules are written for this pitch yet, so there is nothing to flag."
     });
   }
+  var UNSCORED_CONFIDENCE = 0.5;
+  var SEVERITY_ORDER = { green: 0, yellow: 1, red: 2 };
+  function gripFocusZones(input, feedback) {
+    if (feedback.kind !== "change" && feedback.kind !== "on-target") return [];
+    const target = targetFor(input.pitchId, input.handedness ?? "right");
+    if (!target) return [];
+    const metrics = deriveMetrics(input.throws);
+    const baseline = input.baseline?.length ? deriveMetrics(input.baseline) : null;
+    const candidates = candidatesFor(input.pitchId, metrics, input.handedness ?? "right", baseline);
+    const byRule = new Map(candidates.map((candidate) => [candidate.rule.id, candidate]));
+    const found = /* @__PURE__ */ new Map();
+    for (const rule of GRIP_RULES) {
+      if (!rule.pitchIds.includes(input.pitchId)) continue;
+      if (!ruleReadingAvailable(rule, metrics, target, baseline)) continue;
+      const candidate = byRule.get(rule.id);
+      const clean = candidate ? null : checkedRuleReading(rule, metrics, target, baseline);
+      if (!candidate && !clean) continue;
+      const severity = candidate ? rule.id === feedback.ruleId ? "red" : "yellow" : "green";
+      const measurement = rule.reading.measurement === "spinEfficiencyPercent" && !input.throws.some((t) => Number.isFinite(t.measurements.spinEfficiencyPercent) && t.measurements.spinEfficiencyPercent !== null) ? "gyroDegree" : rule.reading.measurement;
+      for (const zoneId of rule.zones) {
+        const previous = found.get(zoneId);
+        if (previous && SEVERITY_ORDER[previous.severity] >= SEVERITY_ORDER[severity]) continue;
+        found.set(zoneId, {
+          zoneId,
+          severity,
+          reason: candidate?.summary ?? clean.reason,
+          triggeringMeasurement: measurement,
+          confidence: UNSCORED_CONFIDENCE
+        });
+      }
+    }
+    return [...found.values()];
+  }
 
   // shared/focus/assess.ts
   var VELOCITY_SPREAD_MPH = 3;
   var TOTAL_SPIN_SPREAD_RPM = 200;
   var MIN_THROWS_FOR_CONSISTENCY = 3;
-  var UNSCORED_CONFIDENCE = 0.5;
   function roundNumber(value, decimals = 2) {
     const factor = 10 ** decimals;
     return Math.round((value + Number.EPSILON) * factor) / factor;
@@ -774,7 +850,7 @@ var GripItFocus = (() => {
       throwIds: throws.map((t) => t.throwId),
       ruleVersion: feedback.ruleVersion,
       classification,
-      zones: [],
+      zones: gripFocusZones(input, feedback),
       nextAction,
       confidence: feedback.kind === "no-data" ? 0 : UNSCORED_CONFIDENCE,
       unreachableZones: unreachableZones(zones),

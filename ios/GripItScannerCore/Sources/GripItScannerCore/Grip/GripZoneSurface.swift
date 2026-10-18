@@ -4,6 +4,9 @@ import simd
 /// Surface weights travel with the skinned mesh; they never create floating overlay objects.
 public struct GripZoneSurface: Sendable {
   public let weights: [[Double]]
+  /// Assessment wraps a named region around its finger so ball contact does not
+  /// hide the finding. Contact/effort masks and picking remain unchanged.
+  public let feedbackWeights: [[Double]]
   public let picking: [GripZoneID?]
   public static let zones = GripZoneID.allCases
 
@@ -15,10 +18,12 @@ public struct GripZoneSurface: Sendable {
       return t * t * (3 - 2 * t)
     }
     var weights: [[Double]] = []
+    var feedbackWeights: [[Double]] = []
     var picking: [GripZoneID?] = []
     for i in pose.vertices.indices {
       let source = gv(hand.vertices[i])
       var w = Array(repeating: 0.0, count: Self.zones.count)
+      var feedback = w
       var owner: GripZoneID?
       var dominance = 0.35
       for zone in gripPlan.zones {
@@ -58,8 +63,10 @@ public struct GripZoneSurface: Sendable {
         }
         let towardContact = unit(contactCenter - centerline)
         let facing = smooth((simd_dot(outward, towardContact) + 0.25) / 0.85)
-        w[Self.zones.firstIndex(of: zone.zoneId)!] =
-          smooth((influence - 0.35) / 0.5) * taper * facing
+        let index = Self.zones.firstIndex(of: zone.zoneId)!
+        let region = smooth((influence - 0.35) / 0.5) * taper
+        w[index] = region * facing
+        feedback[index] = region
       }
       if owner == nil {
         if source.y < 14 {
@@ -76,10 +83,16 @@ public struct GripZoneSurface: Sendable {
           smooth((source.y - 16) / 12) * (1 - smooth((source.y - 55) / 20))
           * smooth((source.z - 1) / 9) * (1 - smooth((abs(source.x) - 20) / 18))
       }
+      for zone in [GripZoneID.palm, .wrist] {
+        let index = Self.zones.firstIndex(of: zone)!
+        feedback[index] = w[index]
+      }
       weights.append(w)
+      feedbackWeights.append(feedback)
       picking.append(owner)
     }
     self.weights = weights
+    self.feedbackWeights = feedbackWeights
     self.picking = picking
   }
   /// Face vertices use their actual barycentric contribution. The baseball blocks taps naturally.

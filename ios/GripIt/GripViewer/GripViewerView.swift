@@ -10,14 +10,14 @@ struct GripViewerView: View {
   @State private var training: TrainingFlowModel?
   @State private var showThrows = false
   @State private var showHandModel = false
+  @State private var showDetails = false
   @State private var plan: GripPlan?
-  @State private var selectedZone: GripZoneID = .indexPad
+  @State private var selectedZone: GripZoneID? = nil
   @State private var showPressure = true
   private var activeSeverity: GripSeverityMap? { zoneSeverity }
   @Environment(\.dismiss) private var dismiss
   @State private var pitch: PitchGrip = .fourSeam
   @State private var pose: GripPose?
-  /// The cached fit this pitch resolved to, carrying the scene's prebuilt data.
   @State private var fit: StudioFit?
   @State private var error: String?
   @State private var loading = true
@@ -28,7 +28,7 @@ struct GripViewerView: View {
   init(
     profile: HandProfile, initialPitch: PitchGrip = .fourSeam,
     initialCamera: GripCamera = .threeQuarter,
-    zoneSeverity: GripSeverityMap? = nil,
+    zoneSeverity: GripSeverityMap? = nil, initialZone: GripZoneID? = nil,
     onZoneSelect: @escaping (GripZoneID) -> Void = { _ in }
   ) {
     self.profile = profile
@@ -37,133 +37,124 @@ struct GripViewerView: View {
     _studio = StateObject(wrappedValue: GripStudioSession(profile: profile))
     _pitch = State(initialValue: initialPitch)
     _camera = State(initialValue: initialCamera)
+    _selectedZone = State(initialValue: initialZone)
   }
 
   var body: some View {
     NavigationStack {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 20) {
-          TrainingStepLabel(step: 2)
-          Text(
-            "\(profile.capture.method.contains("sample") ? "SAMPLE HAND" : "YOUR HAND") · \(profile.handedness.rawValue.uppercased())"
-          )
-          .font(.caption.weight(.semibold)).foregroundStyle(.mint)
-          Picker("Pitch type", selection: $pitch) {
-            ForEach(PitchGrip.allCases) { p in Text(p.shortTitle).tag(p) }
-          }.pickerStyle(.segmented)
-          ZStack(alignment: .topLeading) {
-            if let pose {
-              GripSceneView(
-                pose: pose, showContacts: contacts, camera: camera, reset: cameraReset,
-                gripPlan: plan, render: fit?.render, zoneSeverity: activeSeverity,
-                showPressure: zoneSeverity == nil && showPressure, selectedZone: selectedZone,
-                onZoneSelect: selectZone
-              )
-              .opacity(loading ? 0.25 : 1)
-              .accessibilityLabel(
-                "3D \(pose.pitch.title) grip for your \(profile.handedness.rawValue) hand")
+      VStack(alignment: .leading, spacing: 12) {
+        TrainingStepLabel(step: 2)
+        HStack(alignment: .firstTextBaseline) {
+          Text("Find your grip.").font(.title2.bold())
+          Spacer()
+          Text(profile.capture.method.contains("sample") ? "SAMPLE HAND" : "YOUR HAND")
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(.mint)
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(.mint.opacity(0.09), in: Capsule())
+        }
+        Picker("Pitch type", selection: $pitch) {
+          ForEach(PitchGrip.allCases) { p in Text(p.shortTitle).tag(p) }
+        }.pickerStyle(.segmented)
+        ZStack(alignment: .topLeading) {
+          Canvas { context, size in
+            var grid = Path()
+            for x in stride(from: 0.0, through: size.width, by: 28) {
+              grid.move(to: CGPoint(x: x, y: 0))
+              grid.addLine(to: CGPoint(x: x, y: size.height))
             }
-            if loading {
-              ProgressView("Fitting your hand…").tint(.mint).frame(
-                maxWidth: .infinity, maxHeight: .infinity)
+            for y in stride(from: 0.0, through: size.height, by: 28) {
+              grid.move(to: CGPoint(x: 0, y: y))
+              grid.addLine(to: CGPoint(x: size.width, y: y))
             }
-            if activeSeverity != nil || showPressure, !loading, pose != nil {
-              Label(
-                zoneSeverity == nil ? "Grip pressure" : "Diagnostic heat map",
-                systemImage: "circle.hexagongrid.fill"
-              )
-              .font(.caption.weight(.semibold)).padding(10)
-              .background(.black.opacity(0.7), in: Capsule()).padding(14)
-              .allowsHitTesting(false)
-            }
-            if let error {
-              ContentUnavailableView(
-                "Grip unavailable for these proportions", systemImage: "hand.raised",
-                description: Text(error))
-            }
+            context.stroke(grid, with: .color(.mint.opacity(0.055)), lineWidth: 0.5)
+          }.allowsHitTesting(false)
+          if let pose {
+            GripSceneView(
+              pose: pose, showContacts: false, camera: camera, reset: cameraReset,
+              gripPlan: plan, render: fit?.render, zoneSeverity: activeSeverity,
+              showPressure: zoneSeverity == nil && showPressure,
+              showAnnotations: true, arcadeStyle: true, selectedZone: selectedZone,
+              onZoneDismiss: { selectedZone = nil }, onZoneSelect: selectZone
+            )
+            .opacity(loading ? 0.15 : 1)
+            .accessibilityLabel(
+              "Interactive \(pose.pitch.title) grip. Drag to rotate and tap a numbered point.")
           }
-          .frame(maxWidth: .infinity).frame(height: 390)
-          .background(Color(white: 0.10), in: RoundedRectangle(cornerRadius: 24))
-          .clipShape(RoundedRectangle(cornerRadius: 24))
-          Text("Drag to rotate · Pinch to zoom")
-            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-          HStack {
-            ForEach(GripCamera.allCases) { c in
-              Button(c.title) {
-                camera = c
+          VStack(alignment: .leading, spacing: 5) {
+            Text("GRIP EXPLORER").font(.system(size: 9, weight: .bold, design: .monospaced))
+              .foregroundStyle(.mint)
+            Text("Drag to rotate · Pinch to zoom").font(.system(size: 10)).foregroundStyle(
+              .white.opacity(0.5))
+          }.padding(14).allowsHitTesting(false)
+          if loading {
+            ProgressView("Building your grip…").tint(.mint)
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
+          if let error {
+            ContentUnavailableView(
+              "Grip unavailable", systemImage: "hand.raised", description: Text(error))
+          }
+        }
+        .frame(maxWidth: .infinity).frame(minHeight: 360, maxHeight: .infinity)
+        .background(Color(red: 0.035, green: 0.075, blue: 0.065))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(.mint.opacity(0.13), lineWidth: 1))
+        HStack(spacing: 12) {
+          Menu {
+            ForEach(GripCamera.allCases) { angle in
+              Button(angle.title) {
+                camera = angle
                 cameraReset += 1
               }
-              .buttonStyle(.bordered).tint(camera == c ? .mint : .gray)
-              .lineLimit(1).minimumScaleFactor(0.65)
             }
-          }.frame(maxWidth: .infinity)
-          if activeSeverity != nil {
-            HStack(spacing: 16) {
-              legend("Low", .green)
-              legend("Review", .yellow)
-              legend("High", .red)
-            }.font(.caption)
+            Divider()
+            if let plan {
+              ForEach(plan.zones) { zone in Button(zone.title) { selectZone(zone.zoneId) } }
+            }
+          } label: {
+            Label("Explore", systemImage: "viewfinder")
           }
-          if let pose, !loading, pose.diagnostics.needsReview {
-            Label(
-              "Approximate fit. Check finger placement.", systemImage: "exclamationmark.triangle"
+          .accessibilityIdentifier("grip-view-menu")
+          Button {
+            camera = .threeQuarter
+            cameraReset += 1
+          } label: {
+            Image(systemName: "arrow.counterclockwise")
+          }.accessibilityLabel("Reset grip view")
+          Spacer()
+          Button {
+            showPressure.toggle()
+          } label: {
+            Label("Effort", systemImage: showPressure ? "circle.lefthalf.filled" : "circle")
+          }.accessibilityIdentifier("toggle-grip-effort")
+        }.font(.caption.weight(.semibold)).buttonStyle(.bordered).tint(.mint)
+        if showPressure && zoneSeverity == nil {
+          HStack(spacing: 9) {
+            Text("NO EFFORT")
+            LinearGradient(
+              colors: [.white, Color(red: 0.035, green: 0.29, blue: 0.21)], startPoint: .leading,
+              endPoint: .trailing
             )
-            .font(.caption).foregroundStyle(.orange)
-          }
-          if let plan, !loading {
-            VStack(alignment: .leading, spacing: 12) {
-              Text("Hand zones").font(.headline)
-              LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
-                ForEach(plan.zones) { zone in
-                  Button {
-                    selectZone(zone.zoneId)
-                  } label: {
-                    HStack {
-                      if selectedZone == zone.zoneId { Image(systemName: "checkmark.circle.fill") }
-                      Text(zone.title)
-                    }.font(.subheadline).frame(maxWidth: .infinity, minHeight: 36)
-                  }
-                  .buttonStyle(.bordered).tint(selectedZone == zone.zoneId ? .white : .gray)
-                  .accessibilityIdentifier(zone.zoneId.rawValue)
-                  .accessibilityLabel(
-                    "\(zone.title), \(status(zone.zoneId)), reach \(zone.reach.rawValue)"
-                  )
-                  .accessibilityAddTraits(selectedZone == zone.zoneId ? .isSelected : [])
-                }
-              }
-              if let zone = plan.zones.first(where: { $0.zoneId == selectedZone }) {
-                VStack(alignment: .leading, spacing: 8) {
-                  HStack {
-                    Image(systemName: "scope")
-                    Text(zone.title).font(.headline)
-                  }
-                  Text(zone.instruction)
-                  Text(
-                    "Pressure: \(zone.pressure?.rawValue ?? "unspecified")"
-                  )
-                  .font(.subheadline).foregroundStyle(.secondary)
-                  if activeSeverity != nil {
-                    Text("Diagnostic severity: \(status(zone.zoneId))").font(.subheadline.bold())
-                  }
-                  if zone.extrapolated {
-                    Text("Wrist guidance is estimated.")
-                      .font(.caption).foregroundStyle(.secondary)
-                  }
-                }.padding(16).background(
-                  Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
-              }
-            }
-          }
-          DisclosureGroup("Model details") {
-            modelDetails
-          }
-        }.padding(20)
+            .frame(height: 5).clipShape(Capsule())
+            Text("MORE EFFORT")
+          }.font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+        }
       }
-      .background(Color.black).preferredColorScheme(.dark)
+      .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+      .background(Color(red: 0.025, green: 0.045, blue: 0.04))
+      .preferredColorScheme(.dark)
       .navigationTitle("Grip studio").navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .topBarLeading) { Button("Hand model") { showHandModel = true } }
-        ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+        ToolbarItem(placement: .topBarLeading) { Button("Done") { dismiss() } }
+        ToolbarItem(placement: .topBarTrailing) {
+          Menu {
+            Button("Hand model", systemImage: "hand.raised") { showHandModel = true }
+            Button("Model details", systemImage: "info.circle") { showDetails = true }
+          } label: {
+            Image(systemName: "ellipsis")
+          }
+        }
       }
       .safeAreaInset(edge: .bottom) {
         Button {
@@ -172,18 +163,34 @@ struct GripViewerView: View {
             showThrows = true
           }
         } label: {
-          Label("Record throws", systemImage: "arrow.right")
-            .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+          HStack {
+            Text("Record throws")
+            Spacer()
+            Image(systemName: "arrow.up.right")
+          }
+          .font(.headline).frame(maxWidth: .infinity, minHeight: 40)
         }
-        .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(.black)
+        .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(
+          Color(red: 0.025, green: 0.12, blue: 0.09)
+        )
         .disabled(loading || fit == nil)
         .accessibilityIdentifier("record-throws")
-        .padding(.horizontal, 20).padding(.vertical, 12).background(.ultraThinMaterial)
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color(red: 0.025, green: 0.045, blue: 0.04))
       }
       .navigationDestination(isPresented: $showThrows) {
         if let training { ThrowEntryView(model: training) }
       }
       .fullScreenCover(isPresented: $showHandModel) { HandModelReviewView(profile: profile) }
+      .sheet(isPresented: $showDetails) {
+        NavigationStack {
+          ScrollView { modelDetails.padding(20) }.navigationTitle("Model details")
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) { Button("Done") { showDetails = false } }
+            }
+        }
+        .preferredColorScheme(.dark)
+      }
     }
     .task(id: pitch) {
       loading = true
@@ -196,7 +203,7 @@ struct GripViewerView: View {
         pose = result.pose
         plan = result.plan
         if !result.plan.zones.contains(where: { $0.zoneId == selectedZone }) {
-          selectedZone = .indexPad
+          selectedZone = nil
         }
         loading = false
       } catch {
@@ -244,9 +251,9 @@ struct GripViewerView: View {
             Text("Some fingers cannot reach their intended positions.")
               .font(.caption).foregroundStyle(.orange)
           }
-          if let gap = pose.diagnostics.loopGapMm, gap > 5 {
-            Text(String(format: "Index–thumb loop gap %.1f mm", gap))
-              .font(.caption).foregroundStyle(.orange)
+          if let gap = pose.diagnostics.loopGapMm {
+            Text(String(format: "Index–thumb spacing %.1f mm", gap))
+              .font(.caption).foregroundStyle(.secondary)
           }
           if pose.diagnostics.seams.contains(where: \.needsReview) {
             Text("Seam alignment needs review.").font(.caption).foregroundStyle(.orange)

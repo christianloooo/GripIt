@@ -32,9 +32,22 @@ final class GripStudioSession: ObservableObject {
 
   func training(for fit: StudioFit) -> TrainingFlowModel {
     if let existing = trainingSessions[fit.pose.pitch] { return existing }
-    let model = TrainingFlowModel(profile: profile, fit: fit)
+    let model = TrainingFlowModel(profile: profile, fit: fit) { [weak self] source in
+      self?.fastballRecords(source: source) ?? []
+    }
     trainingSessions[fit.pose.pitch] = model
     return model
+  }
+
+  private func fastballRecords(source: ThrowSource) -> [ThrowRecord] {
+    [PitchGrip.fourSeam, .twoSeam].flatMap { pitch -> [ThrowRecord] in
+      guard let model = trainingSessions[pitch], model.draft.source == source,
+        model.hasEntries
+      else { return [] }
+      // Validate the current draft, so edits and invalid rows cannot reuse stale data.
+      return (try? NativeFocusEngine.records(model.draft, pitch: pitch,
+        profileId: profile.profileId)) ?? []
+    }
   }
 }
 
@@ -42,25 +55,21 @@ final class GripStudioSession: ObservableObject {
 final class TrainingFlowModel: ObservableObject {
   let profile: HandProfile
   let fit: StudioFit
-  let gripPlan: FocusGripPlan
-  let client: CoachingClient
+  let gripPlanId: String
   @Published var draft = ThrowSessionDraft()
+  @Published var photos = SessionThrowPhoto.bundled
   @Published private(set) var errors: [String: [String: String]] = [:]
   @Published private(set) var message: String?
-  private var assessedRecords: [ThrowRecord]?
+  private let baselineRecords: @MainActor (ThrowSource) -> [ThrowRecord]
   var pitch: PitchGrip { fit.pose.pitch }
   var usesSampleHand: Bool { profile.capture.method.localizedCaseInsensitiveContains("sample") }
 
-  init(profile: HandProfile, fit: StudioFit) {
+  init(profile: HandProfile, fit: StudioFit,
+    baselineRecords: @escaping @MainActor (ThrowSource) -> [ThrowRecord] = { _ in [] }) {
     self.profile = profile
     self.fit = fit
-    let planId = "\(profile.profileId)-\(fit.pose.pitch.rawValue)-\(fit.pose.id.uuidString)"
-    gripPlan = FocusGripPlan(
-      profileId: profile.profileId, pitch: fit.pose.pitch,
-      zones: fit.plan.zones, gripPlanId: planId)
-    let value = Bundle.main.object(forInfoDictionaryKey: "GripItAPIBaseURL") as? String
-    let url = value.flatMap { $0.contains("$(") ? nil : URL(string: $0) }
-    client = CoachingClient(baseURL: url)
+    self.baselineRecords = baselineRecords
+    gripPlanId = "\(profile.profileId)-\(fit.pose.pitch.rawValue)-\(fit.pose.id.uuidString)"
   }
 
   func addThrow() {
@@ -104,8 +113,8 @@ final class TrainingFlowModel: ObservableObject {
       let records = try NativeFocusEngine.records(draft, pitch: pitch, profileId: profile.profileId)
       let result = try NativeFocusEngine.assess(
         pitch: pitch, records: records,
-        zones: fit.plan.zones, gripPlanId: gripPlan.gripPlanId)
-      assessedRecords = records
+        zones: fit.plan.zones, gripPlanId: gripPlanId,
+        baseline: baselineRecords(draft.source), handedness: profile.handedness)
       return result
     } catch {
       message = error.localizedDescription
@@ -113,10 +122,7 @@ final class TrainingFlowModel: ObservableObject {
     }
   }
 
-  func context(for assessment: FocusAssessment) -> CoachingContext {
-    return CoachingContext(profile: profile, plan: gripPlan, assessment: assessment,
-      records: assessedRecords)
-  }
+
 }
 
 struct TrainingStepLabel: View {

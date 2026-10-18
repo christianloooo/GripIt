@@ -6,10 +6,9 @@ import type { ThrowRecord } from "../throwEntry";
  * The boundary between the deterministic rule engine and everything that
  * presents its result.
  *
- * The engine decides every colour, reason and confidence. The language model
- * downstream rewrites `nextAction.detail` into something that sounds like a
- * coach; it never changes a severity, picks a zone, or invents a number. That
- * separation is what keeps the same inputs producing the same assessment.
+ * The engine decides every colour, reason and instruction locally. No network
+ * request or generated rewrite changes the result. Identical input produces
+ * the same assessment. Confidence remains an unscored wire placeholder.
  */
 
 /** Whether the throw data justifies grip advice at all. */
@@ -57,12 +56,11 @@ export interface NextAction {
   /** Short imperative, e.g. "Stay behind the ball". */
   summary: string;
   /**
-   * The coachable detail. The rule set supplies a deterministic sentence here
-   * and the language model may rewrite it. If the model is unavailable this
-   * text ships unchanged, so the product never depends on a network call.
+   * The complete measured finding, grip change and expected movement supplied
+   * directly by the deterministic rules.
    */
   detail: string;
-  /** True once a model has rewritten `detail`, so the UI can label it. */
+  /** Legacy wire field. Deterministic feedback always sets this to false. */
   rewritten: boolean;
 }
 

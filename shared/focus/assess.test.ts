@@ -105,11 +105,23 @@ describe("assess packs one grip change into the FocusAssessment wire type", () =
     });
   });
 
-  it("leaves the tinted zone list empty, because the engine scores no severity", () => {
-    // FocusZone demands a severity and a confidence per zone and the rule
-    // engine produces neither. The zones ride in nextAction.zoneId and in
-    // extensions instead; phase two promotes them to a first-class field.
-    expect(assess(mayaFourSeam).zones).toEqual([]);
+  it("tints the winning rule red and a checked, clean axis green", () => {
+    expect(assess(mayaFourSeam).zones).toEqual([
+      {
+        zoneId: "thumb-pad",
+        severity: "green",
+        reason: expect.stringContaining("Spin axis reads 12:30"),
+        triggeringMeasurement: "spinDirectionClock",
+        confidence: 0.5,
+      },
+      ...["index-pad", "middle-pad"].map((zoneId) => ({
+        zoneId,
+        severity: "red",
+        reason: "Spin efficiency reads 72 percent, below target.",
+        triggeringMeasurement: "spinEfficiencyPercent",
+        confidence: 0.5,
+      })),
+    ]);
   });
 });
 
@@ -322,5 +334,150 @@ describe("assess bookkeeping around the engine", () => {
     // Spread is reported, never acted on: the grip finding stands on its own.
     expect(result.classification).toBe("grip-focus");
     expect(feedbackOf(result).ruleId).toBe("four-seam-efficiency");
+  });
+});
+
+describe("severity from rule outcomes", () => {
+  function fourSeam(measurements: Partial<ThrowRecord["measurements"]> = {}) {
+    return {
+      pitchId: "four-seam",
+      throws: [makeThrow({ measurements: {
+        velocityMph: 90, totalSpinRpm: 2200, spinDirectionClock: 12.2,
+        spinEfficiencyPercent: 97, horizontalBreakInches: 0,
+        verticalBreakInches: 17, ...measurements,
+      } })],
+      zones: FOUR_SEAM_INSTRUCTION_ZONES,
+    };
+  }
+
+  it("marks secondary firing zones yellow while red wins every overlap", () => {
+    const result = assess(fourSeam({
+      spinEfficiencyPercent: 85, totalSpinRpm: 900, horizontalBreakInches: 19,
+    }));
+    // Purchase (6) beats cut (4) and efficiency (2); all three name both pads.
+    expect(feedbackOf(result).ruleId).toBe("four-seam-purchase");
+    for (const zoneId of ["index-pad", "middle-pad"]) {
+      expect(result.zones.find((z) => z.zoneId === zoneId)).toMatchObject({
+        severity: "red", triggeringMeasurement: "totalSpinRpm",
+        reason: expect.stringContaining("Spin per mph reads 10"),
+      });
+    }
+    const separateZones = assess(fourSeam({
+      spinDirectionClock: 2, totalSpinRpm: 1800,
+    }));
+    expect(feedbackOf(separateZones).ruleId).toBe("four-seam-axis");
+    expect(separateZones.zones).toEqual([
+      expect.objectContaining({ zoneId: "thumb-pad", severity: "red" }),
+      expect.objectContaining({ zoneId: "index-pad", severity: "yellow" }),
+      expect.objectContaining({ zoneId: "middle-pad", severity: "yellow" }),
+    ]);
+  });
+
+  it("keeps secondary firing zones yellow when later checks on the same zones are clean", () => {
+    const result = assess({ ...fourSeam({
+      spinDirectionClock: 1.5, horizontalBreakInches: 6, spinEfficiencyPercent: 60,
+    }), pitchId: "two-seam" });
+    expect(feedbackOf(result).ruleId).toBe("two-seam-efficiency");
+    expect(result.zones.find((z) => z.zoneId === "index-pad")).toMatchObject({
+      severity: "yellow", triggeringMeasurement: "horizontalBreakInches",
+      reason: expect.stringContaining("Horizontal break reads 6"),
+    });
+  });
+
+  it("marks only checked contacts green and never adds untouched contacts or the wrist", () => {
+    const result = assess(fourSeam());
+    expect(result.zones.map((z) => [z.zoneId, z.severity])).toEqual([
+      ["thumb-pad", "green"], ["index-pad", "green"],
+      ["middle-pad", "green"], ["palm", "green"],
+    ]);
+    expect(result.zones.every((z) => z.confidence === 0.5)).toBe(true);
+    expect(result.zones.every((z) => z.reason.includes("reads"))).toBe(true);
+  });
+
+  it("does not turn guard-suppressed efficiency, cut or buried checks green", () => {
+    const offAxis = assess(fourSeam({ spinDirectionClock: 2, velocityMph: 0 }));
+    expect(offAxis.zones.map((z) => [z.zoneId, z.severity])).toEqual([["thumb-pad", "red"]]);
+    const lowEfficiency = assess(fourSeam({ spinEfficiencyPercent: 70 }));
+    expect(lowEfficiency.zones.some((z) => z.zoneId === "palm")).toBe(false);
+  });
+
+  it("does not mark a contact green when all of its readings are missing", () => {
+    const slider = {
+      pitchId: "slider", zones: instructionZonesForPitch("slider"),
+      throws: [makeThrow({ measurements: { spinEfficiencyPercent: null, gyroDegree: null } })],
+    };
+    expect(assess(slider).zones).toEqual([]);
+    const missingBreak = assess(fourSeam({ verticalBreakInches: null }));
+    expect(missingBreak.zones.some((z) => z.zoneId === "palm")).toBe(false);
+    const missingRatio = assess(fourSeam({ velocityMph: 0, horizontalBreakInches: null, spinEfficiencyPercent: null }));
+    expect(missingRatio.zones.some((z) => z.zoneId === "index-pad")).toBe(false);
+  });
+
+  it("uses gyro as the real measurement key when efficiency comes from gyro", () => {
+    for (const [gyroDegree, severity] of [[80, "green"], [0, "red"]] as const) {
+      const result = assess({
+        pitchId: "slider", zones: instructionZonesForPitch("slider"),
+        throws: [makeThrow({ measurements: { spinEfficiencyPercent: null, gyroDegree } })],
+      });
+      expect(result.zones).toEqual([expect.objectContaining({
+        zoneId: "index-pad", severity, triggeringMeasurement: "gyroDegree",
+        reason: expect.stringContaining(`Spin efficiency reads ${gyroDegree === 80 ? "17.4" : "100"}`),
+      })]);
+    }
+  });
+
+  it("uses the same mirrored targets for severity and the winning instruction", () => {
+    const input = {
+      pitchId: "two-seam", zones: instructionZonesForPitch("two-seam"),
+      throws: [makeThrow({ measurements: {
+        spinDirectionClock: 10.5, horizontalBreakInches: -15,
+        spinEfficiencyPercent: 85,
+      } })],
+    };
+    const left = assess({ ...input, handedness: "left" });
+    expect(left.zones.map((z) => z.severity)).toEqual(["green", "green", "green"]);
+    expect(assess({ ...input, handedness: "right" }).zones[0]).toMatchObject({
+      zoneId: "index-pad", severity: "red", triggeringMeasurement: "spinDirectionClock",
+    });
+  });
+
+  it("checks changeup readings against their actual fastball baseline", () => {
+    const input = {
+      pitchId: "changeup", zones: instructionZonesForPitch("changeup"),
+      throws: [makeThrow({ measurements: { velocityMph: 78, totalSpinRpm: 1560 } })],
+      baseline: [makeThrow({ measurements: { velocityMph: 90, totalSpinRpm: 2200 } })],
+    };
+    expect(assess(input).zones).toEqual([
+      expect.objectContaining({ zoneId: "palm", severity: "green", triggeringMeasurement: "velocityMph", reason: expect.stringContaining("78") }),
+      expect.objectContaining({ zoneId: "index-pad", severity: "green", triggeringMeasurement: "totalSpinRpm", reason: expect.stringContaining("20") }),
+    ]);
+    expect(assess({ ...input, baseline: [makeThrow({ measurements: { velocityMph: 0 } })] }).zones).toEqual([
+      expect.objectContaining({ zoneId: "palm", severity: "red" }),
+    ]);
+  });
+
+  it("suppresses all severity for baseline, no-data, drift and fit gates", () => {
+    const normal = fourSeam();
+    const inputs = [
+      { ...normal, throws: [] },
+      { ...normal, pitchId: "changeup" },
+      { ...normal, throws: [5, 6, 7].map((releaseHeightFeet) => makeThrow({ measurements: { releaseHeightFeet } })) },
+      { ...fourSeam({ spinDirectionClock: 2 }), zones: instructionZonesForPitch("four-seam", { "thumb-pad": "strained" }) },
+      { ...fourSeam({ spinDirectionClock: 2 }), zones: instructionZonesForPitch("four-seam", { "thumb-pad": "unreachable" }) },
+    ];
+    expect(inputs.map((input) => feedbackOf(assess(input)).kind)).toEqual(["no-data", "baseline", "drift", "fit", "fit"]);
+    for (const input of inputs) expect(assess(input).zones).toEqual([]);
+  });
+
+  it("leaves unknown pitches absent and resolves equal severities in rule order deterministically", () => {
+    expect(assess({ ...fourSeam(), pitchId: "unknown" }).zones).toEqual([]);
+    const input = fourSeam({ totalSpinRpm: 1800, horizontalBreakInches: 7 });
+    const before = structuredClone(input);
+    const first = assess(input);
+    // Equal purchase/cut magnitudes: the existing earlier purchase rule wins.
+    expect(feedbackOf(first).ruleId).toBe("four-seam-purchase");
+    expect(first.zones.find((z) => z.zoneId === "index-pad")).toMatchObject({ severity: "red", triggeringMeasurement: "totalSpinRpm" });
+    expect(assess(input)).toEqual(first);
+    expect(input).toEqual(before);
   });
 });

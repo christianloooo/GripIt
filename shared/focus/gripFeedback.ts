@@ -1,10 +1,12 @@
 import type { Handedness } from "../contracts/handProfile";
-import type { InstructionZone, ZoneId } from "../contracts/zones";
+import type { FocusZone, InstructionZone, Severity, ZoneId } from "../contracts/zones";
 import type { ThrowRecord } from "../throwEntry";
 import {
   GRIP_RULES,
   GRIP_RULE_VERSION,
   clockText,
+  checkedRuleReading,
+  ruleReadingAvailable,
   type GripRule,
 } from "./gripRules";
 import { deriveMetrics, type DerivedMetrics } from "./metrics";
@@ -204,7 +206,7 @@ function result(partial: Partial<GripFeedback> & {
   };
 }
 
-export function gripFeedback(input: {
+export interface GripFeedbackInput {
   pitchId: string;
   throws: readonly ThrowRecord[];
   zones: readonly InstructionZone[];
@@ -219,7 +221,9 @@ export function gripFeedback(input: {
    * is how PITCH_TARGETS is stored.
    */
   handedness?: Handedness;
-}): GripFeedback {
+}
+
+export function gripFeedback(input: GripFeedbackInput): GripFeedback {
   const { pitchId, throws, zones, baseline, handedness = "right" } = input;
 
   const metrics = deriveMetrics(throws);
@@ -312,4 +316,61 @@ export function gripFeedback(input: {
       ? "Every reading for this pitch is inside its target range. Keep throwing it."
       : "No grip rules are written for this pitch yet, so there is nothing to flag.",
   });
+}
+
+
+/**
+ * The engine does not score confidence. Reuse assess.ts's shipped 0.5
+ * placeholder for every assessed zone and nonempty assessment; this is an
+ * unscored value, not a calibrated probability. No-data confidence stays 0.
+ */
+export const UNSCORED_CONFIDENCE = 0.5;
+
+const SEVERITY_ORDER: Record<Severity, number> = { green: 0, yellow: 1, red: 2 };
+
+/**
+ * The existing winner is red, other firing rules yellow, and checked clean
+ * rules green. Gates suppress all severity. A missing/suppressed check has
+ * no opinion. Equal severity keeps the first rule's reason in table order.
+ */
+export function gripFocusZones(
+  input: GripFeedbackInput,
+  feedback: GripFeedback,
+): FocusZone[] {
+  if (feedback.kind !== "change" && feedback.kind !== "on-target") return [];
+  const target = targetFor(input.pitchId, input.handedness ?? "right");
+  if (!target) return [];
+  const metrics = deriveMetrics(input.throws);
+  const baseline = input.baseline?.length ? deriveMetrics(input.baseline) : null;
+  const candidates = candidatesFor(input.pitchId, metrics, input.handedness ?? "right", baseline);
+  const byRule = new Map(candidates.map((candidate) => [candidate.rule.id, candidate]));
+  const found = new Map<ZoneId, FocusZone>();
+  for (const rule of GRIP_RULES) {
+    if (!rule.pitchIds.includes(input.pitchId)) continue;
+    if (!ruleReadingAvailable(rule, metrics, target, baseline)) continue;
+    const candidate = byRule.get(rule.id);
+    const clean = candidate ? null : checkedRuleReading(rule, metrics, target, baseline);
+    if (!candidate && !clean) continue;
+    const severity: Severity = candidate
+      ? (rule.id === feedback.ruleId ? "red" : "yellow")
+      : "green";
+    // Efficiency may have come entirely from gyro rather than an entered
+    // efficiency reading. Keep the wire key tied to a measurement present.
+    const measurement = rule.reading.measurement === "spinEfficiencyPercent" &&
+      !input.throws.some((t) => Number.isFinite(t.measurements.spinEfficiencyPercent) &&
+        t.measurements.spinEfficiencyPercent !== null)
+      ? "gyroDegree" : rule.reading.measurement;
+    for (const zoneId of rule.zones) {
+      const previous = found.get(zoneId);
+      if (previous && SEVERITY_ORDER[previous.severity] >= SEVERITY_ORDER[severity]) continue;
+      found.set(zoneId, {
+        zoneId,
+        severity,
+        reason: candidate?.summary ?? clean!.reason,
+        triggeringMeasurement: measurement,
+        confidence: UNSCORED_CONFIDENCE,
+      });
+    }
+  }
+  return [...found.values()];
 }

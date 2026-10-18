@@ -56,6 +56,17 @@ public struct FocusAssessment: Codable, Sendable, Identifiable {
     GripSeverityMap(Dictionary(uniqueKeysWithValues: zones.map { ($0.zoneId.rawValue, $0.severity.numericValue) }))
   }
 
+  public var measuredSummary: String? { feedbackText("measured") }
+  public var changeToTry: String? { feedbackText("change") }
+  public var expectedMovement: String? { feedbackText("expect") }
+  public var feedbackKind: String? { feedbackText("kind") }
+
+  private func feedbackText(_ key: String) -> String? {
+    guard case .object(let feedback) = extensions["gripFeedback"],
+      case .string(let text) = feedback[key], !text.isEmpty else { return nil }
+    return text
+  }
+
   private enum CodingKeys: String, CodingKey {
     case schemaVersion, assessmentId, gripPlanId, throwIds, ruleVersion, classification
     case zones, nextAction, confidence, unreachableZones, consistency, prototypeAdvice, extensions

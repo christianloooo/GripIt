@@ -20,9 +20,9 @@ relationship, and opposition. The seam optimizer consumes those relationships.
 - Four-seam: index/middle across stitching, with middle intended firmer.
 - Two-seam: index/middle along stitching, both medium intended pressure.
 - Slider: index on adjacent leather, middle along stitching, thumb support biased
-  toward opposition to the middle. Palm is omitted completely.
+  toward opposition to the middle. Palm has an explicit no-effort entry.
 - Changeup: middle/ring are upper drivers; thumb supports the lower centre; index wraps beside it; pinky
-  curls at the far side; palm becomes support. Wrist pressure/role stay null.
+  curls at the far side; palm becomes support. Wrist uses medium stabilization.
 
 Geometry uses individual measured bone lengths and palm dimensions. Width is
 MCP span, not a uniform whole-hand scale. Missing thickness uses an explicit
@@ -36,7 +36,7 @@ and changeup middle/ring must establish contact on their middle sections as well
 as their distal pads. Engineering buckets
 are <=3 mm comfortable, >3 through 8 mm strained, and >8 mm unreachable. These
 are not clinical limits. Wrist has no geometric target; its explanation says so.
-Its source is extrapolated, and all intended pressure guidance needs coach review.
+The demo effort chart in `handInstructions.md` defines all seven highlight regions.
 
 ## Supplying Step 4 severity
 
@@ -68,11 +68,11 @@ numeric inputs are discarded; finite inputs clamp to [0,1]. Bands are
 retain the base skin color. A present empty map is diagnostic mode with no
 assessed zones; nil is normal studio mode.
 
-Step 2 defaults to **Show pressure**: a continuous white-to-pine-green scale.
-White means less intended effort; deeper pine means more. Soft gradients wrap
-loaded finger sections for visibility, including middle-phalanx contact for wrapped grips, and do not
-color the wrist as if it pressed on the ball. This is qualitative coaching
-illustration, not measured force. Turn it off for natural skin.
+Step 2 defaults to **Show effort**: a continuous white-to-pine-green scale.
+White means no effort; deeper pine means more pressure or tension. Soft gradients wrap
+loaded finger sections for visibility, including middle-phalanx contact for wrapped grips.
+The same map includes ring-finger sides, changeup curls/palm support, and the full wrist
+circumference. Wrist color represents stabilization. Turn it off for natural skin.
 
 Step 4 keeps its numeric diagnostic bands and missing-value behavior. An incoming
 severity map takes precedence over pressure shading. Intended pressure never
@@ -84,8 +84,8 @@ determines a severity color. There is no throw assessment engine in this feature
 skinned asset's bone weights, longitudinal finger position, and pad orientation.
 Colors follow the actual posed vertices, with the existing lighting and normals.
 Wrist and palm masks are separate. The changeup keeps the `ring-side` ID while
-moving its contact to the pad. Omitted slider palm receives no color or selection.
-Nails and the baseball are not heat-map surfaces.
+moving its contact to the pad. Slider palm remains selectable with explicit no effort.
+The finger mesh is continuous with no separate fingernail overlays. The baseball keeps its own material.
 
 Tapping a visible hand triangle uses its real barycentric coordinates to return
 the stable zone ID. The baseball occludes taps naturally. The accessible zone
@@ -104,7 +104,7 @@ with a readable error instead of showing a substitute hand.
 
 Open `ios/GripIt.xcodeproj`, select **GripIt**, and Run. Complete/import a scan,
 then choose **Explore my grips**. Or load the labeled sample, explore grips,
-with **Show pressure** enabled by default. Use the zone buttons and rotate
+with **Show effort** enabled by default. Use the zone buttons and rotate
 through Palm / Thumb / Back to inspect occluded contacts.
 
 For reproducible Debug simulator previews, add these scheme launch arguments:
@@ -114,7 +114,7 @@ For reproducible Debug simulator previews, add these scheme launch arguments:
 ```
 
 Other pitch IDs are `four-seam`, `two-seam`, `slider`; `--left` mirrors the hand.
-Use the **Show pressure** toggle for normal skin. These shortcuts are Debug-only.
+Use the **Show effort** toggle for normal skin. These shortcuts are Debug-only.
 
 After launching on a booted simulator, capture a screenshot with:
 
@@ -141,3 +141,18 @@ See [hand proportions and ball integration](natural-hand-and-ball.md) for the
 latest geometry, supplied-ball asset pipeline, render review, and test results.
 The native and web viewers now share the project's supplied Ball.glb, rather
 than the earlier worn baseball asset.
+
+## Complete effort records
+
+All seven zones are present for every demo pitch, including white/no-effort regions.
+Each zone serializes `highlight: {region, intensity, kind}` alongside its existing
+pressure/role/placement fields. The highlight record controls intensity; legacy
+payloads without it derive the record from their existing fields. Regions include fingerPad, fingerSide, curledFinger,
+palm, and wrist; kinds include pressure, support, and stabilization. Four-seam,
+two-seam, and slider wrists are firm; changeup wrist is medium.
+
+The renderer reads the supplied plan and updates shading when instructions change,
+without rebuilding the mesh or resetting the camera. Coverage tests isolate each
+nonzero instruction and require visible geometry for its highlight. Wrist tests
+check every vertex around the cuff, including its dorsal surface. Actual finger
+compression remains a separate contact-only operation.

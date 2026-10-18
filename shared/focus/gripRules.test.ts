@@ -4,6 +4,7 @@ import {
   GRIP_RULES,
   GRIP_RULE_VERSION,
   clockText,
+  checkedRuleReading,
   type GripRule,
 } from "./gripRules";
 import type { DerivedMetrics } from "./metrics";
@@ -36,6 +37,14 @@ function rule(id: string): GripRule {
 function detect(id: string, m: DerivedMetrics) {
   return rule(id).detect(m, target, null);
 }
+
+describe("Step 2 grip wording", () => {
+  it("keeps the changeup cue aligned with the demonstrated index and pinky cradle", () => {
+    const cue = rule("changeup-spin").change;
+    expect(cue).toContain("opposite the pinky");
+    expect(cue).toContain("Keep the tip softly curled rather than pointing away.");
+  });
+});
 
 describe("rule shape", () => {
   it("has a version", () => {
@@ -552,5 +561,46 @@ describe("changeup rules", () => {
         metrics({ spinPerMph: null }),
       ),
     ).toBeNull();
+  });
+});
+
+
+describe("checked rule readings", () => {
+  it("exposes a checked reading separately from detect returning null", () => {
+    expect(checkedRuleReading).toBeTypeOf("function");
+    expect(checkedRuleReading(rule("four-seam-axis"), metrics(), target, null)).toEqual({
+      reason: expect.stringContaining("Spin axis reads 12:12"),
+      triggeringMeasurement: "spinDirectionClock",
+    });
+  });
+
+  it("requires the specific target instead of treating an absent range as clean", () => {
+    expect(checkedRuleReading).toBeTypeOf("function");
+    const cases = [
+      ["four-seam-axis", "axisClock"],
+      ["four-seam-efficiency", "efficiencyPercent"],
+      ["four-seam-purchase", "spinPerMph"],
+      ["four-seam-cut", "horizontalBreakInches"],
+      ["four-seam-buried", "verticalBreakInches"],
+      ["two-seam-run", "horizontalBreakInches"],
+      ["changeup-separation", "velocitySeparationMph"],
+    ] as const;
+    for (const [id, key] of cases) {
+      for (const absent of [undefined, {}]) {
+        expect(checkedRuleReading(rule(id), metrics(), { ...target, [key]: absent }, metrics()), id).toBeNull();
+      }
+    }
+  });
+
+  it("requires available readings for guard checks and fastball comparisons", () => {
+    expect(checkedRuleReading).toBeTypeOf("function");
+    for (const id of ["four-seam-efficiency", "four-seam-cut", "four-seam-buried", "two-seam-run", "two-seam-efficiency"]) {
+      expect(checkedRuleReading(rule(id), metrics({ spinDirectionClock: null }), target, null), id).toBeNull();
+    }
+    expect(checkedRuleReading(rule("four-seam-buried"), metrics({ spinEfficiencyPercent: null }), target, null)).toBeNull();
+    for (const id of ["changeup-separation", "changeup-spin"]) {
+      expect(checkedRuleReading(rule(id), metrics(), target, null), id).toBeNull();
+      expect(checkedRuleReading(rule(id), metrics(), target, metrics({ velocityMph: null, spinPerMph: null })), id).toBeNull();
+    }
   });
 });

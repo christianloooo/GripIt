@@ -1,12 +1,7 @@
-# Shared Step 3 and Step 4
+# Shared throw entry and feedback
 
-Imported unchanged from the Step 4 worktree at `c49cdab`. The TypeScript validator
-and deterministic assessment remain the source of truth. Native SwiftUI calls a
-bundled JavaScriptCore entry point, not a second set of coaching rules.
+The TypeScript validator and deterministic rules are the source of truth. Native SwiftUI calls the bundled JavaScriptCore entry point, so feedback works offline and uses the same rules as tests.
 
-Regenerate after changes with `npm run ios:focus`. The generated JavaScript is
-committed so Xcode builds do not require Node. Native tests exercise this exact
-bundle, including actual Step 2 reach constraints.
+Run `npm run ios:focus` after any shared-code change. The generated `focus-engine.js` is committed so Xcode does not require Node. Native tests exercise that exact bundle with Step 2 reach constraints.
 
-The AI server remains in the existing Step 4 worktree. The native client uses
-its unchanged `/api/coach` and `/api/ask` request/response contracts.
+There is no AI chat, provider or generated coaching path. The screenshot review uses bundled readings until an image-reading service is added in a separate change.

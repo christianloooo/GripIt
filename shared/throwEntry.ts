@@ -16,7 +16,7 @@ export interface ThrowRecord {
     horizontalBreakInches: number | null;
     /** Inches, induced vertical break. Positive = ride. */
     verticalBreakInches: number | null;
-    releaseHeightFeet: number;
+    releaseHeightFeet: number | null;
     rapsodoScore: number | null;
   };
   source: "manual" | "sample";
@@ -129,6 +129,7 @@ export function validateThrow(row: ThrowDraft): {
     "release height",
     0,
     10,
+    true,
   );
   const enteredSpinEfficiency = number(
     "spinEfficiencyPercent",
@@ -178,7 +179,7 @@ export function validateThrow(row: ThrowDraft): {
           gyroDegree,
           horizontalBreakInches,
           verticalBreakInches,
-          releaseHeightFeet: releaseHeightFeet!,
+          releaseHeightFeet,
           rapsodoScore,
         },
   };

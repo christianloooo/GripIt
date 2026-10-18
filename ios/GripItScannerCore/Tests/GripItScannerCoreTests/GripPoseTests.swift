@@ -58,8 +58,8 @@ final class GripPoseTests: XCTestCase {
     XCTAssertGreaterThan(weights.max()!, 0.8)
     XCTAssertTrue(weights.enumerated().allSatisfy { loaded.contains($0.offset) || $0.element == 0 })
     for f in pose.fingers where f.finger == .ring || f.finger == .pinky {
-      XCTAssertGreaterThan(f.angles.reduce(0, +), 3, "Support fingers must curl into the side")
-      XCTAssertGreaterThan(f.angles[0], 0.5, "Curl should begin at the knuckle")
+      XCTAssertLessThan(f.angles.reduce(0, +), 3.1, "Support fingers should remain loosely curled")
+      XCTAssertLessThan(abs(f.opposition), 0.121, "Long fingers must not twist like opposing thumbs")
     }
   }
   func testGuidePosesPreserveMeasuredBonesAndConnectedMesh() throws {
@@ -68,6 +68,30 @@ final class GripPoseTests: XCTestCase {
     let ball = try GripBallAsset.load()
     for pitch in PitchGrip.allCases {
       let pose = try GripPoseSolver.solve(profile: profile, pitch: pitch, hand: hand, ball: ball)
+      if pitch == .circleChange {
+        var directions: [SIMD3<Double>] = []
+        for finger: GripFinger in [.index, .pinky] {
+          let normal = simd_normalize(SIMD3<Double>(finger == .index ? 0.97 : -0.97, 0,
+            finger == .index ? 0.25 : -0.25))
+          let target = pose.ballCenter + normal * GripPoseSolver.ballRadius
+          let ids = Set(GripPoseSolver.circleSideIndices(hand: hand, finger: finger)
+            + GripPoseSolver.padIndices(hand: hand, finger: finger)
+            + GripPoseSolver.middleContactIndices(hand: hand, finger: finger))
+          let points = ids.map { pose.vertices[$0] }.sorted {
+            simd_distance_squared($0, target) < simd_distance_squared($1, target)
+          }.prefix(8)
+          let point = points.reduce(SIMD3<Double>.zero,+) / Double(points.count)
+          let offset = point - pose.ballCenter
+          XCTAssertGreaterThan(offset.x * (finger == .index ? 1 : -1), 28,
+            "Index and pinky must cradle opposite side centres")
+          XCTAssertLessThan(abs(offset.y), 10, "Side contact belongs near the ball equator")
+          XCTAssertLessThan(abs(simd_length(offset) - 36.5), 2,
+            "The side fingers must support the surface rather than float beside it")
+          directions.append(simd_normalize(offset))
+        }
+        XCTAssertLessThan(simd_dot(directions[0], directions[1]), -0.85,
+          "The two contact areas must oppose each other across the ball")
+      }
       for finger in pose.fingers {
         let distal = hand.joints.firstIndex { $0.name == finger.finger.jointNames[2] }!
         let tip = hand.joints.firstIndex { $0.name == finger.finger.jointNames[3] }!
@@ -140,7 +164,7 @@ final class GripPoseTests: XCTestCase {
       }
       for finger in pose.fingers where finger.finger != .thumb {
         XCTAssertLessThanOrEqual(abs(finger.opposition), 0.12)
-        XCTAssertLessThanOrEqual(abs(finger.yaw), 0.4)
+        XCTAssertLessThanOrEqual(abs(finger.yaw), pitch == .circleChange && finger.finger == .index ? 0.701 : 0.401)
         XCTAssertLessThanOrEqual(finger.angles[2], finger.angles[1] * 0.85 + 0.120001)
         XCTAssertGreaterThanOrEqual(finger.angles[2], finger.angles[1] * 0.35 - 0.000001)
       }
@@ -318,18 +342,18 @@ final class GripPoseTests: XCTestCase {
     XCTAssertThrowsError(try GripPoseSolver.openHand(profile: profile, flexion: 1))
   }
 
-  func testPinkyTucksBesidePalmWhileStayingClearOfBall() throws {
+  func testPinkyRestsRelaxedBesidePalmWhileStayingClearOfBall() throws {
     let profile = try SampleHandProfiles.averageRight()
     for pitch in [PitchGrip.fourSeam, .twoSeam, .slider] {
       let pose = try GripPoseSolver.solve(profile: profile, pitch: pitch)
       let pinky = try XCTUnwrap(pose.fingers.first { $0.finger == .pinky })
       XCTAssertLessThan(
-        pinky.points[3].y - pinky.points[0].y, 5,
-        "Fold back toward the palm as in the reference photos")
+        pinky.points[3].y - pinky.points[0].y, 30,
+        "Remain beside the ball with a loose curl")
       XCTAssertGreaterThan(
         simd_distance(pinky.points[3], pinky.points[0]), pinky.lengths.reduce(0, +) * 0.45)
-      XCTAssertGreaterThan(pinky.angles.reduce(0, +), 3)
-      XCTAssertLessThan(pinky.angles.reduce(0, +), 3.8)
+      XCTAssertGreaterThan(pinky.angles.reduce(0, +), 2)
+      XCTAssertLessThan(pinky.angles.reduce(0, +), 3.1)
       let hand = try GripHandAsset.load()
       let pinkySkin = hand.vertices.indices.filter { i in
         pinky.finger.jointNames.reduce(0.0) { total, name in

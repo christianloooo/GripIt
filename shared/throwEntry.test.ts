@@ -11,6 +11,17 @@ import {
 } from "./throwEntry";
 
 describe("v1 throw entry boundary", () => {
+  it("accepts screenshot readings without inventing a release height", () => {
+    const row = { ...emptyThrow(), velocityMph: "77.3", totalSpinRpm: "1642",
+      spinDirectionClock: "01:56", spinEfficiencyPercent: "93.8",
+      horizontalBreakInches: "18.6", verticalBreakInches: "13.8" };
+    const result = validateThrow(row);
+    expect(result.errors).toEqual({});
+    expect(result.measurements?.releaseHeightFeet).toBeNull();
+    expect(validateThrow({ ...row, releaseHeightFeet: "0" }).measurements?.releaseHeightFeet).toBe(0);
+    expect(validateThrow({ ...row, releaseHeightFeet: "11" }).errors).toHaveProperty("releaseHeightFeet");
+  });
+
   it("uses decimal clock hours, including 12:30 = 12.5", () => {
     expect(parseClock("12:30")).toBe(12.5);
     expect(parseClock("1:15")).toBe(1.25);
@@ -109,7 +120,7 @@ describe("v1 throw entry boundary", () => {
     ).toHaveProperty("verticalBreakInches");
   });
   it("rejects blanks, non-numbers and likely unit mistakes without changing drafts", () => {
-    expect(Object.keys(validateThrow(emptyThrow()).errors)).toHaveLength(4);
+    expect(Object.keys(validateThrow(emptyThrow()).errors)).toHaveLength(3);
     const row = {
       ...sampleThrowSession().rows[0],
       velocityMph: "900",

@@ -7,7 +7,7 @@ import type {
 } from "../contracts/assessment";
 import { unreachableZones } from "../contracts/zones";
 import type { ThrowRecord } from "../throwEntry";
-import { gripFeedback, type GripFeedback } from "./gripFeedback";
+import { gripFeedback, gripFocusZones, UNSCORED_CONFIDENCE, type GripFeedback } from "./gripFeedback";
 
 export type { AssessInput };
 
@@ -26,18 +26,6 @@ const TOTAL_SPIN_SPREAD_RPM = 200;
 /** Matches the shipped gate: fewer than three throws is not yet a spread. */
 const MIN_THROWS_FOR_CONSISTENCY = 3;
 
-/**
- * `FocusAssessment.confidence` is required by the wire type, and the rule
- * engine does not score confidence: a rule either fires on a reading or it
- * does not. Rather than invent a calibration, both values are lifted from the
- * paths this file already shipped — 0 when there are no throws, and the 0.5 it
- * returned on its own release-drift path. `prototypeAdvice` stays true, which
- * is the honest statement about an uncalibrated number.
- *
- * Phase two drops the field when the structured result is promoted out of
- * `extensions`.
- */
-const UNSCORED_CONFIDENCE = 0.5;
 
 function roundNumber(value: number, decimals = 2): number {
   const factor = 10 ** decimals;
@@ -131,11 +119,8 @@ function detailFrom(feedback: GripFeedback): string {
  * - `extensions.gripFeedback` carries the whole structured result, which
  *   existing decoders ignore. Phase two promotes it to a first-class field.
  *
- * `zones` stays empty. `FocusZone` demands a severity and a confidence per
- * zone and the rule engine produces neither: a rule names the contacts to
- * change, with no colour and no score. Filling those in would be inventing a
- * calibration to tint a 3D model with, so the zones travel in `nextAction`
- * and in `extensions` instead, which is where phase one reads them from.
+ * `zones` carries the winner/fired/checked severity gradient. Confidence
+ * remains the documented, unscored placeholder used by this assessment.
  */
 export function assess(input: AssessInput): FocusAssessment {
   const { pitchId, throws, zones, baseline, handedness } = input;
@@ -168,7 +153,7 @@ export function assess(input: AssessInput): FocusAssessment {
     throwIds: throws.map((t) => t.throwId),
     ruleVersion: feedback.ruleVersion,
     classification,
-    zones: [],
+    zones: gripFocusZones(input, feedback),
     nextAction,
     confidence: feedback.kind === "no-data" ? 0 : UNSCORED_CONFIDENCE,
     unreachableZones: unreachableZones(zones),

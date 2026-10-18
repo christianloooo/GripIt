@@ -59,7 +59,7 @@ public struct ThrowMeasurements: Codable, Sendable, Equatable {
   public let gyroDegree: Double?
   public let horizontalBreakInches: Double?
   public let verticalBreakInches: Double?
-  public let releaseHeightFeet: Double
+  public let releaseHeightFeet: Double?
   public let rapsodoScore: Double?
 
   private enum CodingKeys: String, CodingKey {

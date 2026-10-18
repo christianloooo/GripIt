@@ -25,34 +25,63 @@ extension GripPoseSolver {
     }
     return weights
   }
-  /// Step 2 coaching shading. Values describe intended effort, not a force
-  /// measurement or a Step 4 diagnostic severity. Wrist guidance is excluded.
-  public static func pressureShadingWeights(hand: GripHandAsset, pose: GripPose) -> [Double] {
+  /// The demo effort map covers every instructed surface, including support
+  /// and wrist stabilization. Actual compression retains its contact-only mask.
+  public static func pressureShadingWeights(
+    hand: GripHandAsset, pose: GripPose, plan suppliedPlan: GripPlan? = nil
+  ) -> [Double] {
     var weights = Array(repeating: 0.0, count: pose.vertices.count)
-    for zone in pose.pitch.zoneTemplates {
-      guard let f = zone.zoneId.finger, let pressure = zone.pressure,
-        zone.placement?.surface == .pad,
-        !(pose.pitch == .circleChange && f == .index)
-      else { continue }
-      let contact = contactIndices(hand: hand, finger: f, pitch: pose.pitch).filter {
-        abs(simd_distance(pose.vertices[$0], pose.ballCenter) - ballRadius) < 2
-      }
-      guard !contact.isEmpty else { continue }
-      let samples = stride(from: 0, to: contact.count, by: max(1, contact.count / 40)).map {
-        pose.vertices[contact[$0]]
-      }
-      let names = Array(f.jointNames[(wrapsMiddle(f, pitch: pose.pitch) ? 1 : 2)...])
-      let bones = names.compactMap { name in hand.joints.firstIndex { $0.name == name } }
-      for i in pose.vertices.indices {
-        let influence = bones.reduce(0.0) { $0 + hand.weights[i][$1] }
-        guard influence > 0.25 else { continue }
-        let distance = samples.map { simd_distance(pose.vertices[i], $0) }.min()!
-        let t = min(1, max(0, (influence - 0.25) / 0.5))
-        // The contact interface is mostly occluded. Wrap its coaching color
-        // softly around the same finger section; this is effort guidance,
-        // distinct from the exact palmar contact/compression mask.
-        weights[i] = max(
-          weights[i], pressureAmount(pressure) * exp(-pow(distance / 22, 2)) * t * t * (3 - 2 * t))
+    let plan = suppliedPlan ?? GripPlan(pose: pose)
+    let surface = GripZoneSurface(pose: pose, gripPlan: plan, hand: hand)
+    func smooth(_ value: Double) -> Double {
+      let t = min(1, max(0, value))
+      return t * t * (3 - 2 * t)
+    }
+    for zone in plan.zones {
+      guard let highlight = zone.highlight else { continue }
+      let amount = pressureAmount(highlight.intensity)
+      guard amount > 0 else { continue }
+      switch highlight.region {
+      case .wrist:
+        // A circumferential mask: back, palm, thumb side, and pinky side all
+        // show the same stabilization instruction, fading only into the hand.
+        for i in pose.vertices.indices {
+          weights[i] = max(weights[i], amount * (1 - smooth(hand.vertices[i][1] / 18)))
+        }
+      case .palm:
+        let zi = GripZoneSurface.zones.firstIndex(of: .palm)!
+        for i in pose.vertices.indices {
+          weights[i] = max(weights[i], amount * surface.weights[i][zi])
+        }
+      case .fingerPad, .fingerSide, .curledFinger:
+        guard let f = zone.zoneId.finger else { continue }
+        let wrapped = highlight.region != .fingerPad || wrapsMiddle(f, pitch: pose.pitch)
+        let start = highlight.region == .curledFinger ? 0 : wrapped ? 1 : 2
+        let bones = f.jointNames[start...].compactMap { name in
+          hand.joints.firstIndex { $0.name == name }
+        }
+        let candidates =
+          highlight.region == .fingerPad
+          ? contactIndices(hand: hand, finger: f, pitch: pose.pitch)
+          : hand.vertices.indices.filter { i in bones.reduce(0.0) { $0 + hand.weights[i][$1] } > 0.6
+          }
+        // Anchor shading near the intended interaction, but never discard an
+        // instructed region because a contact or placement category differs.
+        let nearest = candidates.sorted {
+          abs(simd_distance(pose.vertices[$0], pose.ballCenter) - ballRadius)
+            < abs(simd_distance(pose.vertices[$1], pose.ballCenter) - ballRadius)
+        }.prefix(80)
+        let samples = nearest.map { pose.vertices[$0] }
+        guard !samples.isEmpty else { continue }
+        for i in pose.vertices.indices {
+          let influence = bones.reduce(0.0) { $0 + hand.weights[i][$1] }
+          guard influence > 0.25 else { continue }
+          let distance = samples.map { simd_distance(pose.vertices[i], $0) }.min()!
+          weights[i] = max(
+            weights[i],
+            amount * exp(-pow(distance / (wrapped ? 30 : 22), 2))
+              * smooth((influence - 0.25) / 0.5))
+        }
       }
     }
     // Diffuse on connected skin, so the colored region has a soft boundary and

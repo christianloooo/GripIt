@@ -17,7 +17,9 @@ struct GripItApp: App {
               .flatMap { Double($0.dropFirst(10)) } ?? 0,
             initialWireframe: ProcessInfo.processInfo.arguments.contains("--wireframe"))
         } else if ProcessInfo.processInfo.arguments.contains("--grip-preview"),
-          let sample = try? SampleHandProfiles.averageRight()
+          let sample = SavedHandProfile.latest()
+            ?? (ProcessInfo.processInfo.arguments.contains("--sample-hand-preview")
+              ? try? SampleHandProfiles.averageRight() : nil)
         {
           let profile =
             ProcessInfo.processInfo.arguments.contains("--left")
@@ -33,7 +35,9 @@ struct GripItApp: App {
           GripViewerView(
             profile: profile,
             initialPitch: argument.flatMap { PitchGrip(rawValue: String($0.dropFirst(8))) }
-              ?? .fourSeam, initialCamera: camera)
+              ?? .fourSeam, initialCamera: camera,
+            initialZone: ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--zone=") }
+              .flatMap { GripZoneID(rawValue: String($0.dropFirst(7))) })
         } else {
           ScannerView()
         }

@@ -4,6 +4,56 @@ import XCTest
 @testable import GripItScannerCore
 
 final class TrainingFlowTests: XCTestCase {
+
+  func testBundledEngineNamesTheRapsodoThumbChange() throws {
+    var draft = ThrowSessionDraft()
+    draft.rows[0].velocityMph = "77.3"
+    draft.rows[0].totalSpinRpm = "1642"
+    draft.rows[0].spinDirectionClock = "1:56"
+    draft.rows[0].spinEfficiencyPercent = "93.8"
+    draft.rows[0].horizontalBreakInches = "18.6"
+    draft.rows[0].verticalBreakInches = "13.8"
+    let records = try NativeFocusEngine.records(draft, pitch: .fourSeam, profileId: "p")
+    let result = try NativeFocusEngine.assess(pitch: .fourSeam, records: records,
+      zones: PitchGrip.fourSeam.zoneTemplates, gripPlanId: "p")
+    XCTAssertNil(records[0].measurements.releaseHeightFeet)
+    XCTAssertEqual(result.ruleVersion, "demo-rules-1")
+    XCTAssertEqual(result.nextAction.zoneId, .thumbPad)
+    guard case .object(let feedback) = result.extensions["gripFeedback"] else {
+      return XCTFail("Bundled engine must return its structured feedback")
+    }
+    XCTAssertEqual(feedback["ruleId"], .string("four-seam-axis"))
+    XCTAssertFalse(result.zones.contains { $0.zoneId == .wrist })
+  }
+
+  func testNativeBoundaryPassesFastballBaselineAndHandedness() throws {
+    var fastball = ThrowSessionDraft.sample()
+    fastball.rows = [fastball.rows[0]]
+    fastball.rows[0].velocityMph = "90"
+    fastball.rows[0].totalSpinRpm = "2200"
+    var changeup = fastball
+    changeup.rows[0].velocityMph = "86"
+    changeup.rows[0].totalSpinRpm = "1800"
+    let baseline = try NativeFocusEngine.records(fastball, pitch: .fourSeam, profileId: "p")
+    let records = try NativeFocusEngine.records(changeup, pitch: .circleChange, profileId: "p")
+    let result = try NativeFocusEngine.assess(pitch: .circleChange, records: records,
+      zones: PitchGrip.circleChange.zoneTemplates, gripPlanId: "p", baseline: baseline,
+      handedness: .left)
+    XCTAssertEqual(result.nextAction.zoneId, .palm)
+    guard case .object(let feedback) = result.extensions["gripFeedback"] else {
+      return XCTFail("Missing feedback")
+    }
+    XCTAssertEqual(feedback["ruleId"], .string("changeup-separation"))
+
+    fastball.rows[0].spinDirectionClock = "10:30"
+    fastball.rows[0].spinEfficiencyPercent = "85"
+    fastball.rows[0].horizontalBreakInches = "-15"
+    let lefty = try NativeFocusEngine.records(fastball, pitch: .twoSeam, profileId: "p")
+    let mirrored = try NativeFocusEngine.assess(pitch: .twoSeam, records: lefty,
+      zones: PitchGrip.twoSeam.zoneTemplates, gripPlanId: "p", handedness: .left)
+    XCTAssertEqual(mirrored.classification, "not-grip")
+  }
+
   func testEntryValidationUsesExistingRulesAndClockFormat() throws {
     var row = ThrowSessionDraft.sample().rows[0]
     let valid = try NativeFocusEngine.validate(row)
@@ -57,7 +107,7 @@ final class TrainingFlowTests: XCTestCase {
     XCTAssertEqual(both.gyroDegree, -18.2)
   }
 
-  func testMayaExampleAndUntintedZones() throws {
+  func testMayaExampleUsesGripEngineWithoutWristAdvice() throws {
     var draft = ThrowSessionDraft.sample()
     draft.rows = [draft.rows[0]]
     draft.rows[0].spinEfficiencyPercent = "72"
@@ -67,10 +117,11 @@ final class TrainingFlowTests: XCTestCase {
       pitch: .fourSeam, records: records,
       zones: PitchGrip.fourSeam.zoneTemplates, gripPlanId: "my-plan")
     XCTAssertEqual(assessment.gripPlanId, "my-plan")
-    XCTAssertEqual(assessment.nextAction.zoneId, .wrist)
-    XCTAssertEqual(assessment.confidence, 0.55)
-    XCTAssertEqual(assessment.zones.first { $0.zoneId == .wrist }?.severity, .red)
-    XCTAssertEqual(assessment.zones.first { $0.zoneId == .indexPad }?.severity, .yellow)
+    XCTAssertEqual(assessment.nextAction.zoneId, .indexPad)
+    XCTAssertEqual(assessment.confidence, 0.5)
+    XCTAssertNil(assessment.zones.first { $0.zoneId == .wrist })
+    XCTAssertEqual(assessment.zones.first { $0.zoneId == .indexPad }?.severity, .red)
+    XCTAssertEqual(assessment.ruleVersion, "demo-rules-1")
     XCTAssertNil(assessment.severityMap[.pinky])
     XCTAssertEqual(assessment.throwIds, records.map(\.throwId))
     XCTAssertTrue(assessment.prototypeAdvice)
@@ -84,7 +135,8 @@ final class TrainingFlowTests: XCTestCase {
     let result = try NativeFocusEngine.assess(
       pitch: .fourSeam, records: records, zones: zones, gripPlanId: "p")
     XCTAssertTrue(result.zones.isEmpty)
-    XCTAssertNil(result.nextAction.zoneId)
+    XCTAssertNotNil(result.nextAction.zoneId)
+    XCTAssertTrue(result.nextAction.summary.contains("does not fit your hand"))
     XCTAssertEqual(Set(result.unreachableZones), Set(zones.map(\.zoneId)))
   }
 
@@ -98,7 +150,7 @@ final class TrainingFlowTests: XCTestCase {
       zones: PitchGrip.fourSeam.zoneTemplates, gripPlanId: "p")
     XCTAssertEqual(result.classification, "not-grip")
     XCTAssertTrue(result.zones.isEmpty)
-    XCTAssertEqual(result.nextAction.summary, "Steady your release point")
+    XCTAssertTrue(result.nextAction.summary.contains("arm-slot problem"))
     XCTAssertNotNil(result.consistency)
   }
 
@@ -108,7 +160,7 @@ final class TrainingFlowTests: XCTestCase {
       pitch: .circleChange, records: records,
       zones: PitchGrip.circleChange.zoneTemplates, gripPlanId: "p")
     XCTAssertTrue(result.zones.isEmpty)
-    XCTAssertEqual(result.nextAction.summary, "Compare against your fastball")
+    XCTAssertTrue(result.nextAction.summary.contains("own fastball"))
     XCTAssertThrowsError(
       try NativeFocusEngine.assess(
         pitch: .slider, records: records,
