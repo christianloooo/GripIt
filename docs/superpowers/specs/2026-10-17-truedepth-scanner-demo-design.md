@@ -35,7 +35,7 @@ The WebView code may remain in the repository for history, but it is not started
 1. Discover the front `builtInTrueDepthCamera`.
 2. Configure video and depth outputs on one `AVCaptureSession`.
 3. Synchronize frames with `AVCaptureDataOutputSynchronizer`.
-4. Send the unmirrored RGB buffer to MediaPipe Hand Landmarker in live-stream mode.
+4. Physically rotate the unmirrored RGB buffer upright and run MediaPipe Hand Landmarker synchronously in video mode on the serial processing queue. Pass `.up` to MediaPipe so its output axes match the explicitly rotated pixels. Keep the original synchronized depth data paired with the result.
 5. Keep the visible selfie preview mirrored without changing analysis coordinates.
 6. Map all 21 landmark pixels into the aligned depth map.
 7. Sample a small median depth neighborhood for every landmark.
@@ -58,9 +58,9 @@ The camera preview occupies most of the screen. It contains:
 - A compact skeletal coverage map in the lower corner.
 - A small diagnostics row showing valid depth landmarks and distance.
 
-The required sequence is palm, thumb side, back, then pinky side. Progress updates only from accepted frames. The instruction explains whether to move closer, move farther away, center the full hand, flatten the hand, rotate left, rotate right, or hold still.
+The required sequence is palm, thumb side, back, then pinky side. Overall view progress updates only from complete, stable accepted frames. The instruction explains whether to move closer, move farther away, center the full hand, flatten the hand, rotate left, rotate right, or hold still.
 
-The skeletal coverage map starts gray. A joint becomes partially filled while valid samples accumulate and green after it meets the required count across the necessary views. A connecting segment fills only when both endpoints have sufficient valid depth. This coverage is diagnostic and does not weaken the existing four-view completion requirements.
+The skeletal coverage map starts gray for each new view. A joint becomes partially filled while valid depth samples accumulate and green after eight valid samples in that view. A connecting segment fills only when both endpoints have sufficient valid depth. These individual samples may come from a frame missing depth elsewhere; they are labeled as depth samples and do not advance overall view progress. Completing the scan still requires full 21-joint observations in all four views.
 
 ## Results
 

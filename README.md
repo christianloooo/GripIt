@@ -1,12 +1,14 @@
 # GripIt
 
-A browser-based grip studio with automatic hand measurement from a baseball reference, a rigged 3D hand, and a regulation-scale textured baseball.
+A native TrueDepth hand-scanner demo on branch `feature/truedepth-scanner-demo`. It shows the live camera, guides four hand views, displays skeletal depth coverage, and exports hand measurements.
 
 ## iOS app
 
-The `feat/ios-swift-app` branch includes a SwiftUI iPhone/iPad app with the studio bundled in WebKit, camera authorization, and native JSON sharing. Run `npm run ios:prepare`, then `npm run ios:open`. Select your signing team and device in Xcode. See [iOS setup and architecture](ios/README.md).
+Open `ios/GripIt.xcodeproj` in full Xcode. Select your signing team and connected iPhone, then press Run. Use **Load sample profile** in Simulator. Follow [the iPhone installation guide](ios/README.md) for team setup and [the physical-device checklist](docs/testing/truedepth-device-checklist.md) for measurement validation.
 
-## Run
+The app launches the native SwiftUI scanner. Xcode resolves MediaPipe and the local scanner package automatically. A baseball reference and an npm build are not needed for this demo.
+
+## Existing web studio reference
 
 Requires Node.js 22.12+ or Node.js 24.
 
