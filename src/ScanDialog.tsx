@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, Check, LoaderCircle, Upload, X, Hand } from "lucide-react";
+import { recordFailure } from "./failureLog";
 import { scanVideo } from "./scan";
 import { FINGERS, LANDMARK_CHAINS } from "./grip";
 import type { Measurements } from "./grip";
@@ -9,7 +10,11 @@ export function ScanDialog({
   onComplete,
 }: {
   onClose: () => void;
-  onComplete: (m: Measurements, left: boolean) => void;
+  onComplete: (
+    m: Measurements,
+    left: boolean,
+    signal: AbortSignal,
+  ) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"idle" | "camera" | "file">("idle");
   const [busy, setBusy] = useState(false);
@@ -148,6 +153,7 @@ export function ScanDialog({
       }
       setMode("camera");
     } catch (e) {
+      recordFailure("scan", e, { source: "camera" });
       setError(
         e instanceof Error
           ? e.message
@@ -207,10 +213,15 @@ export function ScanDialog({
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = null;
     } catch (e) {
-      if (!controller.current.signal.aborted)
+      if (!controller.current.signal.aborted) {
+        recordFailure("scan", e, {
+          source: mode,
+          diagnostics: e instanceof Error ? e.cause : undefined,
+        });
         setError(
           e instanceof Error ? e.message : "Scan failed. Please try again.",
         );
+      }
     } finally {
       if (!controller.current.signal.aborted) setBusy(false);
     }
@@ -259,7 +270,7 @@ export function ScanDialog({
             <span>Your open hand + a baseball, side by side.</span>
           </div>
         )}
-        {busy && (
+        {busy && !result && (
           <div className="scan-progress">
             <LoaderCircle className="spin" />
             {feedback.progress === 0
@@ -268,7 +279,7 @@ export function ScanDialog({
           </div>
         )}
       </div>
-      {busy && (
+      {busy && !result && (
         <p className="scan-feedback" role="status">
           {feedback.message}
         </p>
@@ -384,13 +395,34 @@ export function ScanDialog({
           >
             Try another scan
           </button>
+          {error && (
+            <p className="error" role="alert">
+              {error} Your previous hand is unchanged. Details are saved in the
+              failure log.
+            </p>
+          )}
           <button
             className="primary wide"
-            onClick={() =>
-              onComplete(result.measurements, selectedHand === "Left")
-            }
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                await onComplete(
+                  result.measurements,
+                  selectedHand === "Left",
+                  controller.current.signal,
+                );
+              } catch (e) {
+                setError(
+                  e instanceof Error ? e.message : "Model validation failed.",
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
           >
-            Use my hand
+            {busy ? "Checking all grip models…" : "Use my hand"}
           </button>
         </div>
       )}
