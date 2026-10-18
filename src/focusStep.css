@@ -1,0 +1,32 @@
+.focus-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+  gap: 30px;
+  align-items: start;
+  padding: 30px 0 max(60px, env(safe-area-inset-bottom));
+}
+.focus-viewer {
+  position: sticky;
+  top: 30px;
+  border: 1px solid #dce3d6;
+  border-radius: 16px;
+  background: white;
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.focus-viewer-placeholder {
+  color: #9aa79b;
+  font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .focus-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .focus-viewer {
+    position: static;
+    min-height: 300px;
+  }
+}

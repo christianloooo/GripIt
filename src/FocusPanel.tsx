@@ -16,7 +16,19 @@ const ZONE_LABELS: Record<ZoneId, string> = {
 
 const SEVERITY_ORDER = { red: 0, yellow: 1, green: 2 } as const;
 
-export function FocusPanel({ assessment }: { assessment: FocusAssessment }) {
+export interface FocusPanelProps {
+  assessment: FocusAssessment;
+  /** Zone currently highlighted on the model, if any. */
+  selectedZone?: ZoneId | null;
+  /** Raised when a row is chosen, so the model can highlight the same zone. */
+  onZoneSelect?: (zoneId: ZoneId) => void;
+}
+
+export function FocusPanel({
+  assessment,
+  selectedZone,
+  onZoneSelect,
+}: FocusPanelProps) {
   // The deterministic sentence renders immediately and the rewrite swaps in
   // when it arrives. A spinner here would put the model's latency in front of
   // the player for no benefit: the first sentence is already correct.
@@ -61,18 +73,30 @@ export function FocusPanel({ assessment }: { assessment: FocusAssessment }) {
 
       {zones.length > 0 && (
         <div className="focus-zones">
-          {zones.map((zone) => (
-            <div className="focus-zone" key={zone.zoneId}>
-              <span className={`focus-dot ${zone.severity}`} aria-hidden="true" />
-              <div>
-                <strong>
-                  {ZONE_LABELS[zone.zoneId]}
-                  <span className="entry-sr-only"> — {zone.severity}</span>
-                </strong>
-                <p>{zone.reason}</p>
-              </div>
-            </div>
-          ))}
+          {zones.map((zone) => {
+            const selected = selectedZone === zone.zoneId;
+            return (
+              <button
+                type="button"
+                className={`focus-zone${selected ? " selected" : ""}`}
+                key={zone.zoneId}
+                aria-pressed={selected}
+                onClick={() => onZoneSelect?.(zone.zoneId)}
+              >
+                <span
+                  className={`focus-dot ${zone.severity}`}
+                  aria-hidden="true"
+                />
+                <span>
+                  <strong>
+                    {ZONE_LABELS[zone.zoneId]}
+                    <span className="entry-sr-only"> — {zone.severity}</span>
+                  </strong>
+                  <span className="focus-reason">{zone.reason}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 

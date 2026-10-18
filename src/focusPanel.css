@@ -41,8 +41,26 @@
   grid-template-columns: 10px 1fr;
   gap: 14px;
   align-items: start;
-  padding: 14px 0;
+  padding: 14px 10px;
+  margin: 0 -10px;
   border-top: 1px solid #eef1ea;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: calc(100% + 20px);
+}
+.focus-zone:hover {
+  background: #f7f9f4;
+}
+.focus-zone.selected {
+  background: #f0f3ea;
+}
+.focus-zone:focus-visible {
+  outline: 2px solid #5b713f;
+  outline-offset: -2px;
 }
 .focus-zone:first-child {
   border-top: none;
@@ -66,7 +84,8 @@
   font-size: 15px;
   font-weight: 550;
 }
-.focus-zone p {
+.focus-reason {
+  display: block;
   color: #6b786c;
   font-size: 13px;
   line-height: 1.6;
