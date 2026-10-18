@@ -32,12 +32,15 @@ export const GRIP_RULE_VERSION = "demo-rules-1";
 // How much deviation counts as one unit of badness. Several rules fire at
 // once and only the worst is shown, so units must be comparable. These are
 // judgement calls, not research: an hour of axis is treated as about as bad as
-// 5 efficiency points, 2 spin per mph, or 4 inches of break.
+// 5 efficiency points, 2 spin per mph, 4 inches of break, or 2 mph of missing
+// changeup separation. None of these decides whether a rule fires, only how
+// two firing rules rank against each other, so none of them is a target.
 const SCALE = {
   axisHours: 1,
   efficiencyPoints: 5,
   spinPerMph: 2,
   breakInches: 4,
+  separationMph: 2,
 } as const;
 
 /** How far a value sits outside a range. 0 when inside, or value/range absent. */
@@ -93,6 +96,7 @@ function deviation(
 const FOUR_SEAM = ["four-seam"] as const;
 const TWO_SEAM = ["two-seam"] as const;
 const SLIDER = ["slider"] as const;
+const CHANGEUP = ["changeup"] as const;
 
 // Only the shortfall counts as weak run. A lefty's range is mirrored, so the
 // weak side is found from the range itself: a range centred above zero is
@@ -117,6 +121,8 @@ const RAPSODO_SOURCE =
 const PRP_SOURCE = "PRP Baseball published pitch-grading cues";
 const RAPSODO_SLIDER_SOURCE =
   "Rapsodo curveball/slider/changeup article: gyro sliders under 10 percent, topspin and sidespin sliders near 35 percent with 65 to 75 gyro degrees";
+const CHANGEUP_BASELINE_SOURCE =
+  "A changeup has no absolute target, so both rules compare it to the same pitcher's own fastball in the same session";
 
 export const GRIP_RULES: readonly GripRule[] = [
   {
@@ -319,5 +325,67 @@ export const GRIP_RULES: readonly GripRule[] = [
     zones: ["index-pad"],
     expect: "Spin efficiency drops and gyro degree rises.",
     source: `${RAPSODO_SLIDER_SOURCE} (efficiency ceiling); ${PRP_SOURCE}; handInstructions.md (middle pad on the pinky-side seam, index pad resting on the adjacent smooth leather).`,
+  },
+  // Two changeup rules, not the four the design table lists.
+  //
+  // "No fade" is cut. It needs to know whether the changeup is breaking
+  // arm-side, and targetFor("changeup") carries no horizontalBreakInches
+  // range to measure that against. detect() is not given handedness, and the
+  // changeup target is identical for both hands because it has nothing to
+  // mirror, so the arguments carry no way to tell arm-side from glove-side.
+  // The only ways to get it are to invent a break target or to assume a sign,
+  // and a sign assumption passes every right-handed test while inverting the
+  // advice for every left-hander. Restore this row when a sourced changeup
+  // break range exists; it will then mirror like the two-seam one does.
+  //
+  // "Loop squeezed rigid" is cut. Its trigger is grip pressure, which ball
+  // flight and a static hand scan cannot observe. Same class as the cut
+  // slider "fingers too far apart" row.
+  {
+    id: "changeup-separation",
+    pitchIds: CHANGEUP,
+    detect(m, t, baseline) {
+      if (!baseline) return null;
+      const velocity = m.velocityMph;
+      const fastball = baseline.velocityMph;
+      if (velocity === null || fastball === null) return null;
+      // A gap, not a signed measurement, so handedness cannot touch it.
+      const separation = Math.round((fastball - velocity) * 10) / 10;
+      return deviation(
+        `Changeup velocity reads ${velocity} mph, ${separation} off the fastball's ${fastball}. It is too close to read as a different pitch.`,
+        distanceOutside(separation, t.velocitySeparationMph),
+        SCALE.separationMph,
+      );
+    },
+    change:
+      "Let the ball settle comfortably into the hand while maintaining middle- and ring-finger contact.",
+    zones: ["palm"],
+    expect: "Velocity drops.",
+    source: `${CHANGEUP_BASELINE_SOURCE}. Separation floor from targets.ts, where it is recorded as a coaching convention rather than a measured target; ${PRP_SOURCE}; handInstructions.md (let the ball settle comfortably into the hand while maintaining middle- and ring-finger contact).`,
+  },
+  {
+    id: "changeup-spin",
+    pitchIds: CHANGEUP,
+    // No target argument is read: a changeup has no absolute spin target.
+    detect(m, _t, baseline) {
+      if (!baseline) return null;
+      const spm = m.spinPerMph;
+      const fastball = baseline.spinPerMph;
+      if (spm === null || fastball === null) return null;
+      // The comparison point is the pitcher's own fastball, not a number of
+      // ours. Not guarded against changeup-separation: a changeup still at
+      // fastball velocity has a deflated spin per mph, so a missing
+      // separation can only hide this symptom, never manufacture it.
+      return deviation(
+        `Spin per mph reads ${spm}, above the fastball's ${fastball}. The changeup is still spinning like a fastball.`,
+        distanceOutside(spm, { max: fastball }),
+        SCALE.spinPerMph,
+      );
+    },
+    change:
+      "Curl the index finger around the thumb-side surface rather than placing it over the top.",
+    zones: ["index-pad"],
+    expect: "Spin drops.",
+    source: `${CHANGEUP_BASELINE_SOURCE}, so the comparison point is the baseline's own spin per mph and no threshold is written here; ${PRP_SOURCE}; handInstructions.md (curl the index around the thumb-side surface rather than placing it over the top).`,
   },
 ];

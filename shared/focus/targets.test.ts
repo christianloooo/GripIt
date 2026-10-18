@@ -51,6 +51,23 @@ describe("PITCH_TARGETS", () => {
       expect(rangesOf(targetFor("changeup", hand)!)).toEqual([]);
     }
   });
+
+  it("gives the changeup a velocity separation floor of 8 mph", () => {
+    const separation = PITCH_TARGETS["changeup"].velocitySeparationMph;
+    expect(separation).toEqual({ min: 8 });
+  });
+
+  it("carries the separation only on the changeup", () => {
+    for (const id of PITCH_IDS) {
+      if (id === "changeup") continue;
+      expect(PITCH_TARGETS[id].velocitySeparationMph).toBeUndefined();
+    }
+  });
+
+  it("says in the changeup source where the 8 mph comes from", () => {
+    expect(PITCH_TARGETS["changeup"].source).toMatch(/8/);
+    expect(PITCH_TARGETS["changeup"].source).toMatch(/convention/i);
+  });
 });
 
 describe("targetFor", () => {
@@ -95,6 +112,14 @@ describe("targetFor", () => {
     const left = targetFor("two-seam", "left")!.horizontalBreakInches!;
     expect(left.min).toBe(-right.max!);
     expect(left.max).toBe(-right.min!);
+  });
+
+  it("never mirrors the velocity separation, which is a difference not a direction", () => {
+    const right = targetFor("changeup", "right")!.velocitySeparationMph!;
+    const left = targetFor("changeup", "left")!.velocitySeparationMph!;
+    expect(left).toEqual(right);
+    expect(left.min).toBeGreaterThan(0);
+    expect(left.max).toBeUndefined();
   });
 
   it("leaves efficiency, vertical break and spin per mph unchanged", () => {

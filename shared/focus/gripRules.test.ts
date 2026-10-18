@@ -352,3 +352,156 @@ describe("slider rules", () => {
     }
   });
 });
+
+describe("changeup rules", () => {
+  // A changeup has no absolute target. Every reading below is judged against
+  // the same pitcher's own fastball in the same session.
+  function changeup(overrides: Partial<DerivedMetrics> = {}): DerivedMetrics {
+    return metrics({
+      velocityMph: 78,
+      totalSpinRpm: 1700,
+      spinEfficiencyPercent: 90,
+      spinPerMph: 21.8,
+      spinDirectionClock: 1.5,
+      horizontalBreakInches: 14,
+      verticalBreakInches: 8,
+      ...overrides,
+    });
+  }
+  // The pitcher's own fastball: 90 mph, 2200 rpm, 24.4 spin per mph.
+  const fastball = metrics();
+  const changeupRight = targetFor("changeup", "right")!;
+  const changeupLeft = targetFor("changeup", "left")!;
+
+  function detectChangeup(
+    id: string,
+    m: DerivedMetrics,
+    baseline: DerivedMetrics | null = fastball,
+    t = changeupRight,
+  ) {
+    return rule(id).detect(m, t, baseline);
+  }
+
+  const changeupRules = GRIP_RULES.filter((r) =>
+    r.pitchIds.includes("changeup"),
+  );
+  // Fade needs a break direction the changeup target does not carry, and a
+  // squeezed loop cannot be seen from ball flight. Both are cut, so two rows.
+  const CHANGEUP_IDS = ["changeup-separation", "changeup-spin"];
+
+  it("has exactly the separation and spin rules", () => {
+    expect(changeupRules.map((r) => r.id)).toEqual(CHANGEUP_IDS);
+  });
+
+  it("is silent on every changeup rule for an on-target changeup", () => {
+    for (const id of CHANGEUP_IDS) expect(detectChangeup(id, changeup())).toBeNull();
+  });
+
+  it("names only the changeup's own contacts, never the wrist", () => {
+    // Per handInstructions the changeup's drivers are middle and ring, not
+    // the index-middle pair, and the index-thumb loop sits off the top.
+    const CHANGEUP_ZONES = [
+      "middle-pad",
+      "ring-side",
+      "index-pad",
+      "thumb-pad",
+      "palm",
+      "pinky",
+    ];
+    for (const r of changeupRules) {
+      expect(r.pitchIds).toEqual(["changeup"]);
+      expect(r.zones).not.toContain("wrist");
+      for (const zone of r.zones) {
+        expect(isZoneId(zone)).toBe(true);
+        expect(CHANGEUP_ZONES).toContain(zone);
+      }
+    }
+    expect(rule("changeup-separation").zones).toEqual(["palm"]);
+    expect(rule("changeup-spin").zones).toEqual(["index-pad"]);
+  });
+
+  it("every changeup rule needs a baseline and is silent without one", () => {
+    for (const id of CHANGEUP_IDS) {
+      expect(detectChangeup(id, changeup({ velocityMph: 88, spinPerMph: 30 }), null))
+        .toBeNull();
+    }
+  });
+
+  it("separation: fires when the changeup is under 8 mph off the fastball", () => {
+    const d = detectChangeup("changeup-separation", changeup({ velocityMph: 86 }))!;
+    expect(d).not.toBeNull();
+    expect(d.summary).toContain("4");
+  });
+
+  it("separation: is silent when the separation is comfortably over", () => {
+    expect(detectChangeup("changeup-separation", changeup({ velocityMph: 76 })))
+      .toBeNull();
+  });
+
+  it("separation: is silent at exactly 8 mph, as every other rule is at its bound", () => {
+    expect(detectChangeup("changeup-separation", changeup({ velocityMph: 82 })))
+      .toBeNull();
+    // One tenth inside the bound does fire, so the boundary is the only quiet
+    // point, matching how distanceOutside treats the slider ceiling at 35.
+    expect(detectChangeup("changeup-separation", changeup({ velocityMph: 82.1 })))
+      .not.toBeNull();
+  });
+
+  it("separation: grows as the changeup creeps toward the fastball", () => {
+    const near = detectChangeup("changeup-separation", changeup({ velocityMph: 84 }))!;
+    const far = detectChangeup("changeup-separation", changeup({ velocityMph: 90 }))!;
+    expect(far.magnitude).toBeGreaterThan(near.magnitude);
+  });
+
+  it("separation: is silent when either velocity is missing", () => {
+    expect(detectChangeup("changeup-separation", changeup({ velocityMph: null })))
+      .toBeNull();
+    expect(
+      detectChangeup(
+        "changeup-separation",
+        changeup({ velocityMph: 88 }),
+        metrics({ velocityMph: null }),
+      ),
+    ).toBeNull();
+  });
+
+  it("separation: reads identically for a left-handed pitcher", () => {
+    // The 8 mph is a difference, not a direction, so mirroring must not touch
+    // it. A mirrored threshold would quietly change the verdict here.
+    const m = changeup({ velocityMph: 86 });
+    const right = detectChangeup("changeup-separation", m, fastball, changeupRight)!;
+    const left = detectChangeup("changeup-separation", m, fastball, changeupLeft)!;
+    expect(left).toEqual(right);
+    expect(left.magnitude).toBeGreaterThan(0);
+    // And an on-target changeup stays quiet for a lefty too.
+    expect(
+      detectChangeup("changeup-separation", changeup(), fastball, changeupLeft),
+    ).toBeNull();
+  });
+
+  it("spin: fires when spin per mph sits above the pitcher's own fastball", () => {
+    const d = detectChangeup("changeup-spin", changeup({ spinPerMph: 26.4 }))!;
+    expect(d).not.toBeNull();
+    expect(d.summary).toContain("26.4");
+    expect(d.magnitude).toBeCloseTo(1, 5);
+  });
+
+  it("spin: is silent at or below the fastball's spin per mph", () => {
+    expect(detectChangeup("changeup-spin", changeup({ spinPerMph: 24.4 })))
+      .toBeNull();
+    expect(detectChangeup("changeup-spin", changeup({ spinPerMph: 20 })))
+      .toBeNull();
+  });
+
+  it("spin: is silent when either spin per mph is missing", () => {
+    expect(detectChangeup("changeup-spin", changeup({ spinPerMph: null })))
+      .toBeNull();
+    expect(
+      detectChangeup(
+        "changeup-spin",
+        changeup({ spinPerMph: 30 }),
+        metrics({ spinPerMph: null }),
+      ),
+    ).toBeNull();
+  });
+});

@@ -18,6 +18,9 @@ export interface PitchTarget {
   horizontalBreakInches?: Range;
   verticalBreakInches?: Range;
   spinPerMph?: Range;
+  // How far below the pitcher's own fastball this pitch should sit, in mph.
+  // A difference, not a signed measurement, so it is never mirrored.
+  velocitySeparationMph?: Range;
   source: string;
 }
 
@@ -55,10 +58,13 @@ export const PITCH_TARGETS: Readonly<Record<string, PitchTarget>> = {
   },
   changeup: {
     pitchId: "changeup",
-    // Deliberately empty. A changeup is judged only against the same
-    // pitcher's own fastball, which gripRules.ts handles with a baseline.
+    // No absolute ranges on purpose. A changeup is judged only against the
+    // same pitcher's own fastball, which gripRules.ts handles with a
+    // baseline. The one number here is a gap from that fastball, not a
+    // reading the pitch should hit.
+    velocitySeparationMph: { min: 8 },
     source:
-      "Rapsodo curveball/slider/changeup article: its own changeup examples run 71.6 to 100 percent efficiency, so no single efficiency target is defensible.",
+      "Rapsodo curveball/slider/changeup article: its own changeup examples run 71.6 to 100 percent efficiency, so no single efficiency target is defensible. The 8 mph velocity separation is a coaching convention, not a measured target: changeups are conventionally thrown 8 to 10 mph off the same pitcher's fastball, and 8 is the bottom of that convention as stated in the Task 6 plan row. Treat it as the least defensible number in this table.",
   },
 };
 
