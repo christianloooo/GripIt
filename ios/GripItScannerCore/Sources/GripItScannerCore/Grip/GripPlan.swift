@@ -139,18 +139,13 @@ public struct GripPlan: Codable, Sendable {
           ?? .infinity
         let penetration = max(0, -minimumGap)
         var error = zone.role == .clear ? penetration : max(penetration, max(0, minimumGap))
-        if zone.placement?.region == .top {
-          error = max(error, finger.targetError)
-          error = max(
-            error, simd_distance(finger.points[0], finger.target) - finger.lengths.reduce(0, +))
-        }
         if pitch == .circleChange && [.indexPad, .thumbPad].contains(zone.zoneId) {
-          error = max(error, pose.diagnostics.loopGapMm ?? 0)
+          error = pose.diagnostics.loopGapMm ?? .infinity
         }
         zone.shortfallMm = max(0, error)
         zone.reach = .classify(shortfallMm: error)
         zone.reachEvidence =
-          "Solved surface gap / overlap; top contacts also include target error. 3 mm comfortable, 8 mm strained."
+          "Actual skin gap / overlap; circle-change loop uses index–thumb pad distance. 3 mm comfortable, 8 mm strained."
       } else if zone.zoneId == .palm, let hand {
         let points = pose.vertices.indices.filter { i in
           let v = hand.vertices[i]

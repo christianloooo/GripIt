@@ -14,6 +14,9 @@ public struct GripFingerPose: Sendable {
   public var targetError: Double = 0
   public var clearance: Double = 0
   public let contact: Bool
+  public var preferredCurl: [Double]? = nil
+  public var minimumKnuckleCurl: Double = -0.15
+  public var spreadLimit: Double = 0.4
 }
 public struct GripPose: Sendable {
   public let id = UUID()
@@ -75,9 +78,9 @@ public enum GripPoseSolver {
       pitch.zoneTemplates.first { $0.zoneId == .thumbPad }?.placement?.opposes ?? []
     func upperNormal(_ finger: GripFinger) -> SIMD3<Double> {
       switch finger {
-      case .index: unit(SIMD3(pitch == .slider ? 0.20 : 0.31, 0.93, 0.25))
-      case .middle: unit(SIMD3(pitch == .circleChange ? 0.24 : -0.16, 0.95, 0.25))
-      default: unit(SIMD3(-0.40, 0.90, 0.22))
+      case .index: unit(SIMD3(pitch == .slider ? 0.20 : 0.31, 0.65, 0.70))
+      case .middle: unit(SIMD3(pitch == .circleChange ? 0.24 : -0.16, 0.65, 0.70))
+      default: unit(SIMD3(-0.40, 0.65, 0.70))
       }
     }
     func targets(_ center: SIMD3<Double>) -> [SIMD3<Double>] {
@@ -92,13 +95,20 @@ public enum GripPoseSolver {
         case .index: direction = upperNormal(f)
         case .middle: direction = upperNormal(f)
         case .ring:
-          direction = pitch == .circleChange ? SIMD3(-0.40, 0.90, 0.22) : SIMD3(-0.72, 0.58, 0.38)
+          if pitch != .circleChange {
+            var tucked = rig
+            tucked.angles = rig.preferredCurl ?? [0.9, 1.6, 1.1]
+            tucked.yaw = 0.18
+            tucked.opposition = -0.08
+            return forward(tucked).last!
+          }
+          direction = pitch == .circleChange ? SIMD3(-0.40, 0.65, 0.70) : SIMD3(-0.72, 0.58, 0.38)
         case .pinky:
           if pitch != .circleChange {
             var relaxed = rig
-            relaxed.angles = [0.28, 0.65, 0.45]
-            relaxed.yaw = 0.12
-            relaxed.opposition = 0
+            relaxed.angles = rig.preferredCurl ?? [1.1, 1.5, 1.0]
+            relaxed.yaw = 0.22
+            relaxed.opposition = -0.08
             return forward(relaxed).last!
           }
           direction = SIMD3(-0.90, -0.28, 0.32)
@@ -159,13 +169,32 @@ public enum GripPoseSolver {
       let others = fingers.enumerated().filter { $0.offset != i }.map(\.element)
       optimize(&fingers[i], center: center, others: others, multistart: true)
     }
+    if pitch != .circleChange {
+      for i in fingers.indices where fingers[i].finger == .ring || fingers[i].finger == .pinky {
+        fingers[i].angles = fingers[i].preferredCurl!
+        fingers[i].yaw = fingers[i].finger == .ring ? 0.32 : 0.22
+        fingers[i].opposition = -0.08
+        update(&fingers[i], center: center)
+      }
+    }
+    for i in fingers.indices where pitch.upperContacts.contains(fingers[i].finger) {
+      fingers[i].angles = [0.8, 0.8, 0.6]
+      fingers[i].yaw = fingers[i].finger == .ring ? 0.08 : 0
+      fingers[i].opposition = 0
+      update(&fingers[i], center: center)
+    }
     if hand.preserveAuthoredAnatomy == true {
-      let refined = try fitAuthoredSurface(hand: hand, fingers: fingers, scale: scale, center: center, pitch: pitch)
+      let refined = try fitAuthoredSurface(
+        hand: hand, fingers: fingers, scale: scale, center: center, pitch: pitch)
       fingers = refined.fingers
       center = refined.center
     }
-    let rotation = orientBall(ball, pitch: pitch, fingers: fingers, center: center)
-    let vertices = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
+    let uncompressed = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
+    let vertices = compressContacts(
+      hand: hand, vertices: uncompressed, fingers: fingers,
+      center: center, pitch: pitch)
+    let rotation = orientBall(
+      ball, pitch: pitch, fingers: fingers, center: center, hand: hand, vertices: vertices)
     var stretch = 1.0
     var penetration = 0.0
     for v in vertices { penetration = max(penetration, ballRadius - simd_distance(v, center)) }
@@ -190,7 +219,9 @@ public enum GripPoseSolver {
         "This profile creates an overstretched hand surface. Please rescan rather than using a distorted grip."
       )
     }
-    let contacts = fingers.filter { $0.contact && !(pitch == .circleChange && $0.finger == .thumb) }
+    let contacts = fingers.filter {
+      $0.contact && !(pitch == .circleChange && [.thumb, .index].contains($0.finger))
+    }
     let padSurfaceGap =
       contacts.map { finger in
         padVertices(hand: hand, vertices: vertices, finger: finger.finger).map {
@@ -204,7 +235,11 @@ public enum GripPoseSolver {
       pitch: pitch, handedness: profile.handedness, ballCenter: center, ballRotation: rotation,
       fingers: fingers, vertices: vertices, indices: hand.indices,
       diagnostics: GripFitDiagnostics(
-        maximumContactGapMm: contacts.map(\.targetError).max() ?? 0,
+        maximumContactGapMm: contacts.map { finger in
+          let gaps = padVertices(hand: hand, vertices: vertices, finger: finger.finger)
+            .map { abs(simd_distance($0, center) - ballRadius) }.sorted().prefix(12)
+          return sqrt(gaps.reduce(0) { $0 + $1 * $1 } / Double(max(1, gaps.count)))
+        }.max() ?? 0,
         maximumSkinPenetrationMm: max(0, penetration), maximumPadSurfaceGapMm: padSurfaceGap,
         maximumEdgeStretch: stretch, loopGapMm: loop,
         modeledThickness: profile.measurements.palm.thicknessMm == nil
@@ -212,7 +247,8 @@ public enum GripPoseSolver {
             $0.measurement(profile).diameterMm == nil
           }, usedMeasuredRoots: measuredRoots,
         seams: inspectSeams(
-          ball, pitch: pitch, fingers: fingers, center: center, rotation: rotation),
+          ball, pitch: pitch, fingers: fingers, center: center, rotation: rotation, hand: hand,
+          vertices: vertices),
         adjustedProportions: fit.limited))
   }
   /// Neutral anatomy review uses the same personalized bind surface as the grip renderer.
@@ -258,7 +294,7 @@ public enum GripPoseSolver {
         modeledThickness: true, usedMeasuredRoots: fit.measuredRoots, seams: [],
         adjustedProportions: fit.limited))
   }
-  private static func initialFit(profile: HandProfile, pitch: PitchGrip, hand: GripHandAsset) throws
+  static func initialFit(profile: HandProfile, pitch: PitchGrip, hand: GripHandAsset) throws
     -> (
       fingers: [GripFingerPose], scale: SIMD3<Double>, width: Double, length: Double,
       measuredRoots: Bool, limited: Bool
@@ -288,14 +324,18 @@ public enum GripPoseSolver {
       return result
     }
     // Unknown depth is not a thin-palm measurement. Preserve the source anatomy.
-    let scale = preserve ? SIMD3(
-      uniform,
-      bounded(length / restLength, reference: uniform, lo: 0.9, hi: 1.1),
-      profile.measurements.palm.thicknessMm.map {
-        bounded($0 / hand.palmReferenceThickness, reference: uniform, lo: 0.85, hi: 1.15)
-      } ?? uniform
-    ) : SIMD3(uniform, length / restLength,
-      (profile.measurements.palm.thicknessMm ?? 14) / hand.palmReferenceThickness)
+    let scale =
+      preserve
+      ? SIMD3(
+        uniform,
+        bounded(length / restLength, reference: uniform, lo: 0.9, hi: 1.1),
+        profile.measurements.palm.thicknessMm.map {
+          bounded($0 / hand.palmReferenceThickness, reference: uniform, lo: 0.85, hi: 1.15)
+        } ?? uniform
+      )
+      : SIMD3(
+        uniform, length / restLength,
+        (profile.measurements.palm.thicknessMm ?? 14) / hand.palmReferenceThickness)
     func palm(_ p: SIMD3<Double>) -> SIMD3<Double> { p * scale }
     var measuredRoots = false
     var fingers: [GripFingerPose] = []
@@ -311,14 +351,17 @@ public enum GripPoseSolver {
       if preserve {
         let references = f.jointNames.map { rest[$0]! }
         lengths = lengths.enumerated().map { i, measured in
-          bounded(measured, reference: simd_distance(references[i], references[i + 1]) * uniform,
+          bounded(
+            measured, reference: simd_distance(references[i], references[i + 1]) * uniform,
             lo: 0.8, hi: 1.2)
         }
       }
       let authoredDiameter = hand.authoredFingerRadii?[f.rawValue].map { $0 * 2 * uniform }
-      let requestedDiameter = m.diameterMm ?? authoredDiameter
+      let requestedDiameter =
+        m.diameterMm ?? authoredDiameter
         ?? (f == .thumb ? 16 : f == .pinky ? 11 : 13.5) * width / 62
-      let diameter = preserve && authoredDiameter != nil
+      let diameter =
+        preserve && authoredDiameter != nil
         ? bounded(requestedDiameter, reference: authoredDiameter!, lo: 0.85, hi: 1.15)
         : requestedDiameter
       guard diameter.isFinite, (5...30).contains(diameter) else {
@@ -344,18 +387,27 @@ public enum GripPoseSolver {
             min(3, max(-3, delta.z * 0.35)))
           root += offset
           if simd_distance(root, measured) > 0.1 { limited = true }
-        } else { root = measured }
+        } else {
+          root = measured
+        }
         measuredRoots = true
       }
       fingers.append(
         GripFingerPose(
           finger: f, points: [root], lengths: lengths, radius: diameter / 2,
           angles: f == .thumb ? [0.65, 0.9, 0.6] : [0.35, 1.1, 0.9],
-          allowsOpposition: f == .thumb || (pitch == .circleChange && f == .index),
-          opposition: pitch == .circleChange && f == .index ? 1.0 : f == .thumb ? 0.4 : 0,
+          allowsOpposition: f == .thumb,
+          opposition: f == .thumb ? 0.4 : 0,
           yaw: f == .thumb ? 0.2 : 0, target: .zero,
           contact: pitch.upperContacts.contains(f) || f == .thumb
-            || (pitch == .circleChange && f == .pinky)))
+            || (pitch == .circleChange && f == .pinky),
+          preferredCurl: pitch != .circleChange && f == .ring
+            ? [0.9, 1.6, 1.1]
+            : pitch != .circleChange && f == .pinky
+              ? [1.1, 1.5, 1.0]
+              : pitch == .circleChange && f == .index ? [0.55, 1.35, 0.9] : nil,
+          minimumKnuckleCurl: pitch.upperContacts.contains(f) ? 0.65 : -0.15,
+          spreadLimit: f == .middle || (f == .index && pitch != .circleChange) ? 0.18 : 0.4))
     }
     return (fingers, scale, width, length, measuredRoots, limited)
   }
@@ -377,11 +429,44 @@ public enum GripPoseSolver {
     return points
   }
   static func update(_ rig: inout GripFingerPose, center: SIMD3<Double>) {
+    constrain(&rig)
     rig.points = forward(rig)
     rig.targetError = simd_distance(rig.points[3], rig.target)
     rig.clearance = (0..<3).map {
       segmentDistance(center, rig.points[$0], capsuleEnd(rig, $0)) - ballRadius - rig.radius
     }.min()!
+  }
+  /// The long fingers curl in a nearly fixed plane; they cannot oppose like
+  /// thumbs. Couple distal flexion to the middle joint instead of allowing a
+  /// straight middle phalanx with an independently folded-back fingertip.
+  static func constrain(_ rig: inout GripFingerPose) {
+    if rig.finger == .thumb {
+      rig.angles = zip(rig.angles, [1.1, 1.35, 1.25]).map { min($1, max(0.1, $0)) }
+      rig.yaw = min(2.2, max(0.1, rig.yaw))
+      rig.opposition = min(1.35, max(0, rig.opposition))
+    } else {
+      rig.angles[0] = min(1.45, max(rig.minimumKnuckleCurl, rig.angles[0]))
+      rig.angles[1] = min(1.65, max(0, rig.angles[1]))
+      if rig.preferredCurl != nil && [.ring, .pinky].contains(rig.finger) {
+        // Photo-reference pose: fold support fingertips back toward the palm,
+        // rather than satisfying clearance with extended fingers beside the ball.
+        rig.angles[0] = max(rig.finger == .ring ? 0.8 : 0.9, rig.angles[0])
+        rig.angles[1] = max(rig.finger == .ring ? 1.4 : 1.3, rig.angles[1])
+        rig.angles[2] = max(0.85, rig.angles[2])
+      }
+      rig.angles[2] = min(
+        1.15,
+        min(
+          rig.angles[1] * 0.85 + 0.12,
+          max(rig.angles[1] * 0.35, rig.angles[2])))
+      rig.yaw = min(rig.spreadLimit, max(-rig.spreadLimit, rig.yaw))
+      rig.opposition = min(0.12, max(-0.12, rig.opposition))
+      if rig.minimumKnuckleCurl > 0 {
+        rig.opposition = 0
+        if rig.finger == .index { rig.yaw = max(0, rig.yaw) }
+        if rig.finger == .middle { rig.yaw = min(0, rig.yaw) }
+      }
+    }
   }
   static func capsuleEnd(_ rig: GripFingerPose, _ segment: Int) -> SIMD3<Double> {
     // The last measured point is the skin tip, not a capsule center. Inset the
@@ -418,7 +503,8 @@ public enum GripPoseSolver {
       }
     }
     value += r.angles.enumerated().reduce(0) {
-      $0 + 0.5 * pow($1.element - ([0.3, 1.0, 0.7][$1.offset]), 2)
+      $0 + (r.preferredCurl == nil ? 0.5 : 60)
+        * pow($1.element - (r.preferredCurl ?? [0.3, 1.0, 0.7])[$1.offset], 2)
     }
     return value
   }
@@ -450,47 +536,29 @@ public enum GripPoseSolver {
         for _ in 0..<12 {
           var changed = false
           for j in 0..<5 {
-            let original = j == 4 ? r.opposition : j == 3 ? r.yaw : r.angles[j]
-            var chosen = original
             update(&r, center: center)
+            var chosen = r
             var score = energy(r, center: center, others: others)
             for sign in [-1.0, 1.0] {
-              let freePlane = r.allowsOpposition
-              let lo =
-                j == 4
-                ? (r.finger == .thumb ? 0 : freePlane ? -1.35 : -0.15)
-                : j == 3
-                  ? (r.finger == .thumb ? 0.1 : -0.7)
-                  : (j == 0 ? (r.finger == .thumb ? 0.1 : -0.35) : 0)
-              let hi =
-                j == 4
-                ? (freePlane ? 1.35 : 0.15)
-                : j == 3
-                  ? (r.finger == .thumb ? 2.2 : 0.7)
-                  : (r.finger == .thumb ? [1.1, 1.5, 1.4][j] : [1.5, 1.85, 1.7][j])
-              let trial = max(lo, min(hi, original + sign * step))
+              var trial = r
               if j == 4 {
-                r.opposition = trial
+                trial.opposition += sign * step
               } else if j == 3 {
-                r.yaw = trial
+                trial.yaw += sign * step
               } else {
-                r.angles[j] = trial
+                trial.angles[j] += sign * step
               }
-              update(&r, center: center)
-              let next = energy(r, center: center, others: others)
+              // Clamp a complete candidate copy. Coupled joint limits must not
+              // mutate the accepted pose while evaluating a rejected trial.
+              update(&trial, center: center)
+              let next = energy(trial, center: center, others: others)
               if next < score {
                 score = next
                 chosen = trial
                 changed = true
               }
             }
-            if j == 4 {
-              r.opposition = chosen
-            } else if j == 3 {
-              r.yaw = chosen
-            } else {
-              r.angles[j] = chosen
-            }
+            r = chosen
           }
           if !changed { break }
         }

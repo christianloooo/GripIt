@@ -4,6 +4,64 @@ import simd
 @testable import GripItScannerCore
 
 final class GripPoseTests: XCTestCase {
+  func testPressureWidensLoadedPadsWithoutMovingNailsOrBridgingFloatingFingers() throws {
+    let profile = try SampleHandProfiles.averageRight()
+    let hand = try GripHandAsset.load()
+    let pose = try GripPoseSolver.solve(profile: profile, pitch: .fourSeam)
+    let fit = try GripPoseSolver.initialFit(profile: profile, pitch: .fourSeam, hand: hand)
+    let raw = try GripPoseSolver.deform(
+      hand: hand, fingers: pose.fingers,
+      scale: fit.scale, center: pose.ballCenter)
+    let medium = GripPoseSolver.compressContacts(
+      hand: hand, vertices: raw,
+      fingers: pose.fingers, center: pose.ballCenter, pitch: .twoSeam)
+    let middle = try XCTUnwrap(pose.fingers.first { $0.finger == .middle })
+    let contact = GripPoseSolver.skinContact(
+      hand: hand, vertices: raw,
+      finger: .middle, center: pose.ballCenter)
+    let normal = simd_normalize(contact - pose.ballCenter)
+    let across = simd_normalize(simd_cross(middle.points[3] - middle.points[2], normal))
+    let ids = Set(GripPoseSolver.padIndices(hand: hand, finger: .middle))
+    func widening(_ vertices: [SIMD3<Double>]) -> Double {
+      ids.reduce(0) { sum, i in
+        sum + abs(simd_dot(vertices[i] - contact, across)) - abs(simd_dot(raw[i] - contact, across))
+      }
+    }
+    XCTAssertGreaterThan(widening(pose.vertices), 0.5, "Loaded skin should spread laterally")
+    XCTAssertGreaterThan(
+      widening(pose.vertices), widening(medium) * 1.1,
+      "Firm pressure should spread the same pad more than medium pressure")
+    let loaded = Set(
+      [GripFinger.index, .middle, .thumb].flatMap {
+        GripPoseSolver.padIndices(hand: hand, finger: $0)
+      })
+    var changed = 0
+    for i in raw.indices {
+      let movement = simd_distance(raw[i], pose.vertices[i])
+      XCTAssertLessThanOrEqual(movement, 1.200001)
+      if movement > 0.001 { changed += 1 }
+      if !loaded.contains(i) {
+        XCTAssertEqual(raw[i], pose.vertices[i], "Nails and unloaded skin stay intact")
+      }
+    }
+    XCTAssertGreaterThan(changed, 30)
+    func contactCount(_ vertices: [SIMD3<Double>]) -> Int {
+      ids.filter { abs(simd_distance(vertices[$0], pose.ballCenter) - 36.5) < 0.3 }.count
+    }
+    XCTAssertGreaterThan(contactCount(pose.vertices), contactCount(raw))
+    let far = pose.ballCenter + SIMD3<Double>(0, 0, 300)
+    XCTAssertEqual(
+      GripPoseSolver.compressContacts(
+        hand: hand, vertices: raw, fingers: pose.fingers,
+        center: far, pitch: .fourSeam), raw, "Pressure cannot conceal a floating grip")
+    let weights = GripPoseSolver.contactPressureWeights(hand: hand, pose: pose)
+    XCTAssertGreaterThan(weights.max()!, 0.8)
+    XCTAssertTrue(weights.enumerated().allSatisfy { loaded.contains($0.offset) || $0.element == 0 })
+    for f in pose.fingers where f.finger == .ring || f.finger == .pinky {
+      XCTAssertGreaterThan(f.angles.reduce(0, +), 3, "Support fingers must curl into the side")
+      XCTAssertGreaterThan(f.angles[0], 0.5, "Curl should begin at the knuckle")
+    }
+  }
   func testGuidePosesPreserveMeasuredBonesAndConnectedMesh() throws {
     let profile = try SampleHandProfiles.averageRight()
     let hand = try GripHandAsset.load()
@@ -27,8 +85,8 @@ final class GripPoseTests: XCTestCase {
             accuracy: 0.00001)
         }
       }
-      for rig in pose.fingers where rig.contact && !(pitch == .circleChange && rig.finger == .thumb)
-      {
+      for rig in pose.fingers
+      where rig.contact && !(pitch == .circleChange && [.thumb, .index].contains(rig.finger)) {
         let gap = GripPoseSolver.padVertices(
           hand: hand, vertices: pose.vertices, finger: rig.finger
         ).map { abs(simd_distance($0, pose.ballCenter) - 36.5) }.min()!
@@ -43,13 +101,24 @@ final class GripPoseTests: XCTestCase {
       // A bone-end target is not the pad surface of an authored hand. Keep
       // target errors visible in diagnostics; validate real skin contact here.
       XCTAssertLessThan(pose.diagnostics.maximumPadSurfaceGapMm, 3)
+      XCTAssertLessThan(
+        pose.diagnostics.maximumContactGapMm, 1.2,
+        "A small fingerprint patch must touch, not only one lucky surface vertex")
       XCTAssertLessThan(pose.diagnostics.maximumSkinPenetrationMm, 3)
       XCTAssertLessThan(pose.diagnostics.maximumEdgeStretch, 6)
       if let gap = pose.diagnostics.loopGapMm {
         XCTAssertLessThan(gap, 4)
       }
+      for finger in pose.fingers where finger.finger != .thumb {
+        XCTAssertLessThanOrEqual(abs(finger.opposition), 0.12)
+        XCTAssertLessThanOrEqual(abs(finger.yaw), 0.4)
+        XCTAssertLessThanOrEqual(finger.angles[2], finger.angles[1] * 0.85 + 0.120001)
+        XCTAssertGreaterThanOrEqual(finger.angles[2], finger.angles[1] * 0.35 - 0.000001)
+      }
       for finger in pose.fingers where pitch.upperContacts.contains(finger.finger) {
-        let normal = simd_normalize(finger.points[3] - pose.ballCenter)
+        let contact = GripPoseSolver.skinContact(
+          hand: hand, vertices: pose.vertices, finger: finger.finger, center: pose.ballCenter)
+        let normal = simd_normalize(contact - pose.ballCenter)
         let local = pose.ballRotation.inverse.act(normal * 36.5)
         let seam = ball.seams.min {
           simd_distance(gv($0.position), local) < simd_distance(gv($1.position), local)
@@ -70,6 +139,20 @@ final class GripPoseTests: XCTestCase {
           }
         }
       }
+      for seam in pose.diagnostics.seams {
+        XCTAssertFalse(
+          seam.needsReview, "Specific seam patch must fit the actual pad: \(pitch) \(seam)")
+      }
+      for finger in pose.fingers where pitch.upperContacts.contains(finger.finger) {
+        guard let anchor = GripSeamTemplate.anchor(pitch, finger.finger) else { continue }
+        let contact = GripPoseSolver.skinContact(
+          hand: hand, vertices: pose.vertices,
+          finger: finger.finger, center: pose.ballCenter)
+        let local = pose.ballRotation.inverse.act(simd_normalize(contact - pose.ballCenter) * 36.5)
+        XCTAssertLessThan(
+          simd_distance(local, anchor), 12,
+          "The finger must stay on its assigned stitching region as the grip depth changes")
+      }
       XCTAssertEqual(pose.vertices.count, hand.vertices.count)
       XCTAssertGreaterThan(pose.vertices.count, 10000)
       XCTAssertTrue(pose.vertices.allSatisfy { $0.x.isFinite && $0.y.isFinite && $0.z.isFinite })
@@ -86,7 +169,8 @@ final class GripPoseTests: XCTestCase {
     let root = try XCTUnwrap(pose.fingers.first { $0.finger == .index }).points[0]
     let original = try XCTUnwrap(baseline.fingers.first { $0.finger == .index }).points[0]
     XCTAssertNotEqual(root, original)
-    XCTAssertLessThan(simd_distance(root, SIMD3(30, 77, 4)), simd_distance(original, SIMD3(30, 77, 4)))
+    XCTAssertLessThan(
+      simd_distance(root, SIMD3(30, 77, 4)), simd_distance(original, SIMD3(30, 77, 4)))
     XCTAssertLessThanOrEqual(abs(root.x - original.x), 3)
     XCTAssertLessThanOrEqual(abs(root.y - original.y), 3)
     XCTAssertLessThanOrEqual(abs(root.z - original.z), 3)
@@ -194,7 +278,9 @@ final class GripPoseTests: XCTestCase {
     let hand = try GripHandAsset.load()
     let moving = Set(GripFinger.allCases.flatMap(\.jointNames))
     let fixed = hand.joints.indices.filter { !moving.contains(hand.joints[$0].name) }
-    let anchors = hand.vertices.indices.filter { i in fixed.reduce(0.0) { $0 + hand.weights[i][$1] } > 0.995 }
+    let anchors = hand.vertices.indices.filter { i in
+      fixed.reduce(0.0) { $0 + hand.weights[i][$1] } > 0.995
+    }
     XCTAssertGreaterThan(anchors.count, 100)
     for i in anchors {
       XCTAssertLessThan(simd_distance(open.vertices[i], bent.vertices[i]), 0.8)
@@ -203,15 +289,26 @@ final class GripPoseTests: XCTestCase {
     XCTAssertThrowsError(try GripPoseSolver.openHand(profile: profile, flexion: 1))
   }
 
-  func testClearPinkyDoesNotCloseIntoAnUnintendedCircle() throws {
+  func testPinkyTucksBesidePalmWhileStayingClearOfBall() throws {
     let profile = try SampleHandProfiles.averageRight()
     for pitch in [PitchGrip.fourSeam, .twoSeam, .slider] {
       let pose = try GripPoseSolver.solve(profile: profile, pitch: pitch)
       let pinky = try XCTUnwrap(pose.fingers.first { $0.finger == .pinky })
-      XCTAssertGreaterThan(pinky.points[3].y - pinky.points[0].y, 20)
+      XCTAssertLessThan(
+        pinky.points[3].y - pinky.points[0].y, 5,
+        "Fold back toward the palm as in the reference photos")
       XCTAssertGreaterThan(
-        simd_distance(pinky.points[3], pinky.points[0]), pinky.lengths.reduce(0, +) * 0.55)
-      XCTAssertLessThan(pinky.angles.reduce(0, +), Double.pi)
+        simd_distance(pinky.points[3], pinky.points[0]), pinky.lengths.reduce(0, +) * 0.45)
+      XCTAssertGreaterThan(pinky.angles.reduce(0, +), 3)
+      XCTAssertLessThan(pinky.angles.reduce(0, +), 3.8)
+      let hand = try GripHandAsset.load()
+      let pinkySkin = hand.vertices.indices.filter { i in
+        pinky.finger.jointNames.reduce(0.0) { total, name in
+          total + hand.weights[i][hand.joints.firstIndex { $0.name == name }!]
+        } > 0.7
+      }
+      XCTAssertGreaterThan(
+        pinkySkin.map { simd_distance(pose.vertices[$0], pose.ballCenter) - 36.5 }.min()!, 0.5)
     }
   }
 
@@ -226,7 +323,8 @@ final class GripPoseTests: XCTestCase {
     let thickness = depths.max()! - depths.min()!
     let sourceDepths = core.map { hand.vertices[$0][2] }
     let sourceThickness = sourceDepths.max()! - sourceDepths.min()!
-    XCTAssertGreaterThan(thickness, sourceThickness * 0.85,
+    XCTAssertGreaterThan(
+      thickness, sourceThickness * 0.85,
       "Unknown thickness must preserve the supplied palm, not force a 14 mm sheet")
     XCTAssertLessThan(thickness, sourceThickness * 1.15)
     let fingers = [GripFinger.index, .middle, .ring, .pinky].map { f in
@@ -236,7 +334,8 @@ final class GripPoseTests: XCTestCase {
       let a = fingers[i]
       let b = fingers[i + 1]
       let rootGap = abs(a.points[0].x - b.points[0].x) - (a.radius + b.radius)
-      XCTAssertGreaterThan(rootGap, -0.5, "Small overlap of approximate cylinders is not a skin collision")
+      XCTAssertGreaterThan(
+        rootGap, -0.5, "Small overlap of approximate cylinders is not a skin collision")
       XCTAssertLessThan(rootGap, 12)
       XCTAssertLessThan(abs(a.points[3].x - b.points[3].x) - (a.radius + b.radius) * 0.75, 12)
     }
@@ -252,7 +351,8 @@ final class GripPoseTests: XCTestCase {
     let measuredDepths = core.map { actual.vertices[$0].z }
     let adjustedThickness = measuredDepths.max()! - measuredDepths.min()!
     XCTAssertLessThan(adjustedThickness, thickness)
-    XCTAssertGreaterThan(adjustedThickness, thickness * 0.8,
+    XCTAssertGreaterThan(
+      adjustedThickness, thickness * 0.8,
       "An uncertain scan must not flatten the authored palm")
     XCTAssertTrue(actual.diagnostics.adjustedProportions)
   }
@@ -263,23 +363,29 @@ final class GripPoseTests: XCTestCase {
       FingerMeasurements(segmentsMm: value.segmentsMm.map { $0 * 1.4 }, diameterMm: nil)
     }
     let f = sample.measurements.fingers
-    let profile = HandProfile(profileId: "bounded", createdAt: sample.createdAt, handedness: .right,
-      measurements: HandMeasurements(palm: sample.measurements.palm,
-        fingers: FingerMeasurementSet(index: enlarged(f.index), middle: enlarged(f.middle),
+    let profile = HandProfile(
+      profileId: "bounded", createdAt: sample.createdAt, handedness: .right,
+      measurements: HandMeasurements(
+        palm: sample.measurements.palm,
+        fingers: FingerMeasurementSet(
+          index: enlarged(f.index), middle: enlarged(f.middle),
           ring: enlarged(f.ring), pinky: enlarged(f.pinky), thumb: enlarged(f.thumb))),
       landmarks: [:], capture: sample.capture)
     let hand = try GripHandAsset.load()
     let pose = try GripPoseSolver.openHand(profile: profile)
     XCTAssertTrue(pose.diagnostics.adjustedProportions)
     for finger in pose.fingers {
-      let reference = finger.finger.jointNames.map { name in gv(hand.joints.first { $0.name == name }!.position) }
+      let reference = finger.finger.jointNames.map { name in
+        gv(hand.joints.first { $0.name == name }!.position)
+      }
       for i in 0..<3 {
         let length = simd_distance(reference[i], reference[i + 1])
         XCTAssertGreaterThanOrEqual(finger.lengths[i], length * 0.8 - 0.001)
         XCTAssertLessThanOrEqual(finger.lengths[i], length * 1.2 + 0.001)
       }
     }
-    XCTAssertEqual(profile.measurements.fingers.index.segmentsMm, f.index.segmentsMm.map { $0 * 1.4 })
+    XCTAssertEqual(
+      profile.measurements.fingers.index.segmentsMm, f.index.segmentsMm.map { $0 * 1.4 })
   }
   func testSuppliedCleanBallIsTheNormalizedSourceWithPBRTextures() throws {
     let ball = try GripBallAsset.load()

@@ -96,6 +96,7 @@ struct GripViewerView: View {
                 cameraReset += 1
               }
               .buttonStyle(.bordered).tint(camera == c ? .mint : .gray)
+              .lineLimit(1).minimumScaleFactor(0.65)
             }
           }.frame(maxWidth: .infinity)
           if zoneSeverity == nil {
@@ -340,6 +341,7 @@ struct HandModelReviewView: View {
               reset += 1
             }
             .buttonStyle(.bordered).tint(camera == angle ? .mint : .gray)
+            .lineLimit(1).minimumScaleFactor(0.65)
           }
         }.frame(maxWidth: .infinity)
         HStack {

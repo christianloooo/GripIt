@@ -72,12 +72,14 @@ final class GripPlanTests: XCTestCase {
       XCTAssertTrue(zone.shortfallMm!.isFinite)
       XCTAssertEqual(zone.reach, GripReach.classify(shortfallMm: zone.shortfallMm!))
     }
-    var fingers = pose.fingers
-    let index = try XCTUnwrap(fingers.firstIndex { $0.finger == .index })
-    fingers[index].targetError = 20
+    let hand = try GripHandAsset.load()
+    var vertices = pose.vertices
+    for i in GripPoseSolver.padIndices(hand: hand, finger: .index) {
+      vertices[i] += simd_normalize(vertices[i] - pose.ballCenter) * 20
+    }
     let failed = GripPose(
       pitch: pose.pitch, handedness: pose.handedness, ballCenter: pose.ballCenter,
-      ballRotation: pose.ballRotation, fingers: fingers, vertices: pose.vertices,
+      ballRotation: pose.ballRotation, fingers: pose.fingers, vertices: vertices,
       indices: pose.indices, diagnostics: pose.diagnostics)
     XCTAssertEqual(
       GripPlan(pose: failed).zones.first { $0.zoneId == .indexPad }?.reach, .unreachable)
