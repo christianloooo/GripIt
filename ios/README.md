@@ -27,7 +27,7 @@ Re-run `npm run ios:prepare` after changing the website. `ios/GripIt/Web` is gen
 
 - SwiftUI hosts the app, loading state, recovery screen, and native share sheet.
 - `WKUIDelegate` grants camera capture only to the app's own loopback origin and only after iOS camera authorization. Microphone capture requests are denied.
-- **Export configuration** and **Download log** open the iOS share sheet; choose **Save to Files**, AirDrop, or another destination. JSON exports are also written to the app's private Documents directory.
+- **Export grip**, **Export session JSON**, and **Download log** open the iOS share sheet; choose **Save to Files**, AirDrop, or another destination. JSON exports are also written to the app's private Documents directory.
 - External links open in the system browser. The privileged export bridge accepts only messages from the bundled main frame.
 - Video remains on-device. Existing scan/model rejection checks and failure logging are shared with the website. Phone scan estimates retain the website's measurement limits.
 

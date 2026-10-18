@@ -4,7 +4,7 @@ A browser-based grip studio with automatic hand measurement from a baseball refe
 
 ## iOS app
 
-The `feat/ios-swift-app` branch includes a SwiftUI iPhone/iPad app with the studio bundled in WebKit, camera authorization, and native JSON sharing. Run `npm run ios:prepare`, then `npm run ios:open`. Select your signing team and device in Xcode. See [iOS setup and architecture](ios/README.md).
+This branch includes a SwiftUI iPhone/iPad app with the studio and Rapsodo throw entry bundled in WebKit, camera authorization, and native JSON sharing. Run `npm run ios:prepare`, then open `ios/GripIt.xcodeproj` on a Mac. Select your signing team and device in Xcode. See [iOS setup and architecture](ios/README.md).
 
 ## Run
 
@@ -22,6 +22,18 @@ npm test
 npm run build
 npm run preview
 ```
+
+## Rapsodo throw entry
+
+After viewing a grip, select **Next: record throws** beneath the 3D viewer. The selected pitch and throwing hand carry into a responsive input table. Enter velocity (mph), total spin (rpm), spin direction (hh:mm), spin efficiency (%) or signed gyro degree, and release height (ft). Rapsodo score is optional; no device-specific score scale is assumed. Broad numeric limits catch likely typos, not performance targets.
+
+**Save & review session** accepts one or more valid throws and shows average velocity/spin plus session history. Re-saving updates the same session instead of duplicating it. Drafts remain separate by pitch, throwing hand, and optional hand-profile ID when navigating back to the grip view. Sessions and drafts are temporary: export JSON before refreshing or closing the app.
+
+**Load sample session** replaces unsaved entries with three clearly labeled fake throws. Editing them retains `source: "sample"`; choose **Start real session** to enter real readings. **Export session JSON** downloads an array of v1 `ThrowRecord` values for Step 4. When embedded in a compatible iOS host, exports use its existing `gripit` share bridge instead of a browser download.
+
+Integration: `SessionTable` accepts `pitchId`, `pitchName`, optional `handProfileId`, optional `handedness`, `onBack`, and an optional `onSaved(records)` callback. Records match `docs/contracts/v1/fixtures/throw-record-four-seam.json`. Clock time uses decimal hours (`12:30` becomes `12.5`), optional values use `null`, and an available profile ID is stored under `extensions["gripit.throwEntry"].handProfileId`. No coaching or assessment fields are added. The current scanner does not yet expose a shared `HandProfile`, so its private measurement object is not used as one.
+
+Core files: `src/SessionTable.tsx`, `src/throwEntry.ts`, `src/exportThrows.ts`, `src/throwEntry.css`. Run `npm test` for validation, fixture compatibility, component interaction, exports, and grip-to-entry navigation checks; run `npm run build` for the production bundle.
 
 ## Scan: no measurements to type
 
