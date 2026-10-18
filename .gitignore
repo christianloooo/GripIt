@@ -6,3 +6,10 @@ dist/
 .DS_Store
 public/mediapipe/wasm/
 public/mediapipe/scan-worker.js
+
+# Generated iOS assets and local Xcode state
+ios/GripIt/Web/
+ios/build/
+DerivedData/
+*.xcuserstate
+xcuserdata/

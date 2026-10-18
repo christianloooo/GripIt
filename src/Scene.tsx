@@ -11,86 +11,10 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { BALL_RADIUS, handScale, solveGrip } from "./grip";
+import { recordFailure } from "./failureLog";
 import { retargetHand } from "./riggedHand";
-import { createHandSurface } from "./handSurface";
 import type { FingerRig, Measurements, Pitch } from "./grip";
 
-const SKIN = "#c9987d";
-function skinTexture() {
-  let seed = 8423;
-  const pixels = new Uint8Array(256 * 256 * 4);
-  for (let i = 0; i < 256 * 256; i++) {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    const value = 118 + (seed % 35);
-    pixels.set([value, value, value, 255], i * 4);
-  }
-  const texture = new THREE.DataTexture(pixels, 256, 256);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(3, 3);
-  texture.needsUpdate = true;
-  return texture;
-}
-function HandSkin({
-  rigs,
-  measurements,
-}: {
-  rigs: FingerRig[];
-  measurements: Measurements;
-}) {
-  const geometry = useMemo(
-    () => createHandSurface(rigs, measurements),
-    [rigs, measurements],
-  );
-  const pores = useMemo(skinTexture, []);
-  useEffect(() => () => pores.dispose(), [pores]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <group>
-      <mesh geometry={geometry} castShadow receiveShadow>
-        <meshPhysicalMaterial
-          color={SKIN}
-          roughness={0.6}
-          bumpMap={pores}
-          bumpScale={0.12}
-          clearcoat={0.08}
-          clearcoatRoughness={0.7}
-        />
-      </mesh>
-      {rigs.map((rig) => {
-        const bend = rig.angles.reduce((sum, a) => sum + a, 0);
-        const rotation = new THREE.Quaternion()
-          .setFromAxisAngle(new THREE.Vector3(0, 0, 1), rig.yaw)
-          .multiply(
-            new THREE.Quaternion().setFromAxisAngle(
-              new THREE.Vector3(1, 0, 0),
-              bend,
-            ),
-          );
-        const dorsal = new THREE.Vector3(0, 0, -1).applyQuaternion(rotation);
-        const direction = rig.points[3].clone().sub(rig.points[2]).normalize();
-        const position = rig.points[3]
-          .clone()
-          .addScaledVector(direction, -rig.radius * 0.55)
-          .addScaledVector(dorsal, rig.radius * 0.72);
-        return (
-          <mesh
-            key={rig.name}
-            position={position}
-            quaternion={rotation}
-            scale={[rig.radius * 0.58, rig.radius * 0.88, 0.7]}
-          >
-            <sphereGeometry args={[1, 24, 16]} />
-            <meshPhysicalMaterial
-              color="#e7c4b1"
-              roughness={0.36}
-              clearcoat={0.35}
-            />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-}
 class HandAssetBoundary extends Component<
   { children: ReactNode; rigs: FingerRig[]; measurements: Measurements },
   { failed: boolean }
@@ -99,16 +23,25 @@ class HandAssetBoundary extends Component<
   static getDerivedStateFromError() {
     return { failed: true };
   }
+  componentDidUpdate(previous: {
+    measurements: Measurements;
+    rigs: FingerRig[];
+  }) {
+    if (this.state.failed && previous.measurements !== this.props.measurements)
+      this.setState({ failed: false });
+  }
+  componentDidCatch(error: Error) {
+    recordFailure("model", error, {
+      measurements: this.props.measurements,
+      diagnostics: error.cause,
+    });
+  }
   render() {
     return this.state.failed ? (
       <>
-        <HandSkin
-          rigs={this.props.rigs}
-          measurements={this.props.measurements}
-        />
         <Html position={[0, -100, 0]} center>
           <div className="scene-label">
-            Fallback hand · reload to retry the rigged asset
+            Hand model rejected · see Failure log. Rescan or reload to retry.
           </div>
         </Html>
       </>
@@ -155,6 +88,9 @@ class BallAssetBoundary extends Component<
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch(error: Error) {
+    recordFailure("asset", error, { asset: "baseball.glb" });
   }
   render() {
     return this.state.failed ? (
@@ -298,6 +234,9 @@ class SceneBoundary extends Component<
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch(error: Error) {
+    recordFailure("asset", error, { asset: "3D viewer" });
   }
   render() {
     return this.state.failed ? (
