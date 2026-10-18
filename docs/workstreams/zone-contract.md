@@ -23,8 +23,9 @@ step 2.
   zoneId: "index-pad",
   title: "Index finger",
   instruction: "Pad across the seam, not along it",
-  pressure: "medium",   // none | light | medium | firm
-  role: "drive",        // drive | support | clear
+  pressure: "medium",       // none | light | medium | firm
+  role: "drive",            // drive | support | clear
+  reach: "comfortable",     // comfortable | strained | unreachable
 }
 ```
 
@@ -33,7 +34,35 @@ be `firm` earns different advice from a `clear` zone expected to be `none`. A
 zone with no instruction text is one step 4 has nothing to say about, and it
 stays untinted.
 
-Four-seam, derived from `handInstructions.md`:
+### Where the pitch ends and the hand begins
+
+`role` and `pressure` come from the pitch. They are coaching intent and do not
+scale with hand size: an index finger drives a four-seam whether the hand is
+large or small.
+
+`reach` comes from fitting that pitch to this hand. A small hand often cannot
+close the index-to-thumb loop a circle change asks for. A large hand buries the
+ball and loses the palm gap. That is the whole premise of fitting a grip to a
+player, and it is the one place hand measurements change a zone.
+
+Step 4 reads `reach` before giving advice. It never tells a player to press
+harder on a contact they cannot make. An `unreachable` zone produces a fit
+problem and an alternative, not a technique correction.
+
+### Roles are per pitch, not per finger
+
+A `GripPlan` carries its own zone set. The same finger changes job between
+pitches, so this cannot be baked into the model:
+
+| zone | four-seam | circle change |
+| --- | --- | --- |
+| `index-pad` | drive, medium | support, light. Curls around the side into a loop with the thumb |
+| `middle-pad` | drive, firm | drive, medium |
+| `ring-side` | support, light | drive, medium. A primary contact here |
+| `pinky` | clear, none | support, light. Wraps the far side to stabilise |
+| `thumb-pad` | support, light | support, light. Closes the loop with the index |
+
+Four-seam in full, derived from `handInstructions.md`:
 
 | zone | instruction | pressure | role |
 | --- | --- | --- | --- |

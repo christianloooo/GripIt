@@ -34,8 +34,27 @@ export type Pressure = "none" | "light" | "medium" | "firm";
 export type ZoneRole = "drive" | "support" | "clear";
 
 /**
- * Step 2 output, one per zone. Describes the intended grip. Carries no
- * assessment: a zone reads the same whether or not the player has thrown yet.
+ * Whether this hand can actually make the contact the pitch asks for.
+ *
+ * `role` and `pressure` come from the pitch and describe coaching intent. They
+ * do not change with hand size: an index finger drives a four-seam whether the
+ * hand is large or small. What changes with hand size is whether the intended
+ * contact is reachable at all, and that is this field.
+ *
+ * Step 4 must not tell a player to press harder on a zone they cannot reach.
+ */
+export type ZoneReach = "comfortable" | "strained" | "unreachable";
+
+/**
+ * Step 2 output, one per zone. Describes the intended grip for one pitch,
+ * fitted to one hand. Carries no assessment: a zone reads the same whether or
+ * not the player has thrown yet.
+ *
+ * Roles are per pitch, not fixed per finger. On a four-seam the index pad
+ * drives and the pinky stays clear; on a circle change the index curls into a
+ * loop with the thumb and the pinky wraps the far side to stabilise. A
+ * `GripPlan` therefore carries its own zone set rather than referring to one
+ * baked into the model.
  */
 export interface InstructionZone {
   zoneId: ZoneId;
@@ -43,8 +62,12 @@ export interface InstructionZone {
   title: string;
   /** One sentence the player can act on, e.g. "Pad across the seam". */
   instruction: string;
+  /** From the pitch. Not scaled by hand size. */
   pressure: Pressure;
+  /** From the pitch. Not scaled by hand size. */
   role: ZoneRole;
+  /** From fitting the pitch to this hand. This is where hand size lands. */
+  reach: ZoneReach;
 }
 
 /**
@@ -68,6 +91,16 @@ export type ZoneSeverityMap = Partial<Record<ZoneId, Severity>>;
 
 export function isZoneId(value: string): value is ZoneId {
   return (ZONE_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Zones whose contact this hand cannot make. Step 4 suppresses pressure and
+ * technique advice for these and reports a fit problem instead.
+ */
+export function unreachableZones(
+  zones: readonly InstructionZone[],
+): ZoneId[] {
+  return zones.filter((zone) => zone.reach === "unreachable").map((z) => z.zoneId);
 }
 
 /** Collapses assessed zones into the map the viewer takes. */
