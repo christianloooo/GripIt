@@ -43,14 +43,18 @@ struct ThrowEntryView: View {
             field(
               "Spin direction", value: $row.spinDirectionClock, unit: "12:30",
               key: "spinDirectionClock", id: row.id, clock: true)
-            Picker("Spin reading", selection: $row.spinMode) {
-              Text("Efficiency").tag(ThrowSpinMode.efficiency)
-              Text("Gyro").tag(ThrowSpinMode.gyro)
-            }.pickerStyle(.segmented)
             field(
-              row.spinMode == .efficiency ? "Spin efficiency" : "Gyro angle",
-              value: $row.spinValue, unit: row.spinMode == .efficiency ? "%" : "°",
-              key: "spinValue", id: row.id, signed: row.spinMode == .gyro)
+              "Spin efficiency", value: $row.spinEfficiencyPercent, unit: "%",
+              key: "spinEfficiencyPercent", id: row.id)
+            field(
+              "Gyro angle", value: $row.gyroDegree, unit: "°",
+              key: "gyroDegree", id: row.id, signed: true)
+            field(
+              "Horizontal break", value: $row.horizontalBreakInches, unit: "in",
+              key: "horizontalBreakInches", id: row.id, signed: true)
+            field(
+              "Vertical break", value: $row.verticalBreakInches, unit: "in",
+              key: "verticalBreakInches", id: row.id, signed: true)
             field(
               "Release height", value: $row.releaseHeightFeet, unit: "ft", key: "releaseHeightFeet",
               id: row.id)

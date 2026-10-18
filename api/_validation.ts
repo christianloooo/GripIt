@@ -88,19 +88,17 @@ const throwRecord = z.object({
   pitchId: z.enum(["four-seam", "two-seam", "slider", "changeup"]),
   recordedAt: text,
   source: z.enum(["manual", "sample"]),
-  measurements: z
-    .object({
-      velocityMph: z.number().min(1).max(120),
-      totalSpinRpm: z.number().min(0).max(5000),
-      spinDirectionClock: z.number().min(1).lt(13),
-      spinEfficiencyPercent: z.number().min(0).max(100).nullable(),
-      gyroDegree: z.number().min(-90).max(90).nullable(),
-      releaseHeightFeet: z.number().min(0).max(10),
-      rapsodoScore: z.number().min(0).nullable(),
-    })
-    .refine(
-      (m) => (m.gyroDegree === null) !== (m.spinEfficiencyPercent === null),
-    ),
+  measurements: z.object({
+    velocityMph: z.number().min(1).max(120),
+    totalSpinRpm: z.number().min(0).max(5000),
+    spinDirectionClock: z.number().min(1).lt(13),
+    spinEfficiencyPercent: z.number().min(0).max(100).nullable(),
+    gyroDegree: z.number().min(-90).max(90).nullable(),
+    horizontalBreakInches: z.number().min(-30).max(30).nullable(),
+    verticalBreakInches: z.number().min(-30).max(30).nullable(),
+    releaseHeightFeet: z.number().min(0).max(10),
+    rapsodoScore: z.number().min(0).nullable(),
+  }),
 });
 const coach = z.object({
   assessment,

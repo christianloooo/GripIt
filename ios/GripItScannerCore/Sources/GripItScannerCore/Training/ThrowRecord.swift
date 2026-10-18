@@ -1,15 +1,16 @@
 import Foundation
 
 public enum ThrowSource: String, Codable, Sendable { case manual, sample }
-public enum ThrowSpinMode: String, Codable, CaseIterable, Sendable { case efficiency, gyro }
 
 public struct ThrowDraft: Codable, Sendable, Identifiable, Equatable {
   public var id: String
   public var velocityMph = ""
   public var totalSpinRpm = ""
   public var spinDirectionClock = ""
-  public var spinMode: ThrowSpinMode = .efficiency
-  public var spinValue = ""
+  public var spinEfficiencyPercent = ""
+  public var gyroDegree = ""
+  public var horizontalBreakInches = ""
+  public var verticalBreakInches = ""
   public var releaseHeightFeet = ""
   public var rapsodoScore = ""
 
@@ -32,16 +33,18 @@ public struct ThrowSessionDraft: Codable, Sendable, Equatable {
   public static func sample() -> Self {
     var session = Self(source: .sample)
     session.rows = [
-      ["82.4", "2180", "12:30", "84", "5.8"],
-      ["83.1", "2220", "12:40", "86", "5.7"],
-      ["81.8", "2140", "12:20", "83", "5.8"],
+      ["82.4", "2180", "12:30", "84", "18.6", "13.8", "5.8"],
+      ["83.1", "2220", "12:40", "86", "18.2", "14.1", "5.7"],
+      ["81.8", "2140", "12:20", "83", "19.0", "13.5", "5.8"],
     ].map { values in
       var row = ThrowDraft(source: .sample)
       row.velocityMph = values[0]
       row.totalSpinRpm = values[1]
       row.spinDirectionClock = values[2]
-      row.spinValue = values[3]
-      row.releaseHeightFeet = values[4]
+      row.spinEfficiencyPercent = values[3]
+      row.horizontalBreakInches = values[4]
+      row.verticalBreakInches = values[5]
+      row.releaseHeightFeet = values[6]
       return row
     }
     return session
@@ -54,12 +57,15 @@ public struct ThrowMeasurements: Codable, Sendable, Equatable {
   public let spinDirectionClock: Double
   public let spinEfficiencyPercent: Double?
   public let gyroDegree: Double?
+  public let horizontalBreakInches: Double?
+  public let verticalBreakInches: Double?
   public let releaseHeightFeet: Double
   public let rapsodoScore: Double?
 
   private enum CodingKeys: String, CodingKey {
     case velocityMph, totalSpinRpm, spinDirectionClock, spinEfficiencyPercent
-    case gyroDegree, releaseHeightFeet, rapsodoScore
+    case gyroDegree, horizontalBreakInches, verticalBreakInches
+    case releaseHeightFeet, rapsodoScore
   }
   public func encode(to encoder: Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
@@ -68,6 +74,8 @@ public struct ThrowMeasurements: Codable, Sendable, Equatable {
     try c.encode(spinDirectionClock, forKey: .spinDirectionClock)
     try c.encode(spinEfficiencyPercent, forKey: .spinEfficiencyPercent)
     try c.encode(gyroDegree, forKey: .gyroDegree)
+    try c.encode(horizontalBreakInches, forKey: .horizontalBreakInches)
+    try c.encode(verticalBreakInches, forKey: .verticalBreakInches)
     try c.encode(releaseHeightFeet, forKey: .releaseHeightFeet)
     try c.encode(rapsodoScore, forKey: .rapsodoScore)
   }
