@@ -1,20 +1,22 @@
 import AVFoundation
+import GripItScannerCore
 import SwiftUI
 import UIKit
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let points: [CGPoint]
+    let sensorSize: CGSize
 
     func makeUIView(context: Context) -> CameraPreviewView {
         let view = CameraPreviewView()
         view.accessibilityLabel = "Live TrueDepth camera preview"
-        view.set(session: session, points: points)
+        view.set(session: session, points: points, sensorSize: sensorSize)
         return view
     }
 
     func updateUIView(_ view: CameraPreviewView, context: Context) {
-        view.set(session: session, points: points)
+        view.set(session: session, points: points, sensorSize: sensorSize)
     }
 }
 
@@ -27,6 +29,9 @@ final class CameraPreviewView: UIView {
 
     private let skeletonLayer = CAShapeLayer()
     private var points: [CGPoint] = []
+    private var sensorSize: CGSize = .zero
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -50,11 +55,12 @@ final class CameraPreviewView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func set(session: AVCaptureSession, points: [CGPoint]) {
+    func set(session: AVCaptureSession, points: [CGPoint], sensorSize: CGSize) {
         if previewLayer.session !== session {
             previewLayer.session = session
         }
         self.points = points
+        self.sensorSize = sensorSize
         configurePreviewConnection()
         setNeedsLayout()
     }
@@ -66,11 +72,31 @@ final class CameraPreviewView: UIView {
         drawSkeleton()
     }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setNeedsLayout()
+    }
+
     private func configurePreviewConnection() {
         guard let connection = previewLayer.connection else { return }
 
-        if connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
+        if let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device,
+           rotationCoordinator?.device !== device {
+            let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
+            rotationCoordinator = coordinator
+            rotationObservation = coordinator.observe(
+                \.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]
+            ) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.setNeedsLayout() }
+            }
+        }
+        if let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelPreview {
+            let quarterTurn = (angle / 90).rounded() * 90
+            let normalized = quarterTurn.truncatingRemainder(dividingBy: 360)
+            if connection.isVideoRotationAngleSupported(normalized),
+               connection.videoRotationAngle != normalized {
+                connection.videoRotationAngle = normalized
+            }
         }
         connection.automaticallyAdjustsVideoMirroring = false
         if connection.isVideoMirroringSupported {
@@ -88,9 +114,15 @@ final class CameraPreviewView: UIView {
             guard point.x.isFinite, point.y.isFinite,
                   (0...1).contains(point.x), (0...1).contains(point.y)
             else { return nil }
-            // Input points are raw sensor-normalized and unmirrored. The preview
-            // layer applies its portrait rotation, aspect-fill crop, and mirroring.
-            return previewLayer.layerPointConverted(fromCaptureDevicePoint: point)
+            guard let connection = previewLayer.connection,
+                  let rotation = SensorImageRotation(clockwiseDegrees: Double(connection.videoRotationAngle)),
+                  let projected = ScannerAdapterGeometry.previewPoint(
+                    sensorPoint: PixelPoint(x: Double(point.x), y: Double(point.y)),
+                    rotation: rotation, mirrored: connection.isVideoMirrored,
+                    sourceWidth: Double(sensorSize.width), sourceHeight: Double(sensorSize.height),
+                    viewWidth: Double(bounds.width), viewHeight: Double(bounds.height)
+                  ) else { return nil }
+            return CGPoint(x: projected.x, y: projected.y)
         }
 
         let path = UIBezierPath()

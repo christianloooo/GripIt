@@ -15,8 +15,10 @@ final class ScannerViewModel: ObservableObject {
     @Published var currentView: ScanView? = .palm
     /// Normalized, unrotated sensor coordinates. The preview layer owns mirroring and cropping.
     @Published var points: [CGPoint] = []
+    @Published var sensorSize: CGSize = .zero
     @Published var jointFractions: [HandLandmarkName: Double] = [:]
     @Published var validDepthCount = 0
+    @Published var acceptedViewFrames = 0
     @Published var distanceCm: Double?
     @Published var profile: HandProfile?
     @Published var diagnostics = ""
@@ -95,6 +97,7 @@ final class ScannerViewModel: ObservableObject {
         currentView = .palm
         jointFractions = [:]
         validDepthCount = 0
+        acceptedViewFrames = 0
         distanceCm = nil
         profile = nil
         diagnostics = ""
@@ -135,7 +138,9 @@ final class ScannerViewModel: ObservableObject {
 
     private func apply(_ update: ScannerFrameUpdate) {
         points = update.points
+        sensorSize = update.sensorSize
         validDepthCount = update.validDepthCount
+        acceptedViewFrames = update.coverage.acceptedFramesInCurrentView
         distanceCm = update.distanceMeters.map { $0 * 100 }
         currentView = update.coverage.currentView
         progress = update.coverage.fraction
@@ -165,6 +170,7 @@ final class ScannerViewModel: ObservableObject {
 
 private struct ScannerFrameUpdate: Sendable {
     let points: [CGPoint]
+    let sensorSize: CGSize
     let validDepthCount: Int
     let distanceMeters: Double?
     let coverage: CoverageSnapshot
@@ -186,6 +192,7 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
     private var previousView: ScanView?
     private var counts: [ScanView: Int] = [:]
     private var stability = MeasurementStabilityGate()
+    private var recentDepth = RecentDepthLandmarks()
 
     init(hand: Handedness) { self.hand = hand }
 
@@ -230,27 +237,41 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             guard let meters = distance else { throw Guidance("Depth is missing. Change the hand angle slightly.") }
             if meters < 0.20 { throw Guidance("Move farther away.") }
             if meters > 0.65 { throw Guidance("Move closer.") }
-            guard let observedView = classify(detection.worldPoints) else {
+            let classifiedView = classify(detection.worldPoints)
+            diagnostics += " · View seen: \(classifiedView?.rawValue ?? "between views")"
+            guard let observedView = classifiedView else {
+                consecutiveViewFrames = 0
+                stability.reset()
+                recentDepth.reset()
                 throw Guidance(session.coverage.snapshot.nextInstruction)
             }
             let expectedView = session.coverage.snapshot.currentView
             guard observedView == expectedView else {
                 consecutiveViewFrames = 0
                 stability.reset()
+                recentDepth.reset()
                 throw Guidance(session.coverage.snapshot.nextInstruction)
             }
             if previousView == observedView { consecutiveViewFrames += 1 }
             else { previousView = observedView; consecutiveViewFrames = 1 }
-            guard consecutiveViewFrames >= 3 else { throw Guidance("Hold still.") }
+            guard consecutiveViewFrames >= 3 else { throw Guidance("Hold still.", preserveHistory: true) }
             joints.record(validLandmarks: Set(mapped.landmarks.keys), view: observedView)
-            guard depthCount == 21 else {
+            let measured = recentDepth.record(
+                mapped.landmarks, view: observedView, timestamp: CMTimeGetSeconds(frame.timestamp)
+            )
+            guard measured.count == 21 else {
                 stability.reset()
-                throw Guidance("Depth \(depthCount)/21. Spread your fingers and adjust the angle slightly.")
+                let missing = Set(HandLandmarkName.allCases.filter { measured[$0] == nil }.map {
+                    String($0.rawValue.prefix(while: { $0.isLowercase }))
+                }).sorted().joined(separator: ", ")
+                throw Guidance("Missing depth: \(missing). Spread your fingers and tilt slightly.", preserveHistory: true)
             }
-            guard stability.accept(mapped.landmarks) else { throw Guidance("Hold still while measurements settle.") }
+            guard stability.accept(measured) else {
+                throw Guidance("Hold still while measurements settle.", preserveHistory: true)
+            }
             try session.accept(ScanObservation(
                 view: observedView, handedness: hand,
-                landmarks: mapped.landmarks, frameConfidence: detection.confidence
+                landmarks: measured, frameConfidence: detection.confidence
             ))
             counts[observedView, default: 0] += 1
             message = session.coverage.snapshot.currentView == observedView
@@ -264,6 +285,7 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                     "acceptedFramesByView": .object(Dictionary(uniqueKeysWithValues: counts.map { ($0.key.rawValue, .number(Double($0.value))) })),
                     "validation": .string("experimental; compare with physical measurements"),
                     "depthSource": .string("synchronized-front-truedepth"),
+                    "depthHoleHandling": .string("measured-only; same view; maximum age 350ms; resets on motion"),
                     "landmarkConfidenceSource": .string("MediaPipe handedness score; not metric accuracy"),
                     "orientationSource": .string("MediaPipe model world landmarks; not metric measurements")
                 ])
@@ -277,9 +299,16 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             }
         } catch let guidance as Guidance {
             message = guidance.text
-            if points.isEmpty || depthCount != 21 { stability.reset() }
+            if !guidance.preserveHistory {
+                stability.reset()
+                recentDepth.reset()
+                consecutiveViewFrames = 0
+                previousView = nil
+            }
         } catch {
             stability.reset()
+            recentDepth.reset()
+            consecutiveViewFrames = 0
             message = error.localizedDescription
         }
         let view = session.coverage.snapshot.currentView
@@ -287,7 +316,9 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             (name, view.map { joints.snapshot.fraction(for: name, in: $0) } ?? 1)
         })
         return ScannerFrameUpdate(
-            points: points, validDepthCount: depthCount, distanceMeters: distance,
+            points: points,
+            sensorSize: CGSize(width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer)),
+            validDepthCount: depthCount, distanceMeters: distance,
             coverage: session.coverage.snapshot, jointFractions: fractions,
             message: message, diagnostics: diagnostics, profile: result,
             initializationFailed: initializationFailed
@@ -306,5 +337,12 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
         )
     }
 
-    private struct Guidance: Error { let text: String; init(_ text: String) { self.text = text } }
+    private struct Guidance: Error {
+        let text: String
+        let preserveHistory: Bool
+        init(_ text: String, preserveHistory: Bool = false) {
+            self.text = text
+            self.preserveHistory = preserveHistory
+        }
+    }
 }

@@ -71,7 +71,7 @@ struct SkeletonCoverageView: View {
             .accessibilityLabel("Current view skeletal coverage")
             .accessibilityValue(accessibilitySummary)
 
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
                 legendItem("Missing", color: missingColor)
                 legendItem("Sampling", color: samplingColor)
                 legendItem("Complete", color: completeColor)
@@ -89,6 +89,7 @@ struct SkeletonCoverageView: View {
         HStack(spacing: 3) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(label)
+                .lineLimit(1)
         }
     }
 

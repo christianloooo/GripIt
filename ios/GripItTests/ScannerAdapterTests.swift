@@ -1,5 +1,6 @@
 import XCTest
 import CoreVideo
+import UIKit
 import GripItScannerCore
 @testable import GripIt
 
@@ -35,6 +36,37 @@ final class ScannerAdapterTests: XCTestCase {
         let bottomRight = SensorImageRotation.left.sensorPoint(fromModel: PixelPoint(x: 1, y: 1))
         XCTAssertEqual(bottomRight.x, 0)
         XCTAssertEqual(bottomRight.y, 1)
+    }
+
+    func testCameraReportedQuarterTurnsMatchPhysicalRGBPixels() throws {
+        var source: CVPixelBuffer?
+        let attributes = [kCVPixelBufferIOSurfacePropertiesKey as String: [:]] as CFDictionary
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 2, 1, kCVPixelFormatType_32BGRA,
+                                          attributes, &source), kCVReturnSuccess)
+        let input = try XCTUnwrap(source)
+        CVPixelBufferLockBaseAddress(input, [])
+        let bytes = try XCTUnwrap(CVPixelBufferGetBaseAddress(input)).assumingMemoryBound(to: UInt8.self)
+        let colors: [UInt8] = [0, 0, 255, 255, 0, 255, 0, 255]
+        for (offset, value) in colors.enumerated() {
+            bytes[offset] = value
+        }
+        CVPixelBufferUnlockBaseAddress(input, [])
+        let service = try HandLandmarkerService()
+        let cases: [(UIImage.Orientation, Int, Int, Int, Int)] = [
+            (.up, 2, 1, 2, 1), (.right, 1, 2, 2, 1),
+            (.down, 2, 1, 1, 2), (.left, 1, 2, 1, 2)
+        ]
+        for (orientation, width, height, firstChannel, lastChannel) in cases {
+            let output = try service.prepareUpright(input, orientation: orientation)
+            XCTAssertEqual(CVPixelBufferGetWidth(output), width)
+            XCTAssertEqual(CVPixelBufferGetHeight(output), height)
+            CVPixelBufferLockBaseAddress(output, .readOnly)
+            let result = try XCTUnwrap(CVPixelBufferGetBaseAddress(output)).assumingMemoryBound(to: UInt8.self)
+            let lastOffset = (height - 1) * CVPixelBufferGetBytesPerRow(output) + (width - 1) * 4
+            XCTAssertGreaterThan(result[firstChannel], 240)
+            XCTAssertGreaterThan(result[lastOffset + lastChannel], 240)
+            CVPixelBufferUnlockBaseAddress(output, .readOnly)
+        }
     }
 
     func testDepthHolesAndOutOfRangeSamplesCannotBecomeMeasurements() {

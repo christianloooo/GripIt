@@ -50,9 +50,10 @@ struct ScannerView: View {
                     Text("Which hand do you throw with?")
                         .font(.largeTitle.bold())
                         .multilineTextAlignment(.center)
-                    Text("We’ll scan this hand.")
+                    Text("Prop up your phone with the screen facing you. Hold your hand 30–40 cm in front of the selfie camera.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
 
                 HStack(spacing: 14) {
@@ -106,7 +107,7 @@ struct ScannerView: View {
 
     private var scanner: some View {
         ZStack {
-            CameraPreview(session: model.captureSession, points: model.points)
+            CameraPreview(session: model.captureSession, points: model.points, sensorSize: model.sensorSize)
                 .ignoresSafeArea()
 
             LinearGradient(
@@ -205,6 +206,9 @@ struct ScannerView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                Text("Accepted \(model.acceptedViewFrames)/8 frames")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
             .padding(14)
             .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 16))

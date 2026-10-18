@@ -37,7 +37,7 @@ The simulator has no TrueDepth camera. Use it only for non-camera UI checks. Fin
 
 ## Package resolution troubleshooting
 
-If Xcode reports **Missing package product `GripItScannerCore`** or **`MediaPipeTasksVision`**, let package resolution finish before building. The first MediaPipe checkout downloads a large repository and binary frameworks; canceling it can leave both products unresolved even though their declarations are correct.
+If Xcode reports **Missing package product `GripItScannerCore`** or **`MediaPipeTasksVision`**, let package resolution finish before building. MediaPipe now uses the small local `ios/MediaPipeTasks` package, which downloads Google's official binary frameworks directly without cloning the large source repository. If an already-open Xcode window still says **Fetching mediapipe**, close and reopen the project to discard its old remote-package task.
 
 Choose **File > Packages > Resolve Package Versions**, or run from the repository root:
 
@@ -46,31 +46,31 @@ xcodebuild -resolvePackageDependencies -skipPackageUpdates \
   -project ios/GripIt.xcodeproj -scheme GripIt
 ```
 
-Keep the complete `ios/GripItScannerCore` folder beside `GripIt.xcodeproj`. Avoid resetting package caches while a download is running: that discards progress. The shared `Package.resolved` file pins the MediaPipe revision. Debug builds use only the selected device's architecture so the app and its local Swift package agree on the simulator architecture.
+Keep both `ios/GripItScannerCore` and `ios/MediaPipeTasks` beside `GripIt.xcodeproj`. Avoid resetting package caches while a download is running: that discards progress. The local MediaPipe manifest pins official 1.1.1 archive URLs and checksums. Debug builds use only the selected device's architecture so the app and its local Swift package agree on the simulator architecture.
 
 ## Scan flow
 
 1. Choose the physical hand being scanned.
-2. Hold the open hand near the requested distance.
+2. Prop the phone upright with the screen facing you. Hold the open hand 30–40 cm in front of the selfie camera. Your face does not need to be in frame.
 3. Complete the views in order: palm, thumb side, back, pinky side.
 4. Keep the whole hand visible until each view fills.
 5. Review or export the resulting `HandProfile` JSON.
 
-The small skeleton shows valid depth samples for the current view, including individual joints from a frame that is incomplete elsewhere. Overall progress advances only after a complete 21-joint frame also passes the view and metric stability checks. A filled skeleton alone does not mean the scan is finished.
+The small skeleton shows valid depth samples for the current view, including individual joints from a frame that is incomplete elsewhere. Overall progress advances only after 21 measured joints pass view and metric stability checks. Brief depth holes may use a real sample from the same steady view within the previous 350 milliseconds. Historical points expire and reset on motion or tracking loss; hidden points are never predicted. The accepted-frame counter shows actual progress through the current view. A filled skeleton alone does not mean the scan is finished.
 
 Thickness is currently unavailable and remains `null`. Hand label confidence is a tracking score, not measurement accuracy. Validate measurements against a ruler before using the profile elsewhere.
 
-RGB pixels are explicitly rotated upright before MediaPipe inference with `.up` orientation. Output points are then mapped once back to the original unmirrored sensor space for depth lookup. Calibration lens-distortion correction is applied before metric projection.
+RGB and depth outputs explicitly use native rotation 0. Apple's camera rotation coordinator determines the required analysis and preview angles rather than assuming every sensor needs a fixed 90-degree turn. RGB pixels are explicitly rotated upright before MediaPipe inference with `.up` orientation. Output points are then mapped once back to the original unmirrored sensor space for depth lookup. The overlay uses the preview's actual rotation, mirroring, and aspect-fill crop. Calibration lens-distortion correction is applied before metric projection.
 
 The analysis coordinates stay unmirrored. Only the selfie preview is mirrored. The scan requires synchronized RGB and depth frames. It does not fall back to RGB-only scale estimation.
 
 ## Packages and model
 
 - `GripItScannerCore` is a local package at `ios/GripItScannerCore`.
-- `MediaPipeTasksVision` is pinned to official `v1.1.1` commit `50505c8312c7eacb1bd411cecdc4cc9fd08d53cb`.
+- `MediaPipeTasksVision` uses official `v1.1.1` binary URLs and checksums from commit `50505c8312c7eacb1bd411cecdc4cc9fd08d53cb`, packaged locally under `ios/MediaPipeTasks`.
 - `public/mediapipe/hand_landmarker.task` is referenced directly as an app resource. There is no second checked-in copy.
 
-The revision pin is required because the package uses unsafe linker flags. Open the project in Xcode and confirm package resolution before the device test.
+Local packaging preserves the required unsafe linker flags without cloning the upstream repository. Open the project in Xcode and confirm package resolution before the device test.
 
 ## Checks
 

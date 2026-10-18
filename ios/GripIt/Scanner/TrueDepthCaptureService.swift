@@ -2,6 +2,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import GripItScannerCore
 import UIKit
 
 struct SynchronizedCaptureFrame {
@@ -10,8 +11,7 @@ struct SynchronizedCaptureFrame {
     let timestamp: CMTime
 
     /// The capture outputs remain in their native, unmirrored sensor orientation.
-    /// Passing `.left` to MediaPipe rotates a front-camera buffer upright for a
-    /// portrait user without changing the pixel or depth buffers themselves.
+    /// The camera's rotation coordinator determines the analysis orientation.
     let imageOrientation: UIImage.Orientation
 }
 
@@ -41,6 +41,9 @@ final class TrueDepthCaptureService: NSObject {
     private let videoOutput = AVCaptureVideoDataOutput()
     private let depthOutput = AVCaptureDepthDataOutput()
     private var outputSynchronizer: AVCaptureDataOutputSynchronizer?
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
+    private var imageOrientation: UIImage.Orientation = .up
 
     private let deliveryInterval = CMTime(value: 1, timescale: 8)
     private let maximumAutomaticRestartAttempts = 1
@@ -137,6 +140,22 @@ final class TrueDepthCaptureService: NSObject {
 
         let formats = try Self.preferredFormats(for: device)
         let input = try AVCaptureDeviceInput(device: device)
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        rotationCoordinator = coordinator
+        rotationObservation = coordinator.observe(
+            \.videoRotationAngleForHorizonLevelCapture, options: [.initial, .new]
+        ) { [weak self] _, change in
+            guard let self, let angle = change.newValue,
+                  let rotation = SensorImageRotation(clockwiseDegrees: Double(angle)) else { return }
+            self.captureQueue.async {
+                switch rotation {
+                case .up: self.imageOrientation = .up
+                case .down: self.imageOrientation = .down
+                case .left: self.imageOrientation = .left
+                case .right: self.imageOrientation = .right
+                }
+            }
+        }
 
         session.beginConfiguration()
         session.sessionPreset = .inputPriority
@@ -232,8 +251,12 @@ final class TrueDepthCaptureService: NSObject {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = false
         }
-        // Do not set videoRotationAngle. RGB and depth stay in the same native
-        // sensor orientation so their normalized coordinates remain aligned.
+        // Defaults differ across camera hardware. Explicitly use native buffers;
+        // the rotation coordinator supplies the separate analysis transform.
+        guard connection.isVideoRotationAngleSupported(0) else {
+            throw CaptureServiceError.missingOutputConnection("\(name) native orientation")
+        }
+        connection.videoRotationAngle = 0
     }
 
     private func addSessionObservers() {
@@ -390,7 +413,7 @@ extension TrueDepthCaptureService: AVCaptureDataOutputSynchronizerDelegate {
                 pixelBuffer: pixelBuffer,
                 depthData: floatDepth,
                 timestamp: videoTimestamp,
-                imageOrientation: .left
+                imageOrientation: imageOrientation
             )
         )
     }

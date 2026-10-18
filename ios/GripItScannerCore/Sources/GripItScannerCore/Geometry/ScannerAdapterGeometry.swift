@@ -1,8 +1,28 @@
 import Foundation
 
 /// Image orientation is analysis-only. The camera preview may mirror independently.
-public enum SensorImageRotation: Sendable {
+public enum SensorImageRotation: Equatable, Sendable {
     case up, down, left, right
+
+    public init?(clockwiseDegrees: Double) {
+        guard clockwiseDegrees.isFinite else { return nil }
+        let normalized = clockwiseDegrees.truncatingRemainder(dividingBy: 360)
+        switch (Int((normalized / 90).rounded()) % 4 + 4) % 4 {
+        case 0: self = .up
+        case 1: self = .right
+        case 2: self = .down
+        default: self = .left
+        }
+    }
+
+    public func modelPoint(fromSensor point: PixelPoint) -> PixelPoint {
+        switch self {
+        case .up: point
+        case .down: PixelPoint(x: 1 - point.x, y: 1 - point.y)
+        case .left: PixelPoint(x: point.y, y: 1 - point.x)
+        case .right: PixelPoint(x: 1 - point.y, y: point.x)
+        }
+    }
 
     public func sensorPoint(fromModel point: PixelPoint) -> PixelPoint {
         switch self {
@@ -15,6 +35,24 @@ public enum SensorImageRotation: Sendable {
 }
 
 public enum ScannerAdapterGeometry {
+    /// Projects native sensor coordinates into a rotated, mirrored aspect-fill preview.
+    public static func previewPoint(
+        sensorPoint: PixelPoint, rotation: SensorImageRotation, mirrored: Bool,
+        sourceWidth: Double, sourceHeight: Double, viewWidth: Double, viewHeight: Double
+    ) -> PixelPoint? {
+        guard [sensorPoint.x, sensorPoint.y, sourceWidth, sourceHeight, viewWidth, viewHeight].allSatisfy(\.isFinite),
+              sourceWidth > 0, sourceHeight > 0, viewWidth > 0, viewHeight > 0 else { return nil }
+        let rotated = rotation.modelPoint(fromSensor: sensorPoint)
+        let swapsAxes = rotation == .left || rotation == .right
+        let width = swapsAxes ? sourceHeight : sourceWidth
+        let height = swapsAxes ? sourceWidth : sourceHeight
+        let scale = max(viewWidth / width, viewHeight / height)
+        return PixelPoint(
+            x: (mirrored ? 1 - rotated.x : rotated.x) * width * scale + (viewWidth - width * scale) / 2,
+            y: rotated.y * height * scale + (viewHeight - height * scale) / 2
+        )
+    }
+
     public enum HandLabelConvention: Sendable { case subjectHand, mirroredViewer }
 
     public static func physicalHandedness(
