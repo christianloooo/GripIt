@@ -1,3 +1,4 @@
+import { downloadJSON } from "./download";
 export type FailureEntry = {
   id: string;
   time: string;
@@ -57,26 +58,10 @@ export function clearFailures() {
   save();
 }
 export function downloadFailures() {
-  const url = URL.createObjectURL(
-    new Blob(
-      [
-        JSON.stringify(
-          {
-            version: 1,
-            app: "GripIt",
-            rigVersion: "proportioned-bind-minimum-rotation-v2",
-            failures: entries,
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: "application/json" },
-    ),
-  );
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "gripit-failure-log.json";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadJSON("gripit-failure-log.json", {
+    version: 1,
+    app: "GripIt",
+    rigVersion: "proportioned-bind-minimum-rotation-v2",
+    failures: entries,
+  });
 }
