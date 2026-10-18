@@ -23,6 +23,12 @@ const records: ThrowRecord[] = [82, 83, 84].map((velocityMph, i) => ({
     spinEfficiencyPercent: 72,
     gyroDegree: null,
     spinDirectionClock: 12.5,
+    // Required and nullable since break became part of the measurement
+    // contract. Null, not a number: this fixture exercises the interpretation
+    // boundary, and a break reading would widen the set of numbers the guard
+    // permits rather than leave the cases asserting what they assert today.
+    horizontalBreakInches: null,
+    verticalBreakInches: null,
     releaseHeightFeet: 5.8,
     rapsodoScore: null,
   },
