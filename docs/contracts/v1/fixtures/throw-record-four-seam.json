@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "throwId": "sample-throw-1",
+  "sessionId": "sample-session-1",
+  "pitchId": "four-seam",
+  "recordedAt": "2026-10-17T00:00:00Z",
+  "measurements": {
+    "velocityMph": 82.4,
+    "totalSpinRpm": 2180,
+    "spinDirectionClock": 12.5,
+    "spinEfficiencyPercent": 84,
+    "gyroDegree": null,
+    "releaseHeightFeet": 5.8,
+    "rapsodoScore": null
+  },
+  "source": "sample",
+  "extensions": {}
+}
