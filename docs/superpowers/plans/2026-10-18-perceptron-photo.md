@@ -26,7 +26,7 @@
 - [x] Read HANDOFF.md, PRODUCT.md, handInstructions.md, original rule plan and Perceptron research. Record historical contradictions in Claude's brief.
 - [x] Verify current dependencies, 193 tests and TypeScript baseline.
 - [x] Write backend handoff, contract, ownership and separate status files.
-- [ ] Register Claude's isolated worktree and branch from the shared documentation commit.
+- [x] Register Claude's isolated worktree and branch from the shared documentation commit.
 
 ## Milestone 1: real extractor with a testable provider boundary
 

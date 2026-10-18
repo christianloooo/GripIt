@@ -2,7 +2,7 @@
 
 Prepared by Codex, October 18, 2026. Claude owns updates to this file after starting.
 
-Branch: `claude/mongodb-backend` in the separately registered worktree. Start with `claude-backend-brief.md` and `backend-contract.md` beside this file.
+Branch: `claude/mongodb-backend`. Folder: `/Users/jshum/.codex/worktrees/c9ea/gripit`. Start with `claude-backend-brief.md` and `backend-contract.md` beside this file.
 
 Implementation has not started. No MongoDB Atlas cluster or backend account has been configured. The handoff has been prepared locally; it has not been sent to an external chat automatically.
 

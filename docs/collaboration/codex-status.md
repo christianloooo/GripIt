@@ -11,6 +11,7 @@ Branch: `codex/perceptron-photo`. Folder: `/Users/jshum/Desktop/code-folders/gri
 - Recorded session-wide Step 4 aggregation and the repeated-sample demonstration flow.
 - Preserved the existing local native signing changes and main demo.
 - Added existing research reports to the collaboration baseline. Standard Node fetch and Mk1.5 image OCR were tested separately; hand landmark replacement is excluded.
+- Registered Claude's worktree at `/Users/jshum/.codex/worktrees/c9ea/gripit` on `claude/mongodb-backend`. Shared starting documentation commit: `0d8b368`.
 
 ## Current checks
 

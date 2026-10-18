@@ -8,6 +8,8 @@ Prepared October 18, 2026. Start here when resuming either chat.
 - Claude Code, in a separate managed worktree on `claude/mongodb-backend`: MongoDB Atlas, accounts, saved progress, demo plans and server-side usage limits.
 - `main` remains the existing demo until tested changes are integrated. These two branches are temporary collaboration branches, explicitly requested after the earlier branch cleanup.
 
+Claude's working folder is `/Users/jshum/.codex/worktrees/c9ea/gripit`. It is a registered worktree sharing this repository's Git history. Open Claude Code in that folder and use [the ready-to-paste prompt](START-CLAUDE.md). Codex remains in the original folder.
+
 Read [Claude's brief](claude-backend-brief.md), [the API contract](backend-contract.md), and [the Codex preparation plan](../superpowers/plans/2026-10-18-perceptron-photo.md). Each chat updates only its own status file.
 
 ## Working together
