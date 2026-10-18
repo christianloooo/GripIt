@@ -132,6 +132,11 @@ describe("four-seam rules", () => {
     expect(detect("four-seam-buried", m)).toBeNull();
     expect(detect("four-seam-efficiency", m)).not.toBeNull();
   });
+
+  it("buried: stays silent when the axis is off, even with very low vertical break", () => {
+    const m = metrics({ verticalBreakInches: 8, spinDirectionClock: 1.5 });
+    expect(detect("four-seam-buried", m)).toBeNull();
+  });
 });
 
 describe("magnitude", () => {

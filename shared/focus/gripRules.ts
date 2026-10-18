@@ -174,7 +174,10 @@ export const GRIP_RULES: readonly GripRule[] = [
     id: "four-seam-buried",
     pitchIds: FOUR_SEAM,
     detect(m, t) {
-      // Low efficiency is the efficiency or axis rule's symptom, not this one.
+      // Low vertical break follows from an off axis or low efficiency more
+      // often than from palm depth, so this rule only speaks when neither of
+      // those explains it. Correctness must not depend on ranking.
+      if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
       const eff = m.spinEfficiencyPercent;
       if (distanceOutside(eff, t.efficiencyPercent) > 0) return null;
       const v = m.verticalBreakInches;
