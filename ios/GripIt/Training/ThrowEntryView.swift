@@ -369,10 +369,9 @@ private struct ThrowPhotoReview: View {
     NavigationStack {
       GeometryReader { geometry in
         let narrow = geometry.size.width < 600
-        HStack(alignment: .top, spacing: narrow ? 10 : 24) {
-          photoPanel
-            .frame(width: max(115, geometry.size.width * (narrow ? 0.40 : 0.48)))
-          ScrollView {
+        ScrollView {
+          VStack(alignment: .leading, spacing: narrow ? 18 : 24) {
+            photoPanel
             VStack(alignment: .leading, spacing: narrow ? 14 : 18) {
               reviewHeader
               reading("Velocity", value: $draft.velocityMph, unit: "mph", key: "velocityMph", required: true)
@@ -389,9 +388,16 @@ private struct ThrowPhotoReview: View {
               reading("Rapsodo score", value: $draft.rapsodoScore, unit: "", key: "rapsodoScore")
               Text("Leave readings that are absent from the photo empty.")
                 .font(.caption).foregroundStyle(.secondary)
-            }.padding(.vertical, 6).padding(.trailing, 2)
-          }.scrollDismissesKeyboard(.interactively)
-        }.padding(.horizontal, narrow ? 14 : 24).padding(.top, 10)
+            }
+            .padding(.vertical, 6)
+          }
+          .frame(maxWidth: 820, alignment: .leading)
+          .frame(maxWidth: .infinity)
+          .padding(.horizontal, narrow ? 14 : 24)
+          .padding(.top, 10)
+          .padding(.bottom, 16)
+        }
+        .scrollDismissesKeyboard(.interactively)
       }
       .background(ThrowPhotoStyle.background).preferredColorScheme(.dark).tint(.mint)
       .navigationTitle("Review readings").navigationBarTitleDisplayMode(.inline)
@@ -446,26 +452,26 @@ private struct ThrowPhotoReview: View {
           ThrowPhotoZoomView(image: photo.image)
             .accessibilityLabel(photo.title + ". Pinch to zoom and drag to inspect the photo.")
           if scanning {
-            Canvas { context, size in
-              for y in stride(from: 5.0, through: size.height, by: 10) {
-                let strength = 1 - abs(y - size.height / 2) / (size.height / 2)
-                for x in stride(from: 5.0, through: size.width, by: 10) {
-                  let dot = CGRect(x: x, y: y, width: 3, height: 3)
-                  context.fill(Path(ellipseIn: dot), with: .color(.mint.opacity(0.25 + strength * 0.6)))
-                }
-              }
-            }
-              .frame(height: 80)
-              .background(LinearGradient(colors: [.clear, .mint.opacity(0.16), .clear],
-                startPoint: .top, endPoint: .bottom))
-              .offset(y: scanPosition * max(0, bounds.size.height - 80))
-              .allowsHitTesting(false).accessibilityHidden(true)
+            scanBeam
+              .offset(y: scanPosition * max(0, bounds.size.height - 4))
+              .allowsHitTesting(false)
+              .accessibilityHidden(true)
+            Label("SCANNING RAPSODO PHOTO", systemImage: "viewfinder")
+              .font(.system(size: 9, weight: .bold, design: .monospaced))
+              .tracking(0.6)
+              .foregroundStyle(.mint)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 7)
+              .background(.black.opacity(0.76), in: Capsule())
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(12)
+              .allowsHitTesting(false)
           }
         }
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(.mint.opacity(0.18), lineWidth: 1))
       }
-      .frame(maxHeight: .infinity)
+      .aspectRatio(photoAspectRatio, contentMode: .fit)
       .background(ThrowPhotoStyle.surface, in: RoundedRectangle(cornerRadius: 18))
       Text(photo.title).font(.caption.weight(.semibold))
       Label("Pinch to zoom", systemImage: "arrow.up.left.and.arrow.down.right")
@@ -474,7 +480,27 @@ private struct ThrowPhotoReview: View {
         Text("SAMPLE PHOTO").font(.system(size: 8, weight: .semibold, design: .monospaced))
           .tracking(1).foregroundStyle(.mint)
       }
-    }.padding(.bottom, 12)
+    }
+  }
+
+  private var photoAspectRatio: CGFloat {
+    guard photo.image.size.height > 0 else { return 4 / 3 }
+    return photo.image.size.width / photo.image.size.height
+  }
+
+  private var scanBeam: some View {
+    Rectangle()
+      .fill(LinearGradient(
+        colors: [.clear, .mint.opacity(0.12), .mint.opacity(0.82), .mint.opacity(0.12), .clear],
+        startPoint: .top,
+        endPoint: .bottom
+      ))
+      .frame(height: 42)
+      .overlay(alignment: .center) {
+        Rectangle().fill(.mint.opacity(0.9)).frame(height: 1)
+      }
+      .shadow(color: .mint.opacity(0.55), radius: 8)
+      .frame(maxWidth: .infinity)
   }
 
   private func reading(_ title: String, value: Binding<String>, unit: String, key: String,
@@ -543,7 +569,7 @@ private struct ThrowPhotoReview: View {
   }
 }
 
-/// A native zoom surface keeps the full capture on the left while readings stay editable on the right.
+/// A native zoom surface lets users inspect the full capture above the editable readings.
 private struct ThrowPhotoZoomView: UIViewRepresentable {
   let image: UIImage
   func makeUIView(context: Context) -> ThrowPhotoZoomScrollView {
