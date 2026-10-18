@@ -38,7 +38,7 @@ struct FocusAssessmentView: View {
         // This is the very same pose and plan captured in Step 2. No second solve.
         GripSceneView(
           pose: model.fit.pose, showContacts: false, camera: camera,
-          reset: reset, gripPlan: model.fit.plan,
+          reset: reset, gripPlan: model.fit.plan, render: model.fit.render,
           zoneSeverity: showPrototypeFlags ? assessment.severityMap : nil,
           selectedZone: selectedZone, onZoneSelect: { selectedZone = $0 }
         )

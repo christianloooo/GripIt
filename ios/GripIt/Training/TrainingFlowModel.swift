@@ -2,9 +2,14 @@ import Foundation
 import GripItScannerCore
 import SwiftUI
 
+/// The solved grip plus everything the scene derives from it.
+///
+/// `render` is built on the solving task, not on the main thread, so switching
+/// pitch reuses it instead of rebuilding the zone surface and shading weights.
 struct StudioFit: Sendable {
-  let pose: GripPose
-  let plan: GripPlan
+  let render: GripRenderState
+  var pose: GripPose { render.pose }
+  var plan: GripPlan { render.plan }
 }
 
 @MainActor
@@ -19,7 +24,9 @@ final class GripStudioSession: ObservableObject {
     let profile = profile
     return try await cache.value(for: pitch) {
       let pose = try GripPoseSolver.solve(profile: profile, pitch: pitch)
-      return StudioFit(pose: pose, plan: GripPlan(pose: pose))
+      // Derive the scene's data here, on this detached task, so revisiting a
+      // pitch reuses it instead of rebuilding it while the view updates.
+      return StudioFit(render: try GripRenderState(pose: pose))
     }
   }
 

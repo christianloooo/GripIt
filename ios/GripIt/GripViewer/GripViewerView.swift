@@ -17,6 +17,8 @@ struct GripViewerView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var pitch: PitchGrip = .fourSeam
   @State private var pose: GripPose?
+  /// The cached fit this pitch resolved to, carrying the scene's prebuilt data.
+  @State private var fit: StudioFit?
   @State private var error: String?
   @State private var loading = true
   @State private var contacts = false
@@ -53,7 +55,7 @@ struct GripViewerView: View {
             if let pose {
               GripSceneView(
                 pose: pose, showContacts: contacts, camera: camera, reset: cameraReset,
-                gripPlan: plan, zoneSeverity: activeSeverity,
+                gripPlan: plan, render: fit?.render, zoneSeverity: activeSeverity,
                 showPressure: zoneSeverity == nil && showPressure, selectedZone: selectedZone,
                 onZoneSelect: selectZone
               )
@@ -165,8 +167,8 @@ struct GripViewerView: View {
       }
       .safeAreaInset(edge: .bottom) {
         Button {
-          if let pose, let plan {
-            training = studio.training(for: StudioFit(pose: pose, plan: plan))
+          if let fit {
+            training = studio.training(for: fit)
             showThrows = true
           }
         } label: {
@@ -174,7 +176,7 @@ struct GripViewerView: View {
             .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(.black)
-        .disabled(loading || pose == nil || plan == nil)
+        .disabled(loading || fit == nil)
         .accessibilityIdentifier("record-throws")
         .padding(.horizontal, 20).padding(.vertical, 12).background(.ultraThinMaterial)
       }
@@ -190,6 +192,7 @@ struct GripViewerView: View {
       do {
         let result = try await studio.fitted(selected)
         guard !Task.isCancelled else { return }
+        fit = result
         pose = result.pose
         plan = result.plan
         if !result.plan.zones.contains(where: { $0.zoneId == selectedZone }) {
@@ -198,6 +201,7 @@ struct GripViewerView: View {
         loading = false
       } catch {
         guard !Task.isCancelled else { return }
+        fit = nil
         pose = nil
         plan = nil
         self.error = error.localizedDescription

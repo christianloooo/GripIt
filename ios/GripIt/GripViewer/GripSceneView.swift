@@ -24,6 +24,9 @@ struct GripSceneView: UIViewRepresentable {
   var showBall = true
   var wireframe = false
   var gripPlan: GripPlan? = nil
+  /// Prebuilt zone surface and shading weights for this pose. Supplying it keeps
+  /// the ~190 ms derivation off the main thread when the pitch changes.
+  var render: GripRenderState? = nil
   var zoneSeverity: GripSeverityMap? = nil
   var showPressure = false
   var selectedZone: GripZoneID? = nil
@@ -39,7 +42,8 @@ struct GripSceneView: UIViewRepresentable {
     context.coordinator.onZoneSelect = onZoneSelect
     context.coordinator.update(
       view, pose: pose, contacts: showContacts, camera: camera, reset: reset,
-      plan: gripPlan ?? GripPlan(pose: pose), severity: zoneSeverity, selected: selectedZone,
+      plan: gripPlan ?? render?.plan ?? GripPlan(pose: pose), render: render,
+      severity: zoneSeverity, selected: selectedZone,
       showBall: showBall, wireframe: wireframe, pressure: showPressure)
     let tap = UITapGestureRecognizer(
       target: context.coordinator, action: #selector(Coordinator.selectZone(_:)))
@@ -55,7 +59,8 @@ struct GripSceneView: UIViewRepresentable {
     context.coordinator.onZoneSelect = onZoneSelect
     context.coordinator.update(
       view, pose: pose, contacts: showContacts, camera: camera, reset: reset,
-      plan: gripPlan ?? GripPlan(pose: pose), severity: zoneSeverity, selected: selectedZone,
+      plan: gripPlan ?? render?.plan ?? GripPlan(pose: pose), render: render,
+      severity: zoneSeverity, selected: selectedZone,
       showBall: showBall, wireframe: wireframe, pressure: showPressure)
   }
   static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
@@ -147,7 +152,8 @@ struct GripSceneView: UIViewRepresentable {
     var markerNode: SCNNode?
     func update(
       _ view: SCNView, pose: GripPose, contacts: Bool, camera: GripCamera, reset: Int,
-      plan: GripPlan, severity: GripSeverityMap?, selected: GripZoneID?,
+      plan: GripPlan, render: GripRenderState?, severity: GripSeverityMap?,
+      selected: GripZoneID?,
       showBall: Bool = true, wireframe: Bool = false, pressure: Bool = false
     ) {
       let changed = poseID != pose.id || content == nil || showingBall != showBall
@@ -163,11 +169,17 @@ struct GripSceneView: UIViewRepresentable {
         showingBall = showBall
         hand = scene.rootNode.childNode(withName: "measured-hand", recursively: true)
         baseGeometry = hand?.geometry
-        surface = (try? GripHandAsset.load()).map {
-          GripZoneSurface(pose: pose, gripPlan: plan, hand: $0)
-        }
+        // Both cost roughly 190 ms together on this rig. Use the copy built with
+        // the pose when there is one; only the standalone hand review, which has
+        // no fitted grip, still derives them here.
+        surface =
+          render?.surface
+          ?? (try? GripHandAsset.load()).map {
+            GripZoneSurface(pose: pose, gripPlan: plan, hand: $0)
+          }
         pressureWeights =
-          (try? GripHandAsset.load()).map {
+          render?.pressureWeights
+          ?? (try? GripHandAsset.load()).map {
             GripPoseSolver.pressureShadingWeights(hand: $0, pose: pose)
           } ?? []
         indices = pose.indices
