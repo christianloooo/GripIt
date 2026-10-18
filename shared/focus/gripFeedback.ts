@@ -1,7 +1,12 @@
 import type { Handedness } from "../contracts/handProfile";
 import type { InstructionZone, ZoneId } from "../contracts/zones";
 import type { ThrowRecord } from "../throwEntry";
-import { GRIP_RULES, GRIP_RULE_VERSION, type GripRule } from "./gripRules";
+import {
+  GRIP_RULES,
+  GRIP_RULE_VERSION,
+  clockText,
+  type GripRule,
+} from "./gripRules";
 import { deriveMetrics, type DerivedMetrics } from "./metrics";
 import { targetFor } from "./targets";
 
@@ -66,20 +71,6 @@ const PITCH_IDS_NEEDING_BASELINE: readonly string[] = ["changeup"];
 function roundTo(value: number, decimals: number): number {
   const factor = 10 ** decimals;
   return Math.round((value + Number.EPSILON) * factor) / factor;
-}
-
-// Presentation only, for the measured line. Deliberately local: exporting a
-// formatter from gripRules.ts would widen that module's surface for a string
-// nothing else reads, and it decides nothing.
-function clockText(clock: number): string {
-  const wrapped = clock % 12 === 0 ? 12 : clock % 12;
-  let hours = Math.floor(wrapped);
-  let minutes = Math.round((wrapped - hours) * 60);
-  if (minutes === 60) {
-    hours = hours === 12 ? 1 : hours + 1;
-    minutes = 0;
-  }
-  return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
 /** Arithmetic on what was entered. No judgement, so no target is consulted. */

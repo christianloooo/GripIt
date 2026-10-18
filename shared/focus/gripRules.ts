@@ -74,8 +74,20 @@ function axisDistance(
   return Math.min(...ends.map((end) => clockHoursApart(axis, end)));
 }
 
-function clockText(clock: number): string {
-  const wrapped = clock % 12 === 0 ? 12 : clock % 12;
+/**
+ * A clock reading as a dial position. Presentation only: nothing here decides
+ * whether a rule fires, and axisDistance() does its own unwrapping.
+ *
+ * Exported so gripFeedback.ts's measured line reads the same renderer rather
+ * than a second copy of it. gripFeedback already depends on this module, so
+ * sharing adds no edge to the dependency graph.
+ *
+ * A dial has no zero hour. The twelfth hour runs from 12:00 up to 1:00, so a
+ * reading in that band keeps the hour 12 instead of printing "0:mm".
+ */
+export function clockText(clock: number): string {
+  const mod = clock % 12;
+  const wrapped = mod < 1 ? mod + 12 : mod;
   let hours = Math.floor(wrapped);
   let minutes = Math.round((wrapped - hours) * 60);
   if (minutes === 60) {

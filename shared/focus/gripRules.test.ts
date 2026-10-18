@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { isZoneId } from "../contracts/zones";
-import { GRIP_RULES, GRIP_RULE_VERSION, type GripRule } from "./gripRules";
+import {
+  GRIP_RULES,
+  GRIP_RULE_VERSION,
+  clockText,
+  type GripRule,
+} from "./gripRules";
 import type { DerivedMetrics } from "./metrics";
 import { targetFor } from "./targets";
 
@@ -60,6 +65,31 @@ describe("rule shape", () => {
 
   it("never names the wrist, which is not a grip contact", () => {
     for (const r of GRIP_RULES) expect(r.zones).not.toContain("wrist");
+  });
+});
+
+describe("clockText", () => {
+  // A clock dial has no zero hour. Anything from 12:00 up to 1:00 belongs to
+  // the twelfth hour, so it reads "12:mm", never "0:mm".
+  it("keeps the hour at 12 just past the top of the dial", () => {
+    expect(clockText(12.5)).toBe("12:30");
+    expect(clockText(0.2)).toBe("12:12");
+  });
+
+  it("renders a whole hour", () => {
+    expect(clockText(12)).toBe("12:00");
+    expect(clockText(0)).toBe("12:00");
+    expect(clockText(1)).toBe("1:00");
+  });
+
+  it("renders a reading inside an ordinary hour", () => {
+    expect(clockText(1.933)).toBe("1:56");
+    expect(clockText(11.5)).toBe("11:30");
+  });
+
+  it("rolls minutes that round to 60 into the next hour", () => {
+    expect(clockText(0.999)).toBe("1:00");
+    expect(clockText(11.999)).toBe("12:00");
   });
 });
 
