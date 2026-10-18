@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0.0",
+  "assessmentId": "sample-assessment-1",
+  "gripPlanId": "sample-four-seam-average-right",
+  "throwIds": ["sample-throw-1"],
+  "ruleVersion": "sample-rules-1",
+  "classification": "grip-focus",
+  "zones": [
+    {
+      "zoneId": "wrist",
+      "severity": "red",
+      "reason": "Spin efficiency 72% is below the 90% four-seam target",
+      "triggeringMeasurement": "spinEfficiencyPercent",
+      "confidence": 0.6
+    },
+    {
+      "zoneId": "middle-pad",
+      "severity": "red",
+      "reason": "Spin efficiency 72% is below the 90% four-seam target",
+      "triggeringMeasurement": "spinEfficiencyPercent",
+      "confidence": 0.5
+    },
+    {
+      "zoneId": "index-pad",
+      "severity": "yellow",
+      "reason": "Spin efficiency 72% is below the 90% four-seam target",
+      "triggeringMeasurement": "spinEfficiencyPercent",
+      "confidence": 0.4
+    },
+    {
+      "zoneId": "thumb-pad",
+      "severity": "yellow",
+      "reason": "Spin efficiency 72% is below the 90% four-seam target",
+      "triggeringMeasurement": "spinEfficiencyPercent",
+      "confidence": 0.4
+    }
+  ],
+  "nextAction": {
+    "zoneId": "wrist",
+    "summary": "Stay behind the ball",
+    "detail": "Keep the wrist firm and push through the back of the ball instead of around its side.",
+    "rewritten": false
+  },
+  "confidence": 0.55,
+  "unreachableZones": [],
+  "consistency": null,
+  "prototypeAdvice": true,
+  "extensions": {}
+}

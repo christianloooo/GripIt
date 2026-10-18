@@ -13,6 +13,7 @@
     "predev": "node scripts/prepare-mediapipe.mjs",
     "prebuild": "node scripts/prepare-mediapipe.mjs",
     "ios:prepare": "npm run build && node scripts/prepare-ios.mjs",
+    "ios:focus": "node scripts/build-native-focus.mjs",
     "ios:open": "open ios/GripIt.xcodeproj"
   },
   "dependencies": {

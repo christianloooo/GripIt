@@ -6,6 +6,9 @@ struct GripViewerView: View {
   /// Step 4 passes a numeric map under stable zone strings. nil is the normal studio.
   let zoneSeverity: GripSeverityMap?
   let onZoneSelect: (GripZoneID) -> Void
+  @StateObject private var studio: GripStudioSession
+  @State private var training: TrainingFlowModel?
+  @State private var showThrows = false
   @State private var showHandModel = false
   @State private var plan: GripPlan?
   @State private var selectedZone: GripZoneID = .indexPad
@@ -29,6 +32,7 @@ struct GripViewerView: View {
     self.profile = profile
     self.zoneSeverity = zoneSeverity
     self.onZoneSelect = onZoneSelect
+    _studio = StateObject(wrappedValue: GripStudioSession(profile: profile))
     _sampleHeatmap = State(initialValue: previewHeatmap)
     _pitch = State(initialValue: initialPitch)
     _camera = State(initialValue: initialCamera)
@@ -38,6 +42,7 @@ struct GripViewerView: View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
+          TrainingStepLabel(step: 2)
           Text(
             "\(profile.capture.method.contains("sample") ? "SAMPLE HAND" : "YOUR HAND") · \(profile.handedness.rawValue.uppercased())"
           )
@@ -158,24 +163,36 @@ struct GripViewerView: View {
         ToolbarItem(placement: .topBarLeading) { Button("Hand model") { showHandModel = true } }
         ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
       }
+      .safeAreaInset(edge: .bottom) {
+        Button {
+          if let pose, let plan {
+            training = studio.training(for: StudioFit(pose: pose, plan: plan))
+            showThrows = true
+          }
+        } label: {
+          Label("Record throws", systemImage: "arrow.right")
+            .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(.black)
+        .disabled(loading || pose == nil || plan == nil)
+        .accessibilityIdentifier("record-throws")
+        .padding(.horizontal, 20).padding(.vertical, 12).background(.ultraThinMaterial)
+      }
+      .navigationDestination(isPresented: $showThrows) {
+        if let training { ThrowEntryView(model: training) }
+      }
       .fullScreenCover(isPresented: $showHandModel) { HandModelReviewView(profile: profile) }
     }
     .task(id: pitch) {
       loading = true
       error = nil
       let selected = pitch
-      let profile = profile
-      let task = Task.detached(priority: .userInitiated) {
-        let pose = try GripPoseSolver.solve(profile: profile, pitch: selected)
-        return (pose, GripPlan(pose: pose))
-      }
       do {
-        let result = try await withTaskCancellationHandler(
-          operation: { try await task.value }, onCancel: { task.cancel() })
+        let result = try await studio.fitted(selected)
         guard !Task.isCancelled else { return }
-        pose = result.0
-        plan = result.1
-        if !result.1.zones.contains(where: { $0.zoneId == selectedZone }) {
+        pose = result.pose
+        plan = result.plan
+        if !result.plan.zones.contains(where: { $0.zoneId == selectedZone }) {
           selectedZone = .indexPad
         }
         loading = false

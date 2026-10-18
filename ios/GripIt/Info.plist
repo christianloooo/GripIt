@@ -22,6 +22,15 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>GripIt uses the front TrueDepth camera to measure your hand. Camera frames and depth data stay on this device and are not saved.</string>
+	<key>GripItAPIBaseURL</key>
+	<string>$(GRIPIT_API_BASE_URL)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>GripIt connects to your local coaching server to explain your results.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

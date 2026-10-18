@@ -25,6 +25,9 @@
 		EC195AE464865746B133FDFF /* GripViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92EF2FA91A7060D876DDB6B7; };
 		B1BDD8AFBB00863D891C5F64 /* GripSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD39EF337B61DC4EB2498E3D; };
 		0DD2A30CA93F4B1E0F8814C3 /* GripViewerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48AFCD17A01EBCAFB0B344EC; };
+		F10000000000000000000011 /* TrainingFlowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
+		F10000000000000000000012 /* ThrowEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
+		F10000000000000000000013 /* FocusAssessmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +59,9 @@
 		92EF2FA91A7060D876DDB6B7 /* GripViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripViewerView.swift; sourceTree = "<group>"; };
 		FD39EF337B61DC4EB2498E3D /* GripSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewer/GripSceneView.swift; sourceTree = "<group>"; };
 		48AFCD17A01EBCAFB0B344EC /* GripViewerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripViewerTests.swift; sourceTree = "<group>"; };
+		F10000000000000000000001 /* TrainingFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/TrainingFlowModel.swift; sourceTree = "<group>"; };
+		F10000000000000000000002 /* ThrowEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/ThrowEntryView.swift; sourceTree = "<group>"; };
+		F10000000000000000000003 /* FocusAssessmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Training/FocusAssessmentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +89,9 @@
 			isa = PBXGroup;
 			children = (
 				3088441B6FE7960C118A2671 /* GripItApp.swift */,
+				F10000000000000000000003 /* FocusAssessmentView.swift */,
+				F10000000000000000000002 /* ThrowEntryView.swift */,
+				F10000000000000000000001 /* TrainingFlowModel.swift */,
 				FD39EF337B61DC4EB2498E3D /* GripSceneView.swift */,
 				92EF2FA91A7060D876DDB6B7 /* GripViewerView.swift */,
 				AG0000010000000000000001 /* Scanner */,
@@ -247,6 +256,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				7C2AA8A20398C976F1405324 /* GripItApp.swift in Sources */,
+				F10000000000000000000013 /* FocusAssessmentView.swift in Sources */,
+				F10000000000000000000012 /* ThrowEntryView.swift in Sources */,
+				F10000000000000000000011 /* TrainingFlowModel.swift in Sources */,
 				B1BDD8AFBB00863D891C5F64 /* GripSceneView.swift in Sources */,
 				EC195AE464865746B133FDFF /* GripViewerView.swift in Sources */,
 				AA0000010000000000000001 /* TrueDepthCaptureService.swift in Sources */,

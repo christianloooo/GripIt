@@ -56,6 +56,16 @@ public struct GripPlacement: Codable, Sendable {
   public let seam: Seam
   public let seamOffsetMm: Double?
   public let opposes: [GripZoneID]
+
+  private enum CodingKeys: String, CodingKey { case surface, region, seam, seamOffsetMm, opposes }
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(surface, forKey: .surface)
+    try c.encode(region, forKey: .region)
+    try c.encode(seam, forKey: .seam)
+    try c.encode(seamOffsetMm, forKey: .seamOffsetMm)
+    try c.encode(opposes, forKey: .opposes)
+  }
 }
 public struct GripZonePlan: Codable, Sendable, Identifiable {
   public let zoneId: GripZoneID
