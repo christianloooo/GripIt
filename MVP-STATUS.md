@@ -1,6 +1,6 @@
 # GripIt integration status
 
-Updated October 18, 2026, after consumer wording and visual polish. This supersedes the paused implementation status in RESUME-HERE.md, which remains the detailed recovery history.
+Updated October 18, 2026, after promotion to main at Jared's explicit request. Main now contains the integrated app and consumer polish from e154abf. Phone visual checks remain pending. This supersedes the paused implementation status in RESUME-HERE.md, which remains the detailed recovery history.
 
 ## Approved direction
 
@@ -30,7 +30,7 @@ Steps 2 and 4 show short, plain-English actions in the interactive nodes. Step 4
 
 ## Git and opening the right project
 
-Integration branch: `jared/feedback-rules`. The Step 2 integration was committed and pushed as `993e57c`; consumer polish follows on this branch for device testing. Main has not changed.
+Current working branch: `main`. The Step 2 integration was committed as `993e57c`, with consumer polish in `e154abf`, and main was advanced to include both. `jared/feedback-rules` retains the same app code. The previous local main pointer is preserved at `backup/main-local-before-mvp-20261018`.
 
 Open `/Users/jshum/Desktop/code-folders/gripit/ios/GripIt.xcodeproj` for the integration. Avoid the similarly named older worktree projects in Xcode's recent list.
 
@@ -38,4 +38,4 @@ The original Step 2 remains at `backup/step-2-original-20261018` and `.worktrees
 
 The project index includes required incoming source references and optimization settings with repository signing values. Jared's local signing settings exist only in the working copy. Never stage the current project file wholesale. Stage all other files by exact path; never use `git add -A`.
 
-Builds must run one at a time, with two workers, and derived/scratch data in `/private/tmp` to avoid iCloud signing metadata. Remaining work is app-hosted tests and a phone walkthrough: Steps 1–2 fitting and node interaction, Step 3 bundled scan/cancel/confirm/upload, and Step 4 rotation, colors and rule explanations. Keep main unchanged until device validation is complete.
+Builds must run one at a time, with two workers, and derived/scratch data in `/private/tmp` to avoid iCloud signing metadata. Remaining work is app-hosted tests and a phone walkthrough: Steps 1–2 fitting and node interaction, Step 3 bundled scan/cancel/confirm/upload, and Step 4 rotation, colors and rule explanations. Jared explicitly requested promoting the current version to main before these remaining phone checks.
