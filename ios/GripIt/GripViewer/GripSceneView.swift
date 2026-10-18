@@ -25,6 +25,7 @@ struct GripSceneView: UIViewRepresentable {
   var wireframe = false
   var gripPlan: GripPlan? = nil
   var zoneSeverity: GripSeverityMap? = nil
+  var showPressure = false
   var selectedZone: GripZoneID? = nil
   var onZoneSelect: (GripZoneID) -> Void = { _ in }
   func makeCoordinator() -> Coordinator { Coordinator() }
@@ -39,7 +40,7 @@ struct GripSceneView: UIViewRepresentable {
     context.coordinator.update(
       view, pose: pose, contacts: showContacts, camera: camera, reset: reset,
       plan: gripPlan ?? GripPlan(pose: pose), severity: zoneSeverity, selected: selectedZone,
-      showBall: showBall, wireframe: wireframe)
+      showBall: showBall, wireframe: wireframe, pressure: showPressure)
     let tap = UITapGestureRecognizer(
       target: context.coordinator, action: #selector(Coordinator.selectZone(_:)))
     tap.cancelsTouchesInView = false
@@ -55,7 +56,7 @@ struct GripSceneView: UIViewRepresentable {
     context.coordinator.update(
       view, pose: pose, contacts: showContacts, camera: camera, reset: reset,
       plan: gripPlan ?? GripPlan(pose: pose), severity: zoneSeverity, selected: selectedZone,
-      showBall: showBall, wireframe: wireframe)
+      showBall: showBall, wireframe: wireframe, pressure: showPressure)
   }
   static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
     if let tap = coordinator.tap { view.removeGestureRecognizer(tap) }
@@ -87,6 +88,8 @@ struct GripSceneView: UIViewRepresentable {
     var hand: SCNNode?
     var baseGeometry: SCNGeometry?
     var severity: GripSeverityMap?
+    var showingPressure = false
+    var pressureWeights: [Double] = []
     var selected: GripZoneID?
     var onZoneSelect: (GripZoneID) -> Void = { _ in }
 
@@ -145,7 +148,7 @@ struct GripSceneView: UIViewRepresentable {
     func update(
       _ view: SCNView, pose: GripPose, contacts: Bool, camera: GripCamera, reset: Int,
       plan: GripPlan, severity: GripSeverityMap?, selected: GripZoneID?,
-      showBall: Bool = true, wireframe: Bool = false
+      showBall: Bool = true, wireframe: Bool = false, pressure: Bool = false
     ) {
       let changed = poseID != pose.id || content == nil || showingBall != showBall
       if changed {
@@ -163,14 +166,21 @@ struct GripSceneView: UIViewRepresentable {
         surface = (try? GripHandAsset.load()).map {
           GripZoneSurface(pose: pose, gripPlan: plan, hand: $0)
         }
+        pressureWeights =
+          (try? GripHandAsset.load()).map {
+            GripPoseSolver.pressureShadingWeights(hand: $0, pose: pose)
+          } ?? []
         indices = pose.indices
         vertices = pose.vertices
         self.reset = -1
       }
-      if changed || self.severity != severity || self.selected != selected {
+      if changed || self.severity != severity || self.selected != selected
+        || showingPressure != pressure
+      {
         if let surface, let baseGeometry {
           hand?.geometry = GripSceneBuilder.colored(
-            baseGeometry, surface: surface, severity: severity)
+            baseGeometry, surface: surface, severity: severity,
+            pressure: severity == nil && pressure ? pressureWeights : nil)
           hand?.childNode(withName: "zone-selection", recursively: false)?.removeFromParentNode()
           if let selected {
             hand?.addChildNode(
@@ -178,6 +188,7 @@ struct GripSceneView: UIViewRepresentable {
                 vertices: vertices, indices: indices, surface: surface, zone: selected))
           }
         }
+        showingPressure = pressure
         self.severity = severity
         self.selected = selected
       }
@@ -316,7 +327,7 @@ struct GripSceneView: UIViewRepresentable {
     group.addChildNode(markers)
     for finger in pose.fingers
     where showBall && finger.contact
-      && !(pose.pitch == .circleChange && [.index, .thumb].contains(finger.finger))
+      && !(pose.pitch == .circleChange && finger.finger == .index)
     {
       guard let sourceHand else { continue }
       let contact = GripPoseSolver.skinContact(
@@ -471,7 +482,10 @@ struct GripSceneView: UIViewRepresentable {
       vectorCount: colors.count, usesFloatComponents: true, componentsPerVector: 4,
       bytesPerComponent: 4, dataOffset: 0, dataStride: 16)
   }
-  static func colored(_ base: SCNGeometry, surface: GripZoneSurface, severity: GripSeverityMap?)
+  static func colored(
+    _ base: SCNGeometry, surface: GripZoneSurface, severity: GripSeverityMap?,
+    pressure: [Double]? = nil
+  )
     -> SCNGeometry
   {
     let skin = SIMD3<Float>(0.70, 0.57, 0.46)
@@ -486,6 +500,10 @@ struct GripSceneView: UIViewRepresentable {
             bytes.loadUnaligned(fromByteOffset: offset + 4, as: Float.self),
             bytes.loadUnaligned(fromByteOffset: offset + 8, as: Float.self))
         }
+      }
+      if let pressure, pressure.indices.contains(vertex), severity == nil {
+        let tint = GripPoseSolver.pressureColor(pressure[vertex])
+        return SIMD4(tint.x, tint.y, tint.z, 1)
       }
       for (i, zone) in GripZoneSurface.zones.enumerated() {
         guard let band = GripSeverityBand.band(severity?[zone]) else { continue }

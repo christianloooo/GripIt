@@ -9,8 +9,8 @@ struct GripViewerView: View {
   @State private var showHandModel = false
   @State private var plan: GripPlan?
   @State private var selectedZone: GripZoneID = .indexPad
-  @State private var sampleHeatmap = false
-  private var activeSeverity: GripSeverityMap? { zoneSeverity ?? (sampleHeatmap ? .sample : nil) }
+  @State private var showPressure = true
+  private var activeSeverity: GripSeverityMap? { zoneSeverity }
   @Environment(\.dismiss) private var dismiss
   @State private var pitch: PitchGrip = .fourSeam
   @State private var pose: GripPose?
@@ -23,13 +23,13 @@ struct GripViewerView: View {
   init(
     profile: HandProfile, initialPitch: PitchGrip = .fourSeam,
     initialCamera: GripCamera = .threeQuarter,
-    zoneSeverity: GripSeverityMap? = nil, previewHeatmap: Bool = false,
+    zoneSeverity: GripSeverityMap? = nil,
     onZoneSelect: @escaping (GripZoneID) -> Void = { _ in }
   ) {
     self.profile = profile
     self.zoneSeverity = zoneSeverity
     self.onZoneSelect = onZoneSelect
-    _sampleHeatmap = State(initialValue: previewHeatmap)
+    _showPressure = State(initialValue: true)
     _pitch = State(initialValue: initialPitch)
     _camera = State(initialValue: initialCamera)
   }
@@ -58,7 +58,8 @@ struct GripViewerView: View {
             if let pose {
               GripSceneView(
                 pose: pose, showContacts: contacts, camera: camera, reset: cameraReset,
-                gripPlan: plan, zoneSeverity: activeSeverity, selectedZone: selectedZone,
+                gripPlan: plan, zoneSeverity: activeSeverity,
+                showPressure: zoneSeverity == nil && showPressure, selectedZone: selectedZone,
                 onZoneSelect: selectZone
               )
               .opacity(loading ? 0.25 : 1)
@@ -69,9 +70,9 @@ struct GripViewerView: View {
               ProgressView("Fitting your hand…").tint(.mint).frame(
                 maxWidth: .infinity, maxHeight: .infinity)
             }
-            if activeSeverity != nil, !loading, pose != nil {
+            if activeSeverity != nil || showPressure, !loading, pose != nil {
               Label(
-                zoneSeverity == nil ? "Sample heat map" : "Diagnostic heat map",
+                zoneSeverity == nil ? "Grip pressure" : "Diagnostic heat map",
                 systemImage: "circle.hexagongrid.fill"
               )
               .font(.caption.weight(.semibold)).padding(10)
@@ -100,7 +101,23 @@ struct GripViewerView: View {
             }
           }.frame(maxWidth: .infinity)
           if zoneSeverity == nil {
-            Toggle("Preview diagnostic heat map", isOn: $sampleHeatmap).tint(.mint)
+            Toggle("Show pressure", isOn: $showPressure).tint(.mint)
+            if showPressure {
+              VStack(spacing: 6) {
+                LinearGradient(
+                  colors: [.white, Color(red: 0.035, green: 0.29, blue: 0.21)],
+                  startPoint: .leading, endPoint: .trailing
+                )
+                .frame(height: 12).clipShape(Capsule())
+                HStack {
+                  Text("Less pressure")
+                  Spacer()
+                  Text("More pressure")
+                }.font(.caption)
+                Text("Darker green shows where to apply more pressure.")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
+            }
           }
           if activeSeverity != nil {
             VStack(alignment: .leading, spacing: 8) {
@@ -196,8 +213,10 @@ struct GripViewerView: View {
           }
           if let pose, !loading {
             if pose.diagnostics.adjustedProportions {
-              Text("Scan proportions adjusted conservatively to preserve the model’s natural anatomy.")
-                .font(.caption).foregroundStyle(.secondary)
+              Text(
+                "Scan proportions adjusted conservatively to preserve the model’s natural anatomy."
+              )
+              .font(.caption).foregroundStyle(.secondary)
             }
             if pose.diagnostics.needsReview {
               Label(

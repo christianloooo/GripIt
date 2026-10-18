@@ -18,7 +18,7 @@ final class GripPlanTests: XCTestCase {
       XCTAssertEqual(
         thumb.placement?.opposes,
         pitch == .circleChange
-          ? [.indexPad] : pitch == .slider ? [.middlePad] : [.indexPad, .middlePad])
+          ? [.middlePad, .ringSide] : pitch == .slider ? [.middlePad] : [.indexPad, .middlePad])
       XCTAssertEqual(zones.first { $0.zoneId == .wrist }?.extrapolated, true)
       for zone in zones where zone.placement?.seam == .across || zone.placement?.seam == .along {
         XCTAssertEqual(zone.placement?.seamOffsetMm, 0)

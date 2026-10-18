@@ -33,8 +33,7 @@ struct GripItApp: App {
           GripViewerView(
             profile: profile,
             initialPitch: argument.flatMap { PitchGrip(rawValue: String($0.dropFirst(8))) }
-              ?? .fourSeam, initialCamera: camera,
-            previewHeatmap: ProcessInfo.processInfo.arguments.contains("--heatmap"))
+              ?? .fourSeam, initialCamera: camera)
         } else {
           ScannerView()
         }

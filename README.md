@@ -99,7 +99,7 @@ MediaPipe reference: [Hand Landmarker for Web](https://ai.google.dev/edge/mediap
 
 ## Native measured-hand grip viewer
 
-The `feature/native-grip-viewer` branch adds Step 2 to the TrueDepth scanner. Open `ios/GripIt.xcodeproj`, run, then select **Explore my grips** after scanning, importing a saved hand-profile JSON, or loading the clearly labeled sample. Four pitch poses, orbit/zoom, inspection viewpoints, seam/contact checks, and a selectable seven-zone diagnostic heat map are native Swift. The heat-map preview uses labeled sample values; Step 4 supplies real severity results. See [iOS setup and limits](ios/README.md#step-2-native-grip-studio).
+The `feature/native-grip-viewer` branch adds Step 2 to the TrueDepth scanner. Open `ios/GripIt.xcodeproj`, run, then select **Explore my grips** after scanning, importing a saved hand-profile JSON, or loading the clearly labeled sample. Four pitch poses, orbit/zoom, inspection viewpoints, seam/contact checks, and selectable zones, and white-to-pine pressure shading are native Swift. Step 4 keeps its separate numeric diagnostic severity colors. See [iOS setup and limits](ios/README.md#step-2-native-grip-studio).
 
 See [the shared grip-plan and heat-map contract](docs/step-2-viewer.md) for integration and review steps.
 

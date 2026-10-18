@@ -1,4 +1,4 @@
-# Native grip viewer and diagnostic heat map
+# Native grip viewer, pressure shading, and diagnostic heat map
 
 The active app is SwiftUI with SceneKit. `ScannerView` passes the measured
 `HandProfile` to `GripViewerView` after a scan or JSON import. The bundled sample
@@ -21,7 +21,7 @@ relationship, and opposition. The seam optimizer consumes those relationships.
 - Two-seam: index/middle along stitching, both medium intended pressure.
 - Slider: index on adjacent leather, middle along stitching, thumb support biased
   toward opposition to the middle. Palm is omitted completely.
-- Changeup: middle/ring are upper drivers; index/thumb close a side loop; pinky
+- Changeup: middle/ring are upper drivers; thumb supports the lower centre; index wraps beside it; pinky
   curls at the far side; palm becomes support. Wrist pressure/role stay null.
 
 Geometry uses individual measured bone lengths and palm dimensions. Width is
@@ -30,8 +30,10 @@ model estimate; missing essential lengths are rejected with a readable error
 instead of fabricated measurements. Invalid/deeply overlapping skin is rejected.
 
 `GripPlan(pose:)` reports surface contact/clearance error in millimeters and reach
-per zone. Upper contacts also include target error and an extension shortfall;
-the circle loop includes the actual skinned-pad separation. Engineering buckets
+per zone. The thumb must make skin contact in the central underside quadrant; a closed
+index–thumb circle is optional and cannot displace that support. Slider index/middle
+and changeup middle/ring must establish contact on their middle sections as well
+as their distal pads. Engineering buckets
 are <=3 mm comfortable, >3 through 8 mm strained, and >8 mm unreachable. These
 are not clinical limits. Wrist has no geometric target; its explanation says so.
 Its source is extrapolated, and all intended pressure guidance needs coach review.
@@ -66,9 +68,15 @@ numeric inputs are discarded; finite inputs clamp to [0,1]. Bands are
 retain the base skin color. A present empty map is diagnostic mode with no
 assessed zones; nil is normal studio mode.
 
-There is no throw assessment engine in this feature. **Preview diagnostic heat
-map** uses labeled illustrative values. Intended pressure never determines a
-severity color, and a red region does not establish causation for a pitch result.
+Step 2 defaults to **Show pressure**: a continuous white-to-pine-green scale.
+White means less intended effort; deeper pine means more. Soft gradients wrap
+loaded finger sections for visibility, including middle-phalanx contact for wrapped grips, and do not
+color the wrist as if it pressed on the ball. This is qualitative coaching
+illustration, not measured force. Turn it off for natural skin.
+
+Step 4 keeps its numeric diagnostic bands and missing-value behavior. An incoming
+severity map takes precedence over pressure shading. Intended pressure never
+determines a severity color. There is no throw assessment engine in this feature.
 
 ## Surfaces and interaction
 
@@ -96,17 +104,17 @@ with a readable error instead of showing a substitute hand.
 
 Open `ios/GripIt.xcodeproj`, select **GripIt**, and Run. Complete/import a scan,
 then choose **Explore my grips**. Or load the labeled sample, explore grips,
-and enable **Preview diagnostic heat map**. Use the zone buttons and rotate
+with **Show pressure** enabled by default. Use the zone buttons and rotate
 through Palm / Thumb / Back to inspect occluded contacts.
 
 For reproducible Debug simulator previews, add these scheme launch arguments:
 
 ```text
---grip-preview --pitch=changeup --camera=thumbSide --heatmap
+--grip-preview --pitch=changeup --camera=thumbSide
 ```
 
 Other pitch IDs are `four-seam`, `two-seam`, `slider`; `--left` mirrors the hand.
-Remove `--heatmap` for normal skin. These shortcuts are Debug-only.
+Use the **Show pressure** toggle for normal skin. These shortcuts are Debug-only.
 
 After launching on a booted simulator, capture a screenshot with:
 

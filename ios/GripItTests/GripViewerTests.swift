@@ -5,6 +5,59 @@ import XCTest
 @testable import GripIt
 
 final class GripViewerTests: XCTestCase {
+  @MainActor func testPressurePreviewUsesContinuousPineShadingAndExportsActualScenes() throws {
+    let asset = try GripHandAsset.load()
+    for pitch in PitchGrip.allCases {
+      let pose = try GripPoseSolver.solve(profile: SampleHandProfiles.averageRight(), pitch: pitch)
+      let scene = GripSceneBuilder.scene(pose: pose)
+      let hand = try XCTUnwrap(
+        scene.rootNode.childNode(withName: "measured-hand", recursively: true))
+      let base = try XCTUnwrap(hand.geometry)
+      let surface = GripZoneSurface(pose: pose, gripPlan: GripPlan(pose: pose), hand: asset)
+      let weights = GripPoseSolver.pressureShadingWeights(hand: asset, pose: pose)
+      XCTAssertGreaterThan(weights.max()!, 0.5)
+      XCTAssertGreaterThan(
+        weights.filter { $0 > 0.2 }.count, 400,
+        "Coaching shading must remain visible around the loaded finger sections")
+      for i in asset.vertices.indices where asset.vertices[i][1] < 10 {
+        XCTAssertEqual(weights[i], 0, "Wrist guidance must not be shown as ball pressure")
+      }
+      XCTAssertEqual(GripPoseSolver.pressureColor(0), SIMD3<Float>(repeating: 1))
+      XCTAssertEqual(GripPoseSolver.pressureColor(1).x, 0.00270898, accuracy: 0.000001)
+      XCTAssertEqual(GripPoseSolver.pressureColor(1).y, 0.06838485, accuracy: 0.000001)
+      XCTAssertEqual(GripPoseSolver.pressureColor(1).z, 0.03630648, accuracy: 0.000001)
+      let pressure = GripSceneBuilder.colored(
+        base, surface: surface, severity: nil, pressure: weights)
+      hand.geometry = pressure
+      // An incoming Step 4 result takes precedence even if a Step 2 flag remains set.
+      let diagnostics = GripSceneBuilder.colored(base, surface: surface, severity: .sample)
+      let both = GripSceneBuilder.colored(
+        base, surface: surface, severity: .sample, pressure: weights)
+      XCTAssertEqual(
+        diagnostics.sources(for: .color).first?.data, both.sources(for: .color).first?.data)
+      XCTAssertNotEqual(
+        pressure.sources(for: .color).first?.data, diagnostics.sources(for: .color).first?.data)
+      scene.rootNode.childNode(withName: "contact-points", recursively: true)?.isHidden = true
+      let camera = try XCTUnwrap(scene.rootNode.childNode(withName: "camera", recursively: false))
+      camera.camera?.usesOrthographicProjection = true
+      camera.camera?.orthographicScale = 100
+      let renderer = SCNRenderer(device: nil, options: nil)
+      renderer.scene = scene
+      renderer.pointOfView = camera
+      for (name, position) in [
+        ("thumb", SCNVector3(290, 90, 80)), ("fingers", SCNVector3(-100, 270, 160)),
+      ] {
+        camera.position = position
+        camera.look(at: SCNVector3(0, 80, 35))
+        let image = renderer.snapshot(
+          atTime: 0, with: CGSize(width: 800, height: 800), antialiasingMode: .multisampling4X)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "\(pitch.rawValue)-pressure-\(name)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+      }
+    }
+  }
   @MainActor func testSeamLandmarksLandOnVisibleRedStitches() throws {
     // Exercise the actual SceneKit geometry + UIImage UV path, independently
     // of the solver's seam-distance math. A mirrored texture must fail here.
