@@ -1,4 +1,5 @@
-import type { FocusZone, ZoneId } from "./zones";
+import type { FocusZone, InstructionZone, Severity, ZoneId } from "./zones";
+import type { ThrowRecord } from "../throwEntry";
 
 /**
  * The boundary between the deterministic rule engine and everything that
@@ -12,6 +13,77 @@ import type { FocusZone, ZoneId } from "./zones";
 
 /** Whether the throw data justifies grip advice at all. */
 export type AssessmentClassification = "grip-focus" | "not-grip";
+
+/** Keys in `ThrowRecord["measurements"]` that rules may inspect. */
+export type ThrowMeasurementKey = keyof ThrowRecord["measurements"];
+
+/** Numeric threshold bounds for a data-driven rule. */
+export interface RuleCondition {
+  below?: number;
+  atLeast?: number;
+  above?: number;
+  atMost?: number;
+  /** Optional target reference for `{target}` interpolation when distinct from the trigger bound. */
+  target?: number;
+}
+
+/** A zone implicated by a rule, with its severity explicitly stated in the rule data. */
+export interface RuleZone {
+  zoneId: ZoneId;
+  severity: Severity;
+  /** Optional per-zone confidence; defaults to a severity-adjusted share of the rule's confidence. */
+  confidence?: number;
+  /** Optional per-zone reason template; defaults to the parent rule's reason. */
+  reason?: string;
+}
+
+/** The deterministic coaching action attached to a rule. */
+export interface RuleNextAction {
+  zoneId: ZoneId | null;
+  summary: string;
+  detail: string;
+}
+
+/** A single data-driven assessment rule. */
+export interface AssessmentRule {
+  id: string;
+  pitchIds: readonly string[];
+  measurement: ThrowMeasurementKey;
+  when: RuleCondition;
+  zones: readonly RuleZone[];
+  reason: string;
+  nextAction: RuleNextAction;
+  confidence: number;
+  classification: AssessmentClassification;
+}
+
+/** A versioned collection of assessment rules and consistency thresholds. */
+export interface RuleSet {
+  /** Version string recorded in `FocusAssessment.ruleVersion` (alias `ruleVersion` also accepted). */
+  version?: string;
+  ruleVersion?: string;
+  /** Defaults to `true` until a pitching coach signs off on the rule set. */
+  prototypeAdvice?: boolean;
+  /** Release-height spread (in feet, across 3+ throws) that reclassifies the finding as `not-grip`. */
+  releaseHeightDriftFeet?: number;
+  /** Velocity spread (in mph, across 3+ throws) that marks `consistency.inconsistent = true`. */
+  velocitySpreadThresholdMph?: number;
+  /** Total-spin spread (in rpm, across 3+ throws) that marks `consistency.inconsistent = true`. */
+  totalSpinSpreadThresholdRpm?: number;
+  rules: readonly AssessmentRule[];
+}
+
+/** Input to the pure `assess()` rule engine. */
+export interface AssessInput {
+  pitchId: string;
+  throws: readonly ThrowRecord[];
+  zones: readonly InstructionZone[];
+  ruleSet: RuleSet;
+  /** Optional gripPlanId; defaults deterministically when omitted. */
+  gripPlanId?: string;
+  /** Optional assessmentId; defaults deterministically when omitted. */
+  assessmentId?: string;
+}
 
 /**
  * The one thing to change before the next throw. Exactly one per assessment,
@@ -64,3 +136,4 @@ export interface FocusAssessment {
   prototypeAdvice: boolean;
   extensions: Record<string, unknown>;
 }
+
