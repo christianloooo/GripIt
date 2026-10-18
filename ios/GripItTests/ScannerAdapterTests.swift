@@ -110,4 +110,17 @@ final class ScannerAdapterTests: XCTestCase {
         XCTAssertNil(model.profile)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
+    @MainActor func testImportedTrueDepthProfileCanBeUsedWithoutRestartingCamera() throws {
+        let sample = try SampleHandProfiles.averageRight()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("gripit-import-test.json")
+        try HandProfileCodec.encode(sample).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = ScannerViewModel()
+        try model.loadProfile(from: url)
+        XCTAssertEqual(model.profile, sample)
+        XCTAssertEqual(model.phase, .complete)
+        XCTAssertNotNil(model.exportURL)
+        model.reset()
+    }
+
 }

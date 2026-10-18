@@ -1,3 +1,16 @@
+# Current baseball: project-supplied Ball.glb
+
+`assets/source/Ball.glb` is the original file supplied for this project. The
+runtime `baseball.glb` uses its `Baseball_Ball_Clean` variant, original UVs, and
+PBR maps, recentered and normalized to a 73 mm sphere. The original file's asset
+metadata names Blender as its generator and does not name a creator or license.
+Source SHA-256: `29dffd40550f1a938d2caa63a2061a1c3b57e5e5e055637ba5bed30f49c0a0ca`.
+The unused dirty variant remains in the source file. `scripts/import-baseball.py`
+generates the optimized runtime asset and its own stitch samples.
+
+The following worn-ball credit is retained for the previous asset and conversion
+script; it is not an attribution claim for the newly supplied file.
+
 # Worn Baseball Ball
 
 Original: **Worn Baseball Ball** by **Alex Bes (@alexbescg)**

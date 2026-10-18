@@ -67,11 +67,9 @@ Open **Failure log** in the header to review, download, or clear the last 50 fai
 
 ## The supplied baseball asset
 
-The viewer uses **[Worn Baseball Ball by Alex Bes](https://sketchfab.com/3d-models/worn-baseball-ball-fdf3de6ae225421ea78961b897b9608a)**, licensed **CC BY 4.0**. The matching source was retrieved from a public redistribution whose embedded USD metadata identifies the same author, title, source URL, and license.
+The native and web viewers now use the supplied **Ball.glb**, preserving its clean variant, UVs, and PBR textures. The runtime mesh is centered and normalized to a **73 mm diameter**. Stitch contacts are sampled from this ball's actual texture.
 
-It was converted to GLB, recentered, radially normalized to a **73 mm sphere**, and packaged with its albedo, normal, roughness, and occlusion maps. Visible red stitch pixels were sampled through the original mesh UVs into contact-reference coordinates. The optimizer targets those coordinates, rather than the previous unrelated procedural seam curve. Radial normalization removes the source mesh’s slight shape irregularity; textured wear remains. The triangulated surface approximates a sphere, and collision checks use its analytic 36.5 mm radius.
-
-Attribution and changes: `public/models/ATTRIBUTION.md`. Hand license: `public/models/HAND-LICENSE.md`. `scripts/convert-baseball.py` documents conversion (Pillow plus an ASCII USD export from `usdcat`); running the app does not require Python or USD tools.
+The untouched original lives in `assets/source/Ball.glb`; optimized runtime assets are bundled locally. See [hand proportions and ball integration](docs/natural-hand-and-ball.md) for regeneration and verification, and [asset provenance](public/models/ATTRIBUTION.md) for source details. Hand license: `public/models/HAND-LICENSE.md`.
 
 ## Geometric optimizer
 
@@ -98,3 +96,12 @@ This is a local geometric fit, not proven pitch-performance optimization. Sphere
 - `src/handSurface.ts`: adaptive procedural fallback.
 
 MediaPipe reference: [Hand Landmarker for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js).
+
+## Native measured-hand grip viewer
+
+The `feature/native-grip-viewer` branch adds Step 2 to the TrueDepth scanner. Open `ios/GripIt.xcodeproj`, run, then select **Explore my grips** after scanning, importing a saved hand-profile JSON, or loading the clearly labeled sample. Four pitch poses, orbit/zoom, inspection viewpoints, seam/contact checks, and a selectable seven-zone diagnostic heat map are native Swift. The heat-map preview uses labeled sample values; Step 4 supplies real severity results. See [iOS setup and limits](ios/README.md#step-2-native-grip-studio).
+
+See [the shared grip-plan and heat-map contract](docs/step-2-viewer.md) for integration and review steps.
+
+The native **Hand model** review screen separates hand anatomy from grip fitting.
+[Review the rigged hand model](docs/hand-model-review.md) before evaluating pitch poses.

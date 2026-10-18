@@ -3,10 +3,14 @@ import Foundation
 import GripItScannerCore
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 @MainActor
 struct ScannerView: View {
     @StateObject private var model = ScannerViewModel()
+    @State private var showGrips = false
+    @State private var importProfile = false
+    @State private var importError: String?
     @Environment(\.scenePhase) private var scenePhase
 
     private let accent = Color.mint
@@ -25,6 +29,18 @@ struct ScannerView: View {
             case .failed:
                 failure
             }
+        }
+        .fileImporter(isPresented: $importProfile, allowedContentTypes: [.json]) { result in
+            do { try model.loadProfile(from: result.get()) }
+            catch { importError = error.localizedDescription }
+        }
+        .alert("Could not import hand profile", isPresented: Binding(
+            get: { importError != nil }, set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK") { importError = nil }
+        } message: { Text(importError ?? "") }
+        .fullScreenCover(isPresented: $showGrips) {
+            if let profile = model.profile { GripViewerView(profile: profile) }
         }
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.2), value: model.phase)
@@ -67,6 +83,8 @@ struct ScannerView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.white.opacity(0.75))
+                Button("Import hand profile JSON") { importProfile = true }
+                    .font(.subheadline.weight(.semibold))
                 Text("Sample mode does not use the camera.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -278,6 +296,10 @@ struct ScannerView: View {
                 }
 
                 if let profile = model.profile {
+                    Button { showGrips = true } label: {
+                        actionLabel("Explore my grips", systemImage: "baseball")
+                    }
+                    .buttonStyle(.borderedProminent).tint(accent).foregroundStyle(.black)
                     measurementSection(profile)
                     qualitySection(profile)
                 } else {

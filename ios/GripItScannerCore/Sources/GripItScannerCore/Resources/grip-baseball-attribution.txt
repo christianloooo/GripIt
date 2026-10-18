@@ -1,0 +1,4 @@
+Project-supplied Ball.glb, clean variant.
+Source SHA-256: 29dffd40550f1a938d2caa63a2061a1c3b57e5e5e055637ba5bed30f49c0a0ca
+The source GLB names no creator or license in its asset metadata.
+Imported with original UVs and PBR textures; normalized to 73 mm diameter.

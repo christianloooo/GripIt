@@ -1,7 +1,7 @@
 name: iOS app
 on:
   push:
-    branches: [main, feat/ios-swift-app, feature/truedepth-scanner-demo]
+    branches: [main, feat/ios-swift-app, feature/truedepth-scanner-demo, feature/native-grip-viewer]
   pull_request:
 permissions:
   contents: read
@@ -14,24 +14,32 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Detect native scanner project
+        id: app
+        run: |
+          if [ -f ios/GripItScannerCore/Package.swift ]; then
+            echo "native=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "native=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
-        if: github.ref_name != 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native != 'true'
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-        if: github.ref_name != 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native != 'true'
       - run: npm test
-        if: github.ref_name != 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native != 'true'
       - name: Prepare bundled studio for legacy branches
-        if: github.ref_name != 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native != 'true'
         run: npm run ios:prepare
       - name: Check scanner package
-        if: github.ref_name == 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native == 'true'
         working-directory: ios/GripItScannerCore
         run: swift test
       - name: Check native dependency wiring
-        if: github.ref_name == 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native == 'true'
         run: node --test scripts/test-ios-dependencies.mjs
       - name: Choose simulator
         run: |
@@ -42,7 +50,7 @@ jobs:
         run: xcodebuild test -project ios/GripIt.xcodeproj -scheme GripIt -destination "platform=iOS Simulator,id=$DEVICE_ID,arch=arm64" -derivedDataPath ios/build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/scanner-xcodebuild.log
       - name: Build for physical iPhone without signing
         shell: bash
-        if: github.ref_name == 'feature/truedepth-scanner-demo'
+        if: steps.app.outputs.native == 'true'
         run: xcodebuild build -project ios/GripIt.xcodeproj -scheme GripIt -destination 'generic/platform=iOS' -derivedDataPath ios/device-build ARCHS=arm64 CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/scanner-device-build.log
       - name: Report compiler diagnostics
         if: failure()

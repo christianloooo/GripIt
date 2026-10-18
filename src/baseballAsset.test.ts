@@ -1,5 +1,6 @@
 import { it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 it("renders the imported ball at a 73 mm bounding-sphere diameter", () => {
   const data = readFileSync(
     new URL("../public/models/baseball.glb", import.meta.url),
@@ -24,5 +25,16 @@ it("renders the imported ball at a 73 mm bounding-sphere diameter", () => {
     );
   }
   expect(radius * 2).toBeCloseTo(73, 4);
-  expect(gltf.asset.copyright).toContain("Alex Bes");
+  const source = readFileSync(
+    new URL("../assets/source/Ball.glb", import.meta.url),
+  );
+  expect(gltf.extras.sourceSHA256).toBe(
+    createHash("sha256").update(source).digest("hex"),
+  );
+  expect(gltf.nodes).toHaveLength(1);
+  expect(gltf.nodes[0].name).toBe("Baseball_Ball_Clean");
+  expect(gltf.materials[0].normalTexture).toBeDefined();
+  expect(
+    gltf.materials[0].pbrMetallicRoughness.metallicRoughnessTexture,
+  ).toBeDefined();
 });

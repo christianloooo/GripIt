@@ -48,6 +48,26 @@ xcodebuild -resolvePackageDependencies -skipPackageUpdates \
 
 Keep both `ios/GripItScannerCore` and `ios/MediaPipeTasks` beside `GripIt.xcodeproj`. Avoid resetting package caches while a download is running: that discards progress. The local MediaPipe manifest pins official 1.1.1 archive URLs and checksums. Debug builds use only the selected device's architecture so the app and its local Swift package agree on the simulator architecture.
 
+## Step 2: native grip studio
+
+After a scan completes, tap **Explore my grips**. You can also use **Load sample profile** or **Import hand profile JSON** from the first screen. Import accepts the Step 1 `HandProfile` v1 format, so saved TrueDepth measurements can be reused without another capture.
+
+Choose **4-seam**, **2-seam**, **Slider**, or **Changeup**. Drag to orbit, pinch to zoom, and use the Palm / Thumb / Back viewpoints to inspect the model. Contact markers are optional. [The supplied pitch guide](../docs/pitch-grip-guide.md) defines the finger roles and orientation instructions.
+
+- The native SceneKit renderer uses the connected, MIT-licensed WebXR hand mesh, welded and subdivided twice for a smoother surface. It does not render disconnected capsule fingers.
+- Palm width is interpreted as the MCP-to-MCP span used by Step 1, without the old website's 1.18 multiplier. Palm length, all 15 finger segment lengths, and valid measured MCP/CMC positions drive the pose. The asset's interior XR fingertip markers are calibrated to the visible mesh tips before scaling, preventing an extra modeled fingertip beyond the scanned length. Left hands mirror the canonical right-hand scene exactly once.
+- A personalized bind shape and dual-quaternion skinning retain volume during bending. Thumb base direction is bounded away from the wrist; independent bend-plane opposition lets the index and thumb form the circle-change loop.
+- The project-supplied Ball.glb clean variant is normalized to a 73 mm sphere and uses its original PBR textures. Its actual texture supplies the stitch samples. Ball rotation searches for crossed seams in a four-seamer, along-finger seams in a two-seamer, slider middle-on-seam/index-on-leather, and middle/ring seam contacts for the circle change.
+- Skin overlap, edge stretching, visible pad-to-ball gaps, pad-target gaps, seam alignment, and circle-loop gaps between rendered fingertip surfaces are checked. Severe overlaps or distorted meshes are rejected. Less severe unresolved fits show an orange review message.
+
+This is an authored hand fitted to measurements, not a photogrammetric or biomechanically validated skin reconstruction. Unmeasured thickness, nails, and soft tissue remain modeled. Local pad/seam alignment is checked numerically; the full horseshoe orientation and overall anatomy still require visual review on real scanned profiles. Capsule collision penalties and vertex checks do not guarantee a completely collision-free skin surface. Pressure is described by the guide, not inferred or simulated.
+
+Xcode bundles the generated model resources directly; there is no npm step for ordinary Swift changes. To regenerate the native assets after editing the source GLBs or seam samples, run `npm ci` and `node scripts/prepare-native-grip.mjs`. Model conversion preserves the source license notices in the app resources.
+
+For Debug-only simulator previews, add `--grip-preview --pitch=changeup --camera=thumbSide` to the scheme launch arguments. `--left` previews the mirrored hand. Add `--heatmap` for labeled sample diagnostics. These entry points do not replace the scanner in Release builds.
+
+The viewer now includes seven selectable zones and a shared diagnostic heat map. See [the native viewer contract and review steps](../docs/step-2-viewer.md) for severity input, reach tolerances, selection behavior, and limitations.
+
 ## Scan flow
 
 1. Choose the physical hand being scanned.
@@ -128,3 +148,12 @@ xcodebuild test \
 ```
 
 Simulator tests cover adapter math and non-camera behavior. They do not validate TrueDepth capture, MediaPipe handedness, preview alignment, or measurement accuracy. Use [the device checklist](../docs/testing/truedepth-device-checklist.md) for those checks.
+
+### Inspect the hand before fitting a grip
+
+In Grip studio, tap **Hand model** to review the measured hand independently of
+baseball targets. The view includes front/back/side controls, joint flexion,
+mesh inspection, and a SceneKit export. See [the hand model review guide](../docs/hand-model-review.md)
+for the reusable rigged GLB, source generation, and Debug launch arguments.
+
+See [the current hand proportions and ball integration](../docs/natural-hand-and-ball.md) for the slimmer palm, corrected reference spacing, asset regeneration, and verification.

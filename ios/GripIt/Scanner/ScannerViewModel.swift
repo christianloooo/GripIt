@@ -128,6 +128,28 @@ final class ScannerViewModel: ObservableObject {
         }
     }
 
+    func loadProfile(from url: URL) throws {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let data = try Data(contentsOf: url)
+        guard data.count <= 1_000_000 else {
+            throw GripError.invalid("Choose a HandProfile JSON file under 1 MB.")
+        }
+        let imported = try HandProfileCodec.decode(data)
+        guard imported.coordinateSystem == "gripit-hand-v1" else {
+            throw GripError.invalid("Unsupported hand coordinate system.")
+        }
+        reset()
+        profile = imported
+        selectedHand = imported.handedness
+        phase = .complete
+        progress = 1
+        currentView = nil
+        message = "Imported hand measurements are ready."
+        diagnostics = "Imported HandProfile · camera was not used"
+        exportProfile()
+    }
+
     func exportProfile() {
         guard let profile else { return }
         do {

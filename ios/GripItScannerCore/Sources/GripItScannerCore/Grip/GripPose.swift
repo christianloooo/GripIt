@@ -1,0 +1,464 @@
+import Foundation
+import simd
+
+public struct GripFingerPose: Sendable {
+  public let finger: GripFinger
+  public var points: [SIMD3<Double>]
+  public let lengths: [Double]
+  public let radius: Double
+  public var angles: [Double]
+  public var allowsOpposition: Bool = false
+  public var opposition: Double = 0
+  public var yaw: Double
+  public var target: SIMD3<Double>
+  public var targetError: Double = 0
+  public var clearance: Double = 0
+  public let contact: Bool
+}
+public struct GripPose: Sendable {
+  public let id = UUID()
+  public let pitch: PitchGrip
+  public let handedness: Handedness
+  public let ballCenter: SIMD3<Double>
+  public let ballRotation: simd_quatd
+  public let fingers: [GripFingerPose]
+  public let vertices: [SIMD3<Double>]
+  public let indices: [UInt32]
+  public let diagnostics: GripFitDiagnostics
+}
+public struct GripSeamFit: Sendable {
+  public let finger: GripFinger
+  public let distanceMm: Double
+  public let tangentAlignment: Double
+  public let across: Bool
+  public let leather: Bool
+  public var needsReview: Bool {
+    leather
+      ? distanceMm < 3
+      : distanceMm > 3 || (across ? tangentAlignment > 0.5 : tangentAlignment < 0.75)
+  }
+}
+public struct GripFitDiagnostics: Sendable {
+  public let maximumContactGapMm: Double
+  public let maximumSkinPenetrationMm: Double
+  public let maximumPadSurfaceGapMm: Double
+  public let maximumEdgeStretch: Double
+  public let loopGapMm: Double?
+  public let modeledThickness: Bool
+  public let usedMeasuredRoots: Bool
+  public let seams: [GripSeamFit]
+  public var needsReview: Bool {
+    maximumContactGapMm > 6 || maximumSkinPenetrationMm > 3 || maximumPadSurfaceGapMm > 3
+      || (loopGapMm ?? 0) > 5
+      || seams.contains(where: \.needsReview)
+  }
+}
+
+public enum GripPoseSolver {
+  public static let ballRadius = 36.5
+  public static func solve(profile: HandProfile, pitch: PitchGrip) throws -> GripPose {
+    try solve(
+      profile: profile, pitch: pitch, hand: GripHandAsset.load(), ball: GripBallAsset.load())
+  }
+  public static func solve(
+    profile: HandProfile, pitch: PitchGrip, hand: GripHandAsset, ball: GripBallAsset
+  ) throws -> GripPose {
+    try Task.checkCancellation()
+    let fit = try initialFit(profile: profile, pitch: pitch, hand: hand)
+    var fingers = fit.fingers
+    let scale = fit.scale
+    let length = fit.length
+    let measuredRoots = fit.measuredRoots
+    var center = SIMD3(0, length + 8, pitch == .circleChange ? 46.0 : 48.0)
+    let thumbOpposes =
+      pitch.zoneTemplates.first { $0.zoneId == .thumbPad }?.placement?.opposes ?? []
+    func upperNormal(_ finger: GripFinger) -> SIMD3<Double> {
+      switch finger {
+      case .index: unit(SIMD3(pitch == .slider ? 0.20 : 0.31, 0.93, 0.25))
+      case .middle: unit(SIMD3(pitch == .circleChange ? 0.24 : -0.16, 0.95, 0.25))
+      default: unit(SIMD3(-0.40, 0.90, 0.22))
+      }
+    }
+    func targets(_ center: SIMD3<Double>) -> [SIMD3<Double>] {
+      fingers.map { rig in
+        let f = rig.finger
+        let r = ballRadius + rig.radius * (pitch.upperContacts.contains(f) ? 0.6 : 0.8)
+        if pitch == .circleChange && (f == .index || f == .thumb) {
+          return center + SIMD3(ballRadius + 6, f == .index ? -14.5 : -15.5, -7)
+        }
+        let direction: SIMD3<Double>
+        switch f {
+        case .index: direction = upperNormal(f)
+        case .middle: direction = upperNormal(f)
+        case .ring:
+          direction = pitch == .circleChange ? SIMD3(-0.40, 0.90, 0.22) : SIMD3(-0.72, 0.58, 0.38)
+        case .pinky:
+          if pitch != .circleChange {
+            var relaxed = rig
+            relaxed.angles = [0.28, 0.65, 0.45]
+            relaxed.yaw = 0.12
+            relaxed.opposition = 0
+            return forward(relaxed).last!
+          }
+          direction = SIMD3(-0.90, -0.28, 0.32)
+        case .thumb:
+          // Bias lateral support opposite the specified contact midpoint while
+          // retaining the thumb-side offset needed by this bounded hand rig.
+          // This is an approximate opposition fit, not exact antipodal contact.
+          let opposing = thumbOpposes.compactMap(\.finger).map(upperNormal)
+          let midpoint = opposing.reduce(SIMD3<Double>.zero, +) / Double(max(1, opposing.count))
+          direction = SIMD3(0.38 - midpoint.x * 0.25, -0.85, 0.36)
+        }
+        return center + unit(direction) * r
+      }
+    }
+    func assign() {
+      let ts = targets(center)
+      for i in fingers.indices { fingers[i].target = ts[i] }
+    }
+    assign()
+    for i in fingers.indices {
+      try Task.checkCancellation()
+      optimize(&fingers[i], center: center, others: [], multistart: true)
+    }
+    // Couple fingers and ball placement. Avoid forcing every hand into one
+    // adult-size pose; dimensions and all FK segment lengths remain measured.
+    for _ in 0..<5 {
+      try Task.checkCancellation()
+      for i in fingers.indices {
+        let others = fingers.enumerated().filter { $0.offset != i }.map(\.element)
+        optimize(&fingers[i], center: center, others: others, multistart: false)
+      }
+      var best = center
+      var score = cost(fingers, center: center)
+      for axis in 0..<3 {
+        for sign in [-1.0, 1.0] {
+          var candidate = center
+          candidate[axis] += sign * 2
+          guard abs(candidate.x) < 10, abs(candidate.y - (length + 8)) < 12,
+            44.0...56.0 ~= candidate.z
+          else { continue }
+          let ts = targets(candidate)
+          var trial = fingers
+          for i in trial.indices {
+            trial[i].target = ts[i]
+            update(&trial[i], center: candidate)
+          }
+          let value = cost(trial, center: candidate)
+          if value < score {
+            best = candidate
+            score = value
+          }
+        }
+      }
+      center = best
+      assign()
+    }
+    for i in fingers.indices {
+      let others = fingers.enumerated().filter { $0.offset != i }.map(\.element)
+      optimize(&fingers[i], center: center, others: others, multistart: true)
+    }
+    let rotation = orientBall(ball, pitch: pitch, fingers: fingers, center: center)
+    let vertices = try deform(hand: hand, fingers: fingers, scale: scale, center: center)
+    var stretch = 1.0
+    var penetration = 0.0
+    for v in vertices { penetration = max(penetration, ballRadius - simd_distance(v, center)) }
+    // Distortion is measured against each personalized bone's size, not only
+    // a finite bounding box. Profile error cannot quietly make a torn mesh.
+    for i in stride(from: 0, to: hand.indices.count, by: 3) {
+      for j in 0..<3 {
+        let a = Int(hand.indices[i + j])
+        let b = Int(hand.indices[i + (j + 1) % 3])
+        let old = simd_distance(gv(hand.vertices[a]) * scale, gv(hand.vertices[b]) * scale)
+        if old > 0.7 { stretch = max(stretch, simd_distance(vertices[a], vertices[b]) / old) }
+      }
+    }
+    guard penetration < 6 else {
+      throw GripError.invalid(
+        "This grip would overlap the ball too much for these proportions. Try another pitch; rescan only if the measurements look wrong."
+      )
+    }
+    guard stretch < 7, vertices.allSatisfy({ $0.x.isFinite && $0.y.isFinite && $0.z.isFinite })
+    else {
+      throw GripError.invalid(
+        "This profile creates an overstretched hand surface. Please rescan rather than using a distorted grip."
+      )
+    }
+    let contacts = fingers.filter { $0.contact && !(pitch == .circleChange && $0.finger == .thumb) }
+    let padSurfaceGap =
+      contacts.map { finger in
+        padVertices(hand: hand, vertices: vertices, finger: finger.finger).map {
+          abs(simd_distance($0, center) - ballRadius)
+        }.min() ?? Double.infinity
+      }.max() ?? 0
+    let loop: Double? =
+      pitch == .circleChange
+      ? padGap(hand: hand, vertices: vertices, first: .index, second: .thumb) : nil
+    return GripPose(
+      pitch: pitch, handedness: profile.handedness, ballCenter: center, ballRotation: rotation,
+      fingers: fingers, vertices: vertices, indices: hand.indices,
+      diagnostics: GripFitDiagnostics(
+        maximumContactGapMm: contacts.map(\.targetError).max() ?? 0,
+        maximumSkinPenetrationMm: max(0, penetration), maximumPadSurfaceGapMm: padSurfaceGap,
+        maximumEdgeStretch: stretch, loopGapMm: loop,
+        modeledThickness: profile.measurements.palm.thicknessMm == nil
+          || GripFinger.allCases.contains {
+            $0.measurement(profile).diameterMm == nil
+          }, usedMeasuredRoots: measuredRoots,
+        seams: inspectSeams(
+          ball, pitch: pitch, fingers: fingers, center: center, rotation: rotation)))
+  }
+  /// Neutral anatomy review uses the same personalized bind surface as the grip renderer.
+  /// No baseball or inverse-kinematics target can hide a malformed base hand here.
+  public static func openHand(profile: HandProfile, flexion: Double = 0) throws -> GripPose {
+    guard flexion.isFinite, (0...0.65).contains(flexion) else {
+      throw GripError.invalid("Review flexion must be between 0 and 0.65.")
+    }
+    let hand = try GripHandAsset.load()
+    let fit = try initialFit(profile: profile, pitch: .fourSeam, hand: hand)
+    var fingers = fit.fingers
+    for i in fingers.indices {
+      let names = fingers[i].finger.jointNames
+      let rest = names.map { name in gv(hand.joints.first { $0.name == name }!.position) }
+      let sourceDirection = unit(rest[1] - rest[0])
+      let splay: Double
+      switch fingers[i].finger {
+      case .thumb: splay = atan2(sourceDirection.x, sourceDirection.y)
+      case .index: splay = -1 * .pi / 180
+      case .middle: splay = 0
+      case .ring: splay = 1 * .pi / 180
+      case .pinky: splay = 3 * .pi / 180
+      }
+      let relax = simd_quatd(
+        angle: atan2(sourceDirection.x, sourceDirection.y) - splay, axis: SIMD3(0, 0, 1))
+      let axis = unit(simd_cross(relax.act(sourceDirection), SIMD3(0, 0, 1)))
+      var bend = 0.0
+      for j in 0..<3 {
+        bend += flexion * [0.7, 1.05, 0.52][j]
+        let rotation = simd_quatd(angle: bend, axis: axis)
+        fingers[i].points.append(
+          fingers[i].points[j] + rotation.act(relax.act(unit(rest[j + 1] - rest[j])))
+            * fingers[i].lengths[j])
+      }
+    }
+    let vertices = try deform(hand: hand, fingers: fingers, scale: fit.scale, center: .zero)
+    return GripPose(
+      pitch: .fourSeam, handedness: profile.handedness, ballCenter: SIMD3(0, 60, 300),
+      ballRotation: simd_quatd(), fingers: fingers, vertices: vertices, indices: hand.indices,
+      diagnostics: GripFitDiagnostics(
+        maximumContactGapMm: 0, maximumSkinPenetrationMm: 0,
+        maximumPadSurfaceGapMm: 0, maximumEdgeStretch: 1, loopGapMm: nil,
+        modeledThickness: true, usedMeasuredRoots: fit.measuredRoots, seams: []))
+  }
+  private static func initialFit(profile: HandProfile, pitch: PitchGrip, hand: GripHandAsset) throws
+    -> (
+      fingers: [GripFingerPose], scale: SIMD3<Double>, width: Double, length: Double,
+      measuredRoots: Bool
+    )
+  {
+    guard profile.coordinateSystem == "gripit-hand-v1" else {
+      throw GripError.invalid("Unsupported hand coordinate system.")
+    }
+    guard let width = profile.measurements.palm.widthMm,
+      let length = profile.measurements.palm.lengthMm,
+      width.isFinite, length.isFinite, (40...125).contains(width), (35...125).contains(length)
+    else {
+      throw GripError.invalid(
+        "This profile needs valid measured palm width and length before a grip can be built.")
+    }
+    let rest = Dictionary(uniqueKeysWithValues: hand.joints.map { ($0.name, gv($0.position)) })
+    let restWidth = simd_distance(
+      rest["index-finger-phalanx-proximal"]!, rest["pinky-finger-phalanx-proximal"]!)
+    let restLength = simd_length(
+      (rest["index-finger-phalanx-proximal"]! + rest["pinky-finger-phalanx-proximal"]!) / 2)
+    let scale = SIMD3(
+      width / restWidth, length / restLength,
+      (profile.measurements.palm.thicknessMm ?? 14) / hand.palmReferenceThickness)
+    func palm(_ p: SIMD3<Double>) -> SIMD3<Double> { p * scale }
+    var measuredRoots = false
+    var fingers: [GripFingerPose] = []
+    for f in GripFinger.allCases {
+      let m = f.measurement(profile)
+      let lengths = m.segmentsMm
+      guard lengths.count == 3, lengths.allSatisfy({ $0.isFinite && (6...65).contains($0) }),
+        lengths.max()! / lengths.min()! < 4
+      else {
+        throw GripError.invalid(
+          "\(f.title) segment measurements are invalid. Scan the whole finger again.")
+      }
+      let diameter = m.diameterMm ?? (f == .thumb ? 16 : f == .pinky ? 11 : 13.5) * width / 62
+      guard diameter.isFinite, (5...30).contains(diameter) else {
+        throw GripError.invalid("Invalid \(f.title) thickness.")
+      }
+      var root = palm(rest[f.jointNames[0]]!)
+      if let m = profile.landmarks[f.landmarkRoot], m.confidence >= 0.5,
+        [m.xMm, m.yMm, m.zMm].allSatisfy(\.isFinite), abs(m.xMm) < width,
+        (0...length * 1.4).contains(m.yMm)
+      {
+        guard abs(m.zMm) < 30 else {
+          throw GripError.invalid(
+            "\(f.title) base depth is inconsistent with the palm. Rescan with the whole hand visible."
+          )
+        }
+        root = SIMD3(m.xMm, m.yMm, m.zMm)
+        measuredRoots = true
+      }
+      fingers.append(
+        GripFingerPose(
+          finger: f, points: [root], lengths: lengths, radius: diameter / 2,
+          angles: f == .thumb ? [0.65, 0.9, 0.6] : [0.35, 1.1, 0.9],
+          allowsOpposition: f == .thumb || (pitch == .circleChange && f == .index),
+          opposition: pitch == .circleChange && f == .index ? 1.0 : f == .thumb ? 0.4 : 0,
+          yaw: f == .thumb ? 0.2 : 0, target: .zero,
+          contact: pitch.upperContacts.contains(f) || f == .thumb
+            || (pitch == .circleChange && f == .pinky)))
+    }
+    return (fingers, scale, width, length, measuredRoots)
+  }
+  static func forward(_ rig: GripFingerPose) -> [SIMD3<Double>] {
+    var points = [rig.points[0]]
+    var bend = 0.0
+    let u =
+      rig.finger == .thumb
+      ? SIMD3(cos(rig.yaw), sin(rig.yaw), 0) : SIMD3(-sin(rig.yaw), cos(rig.yaw), 0)
+    let candidate =
+      rig.finger == .thumb
+      ? SIMD3(0, sin(rig.opposition), cos(rig.opposition))
+      : SIMD3(sin(rig.opposition), 0, cos(rig.opposition))
+    let v = unit(candidate - u * simd_dot(candidate, u))
+    for j in 0..<3 {
+      bend += rig.angles[j]
+      points.append(points.last! + (u * cos(bend) + v * sin(bend)) * rig.lengths[j])
+    }
+    return points
+  }
+  static func update(_ rig: inout GripFingerPose, center: SIMD3<Double>) {
+    rig.points = forward(rig)
+    rig.targetError = simd_distance(rig.points[3], rig.target)
+    rig.clearance = (0..<3).map {
+      segmentDistance(center, rig.points[$0], capsuleEnd(rig, $0)) - ballRadius - rig.radius
+    }.min()!
+  }
+  static func capsuleEnd(_ rig: GripFingerPose, _ segment: Int) -> SIMD3<Double> {
+    // The last measured point is the skin tip, not a capsule center. Inset the
+    // distal collider so its rounded cap ends at that measured point.
+    segment == 2
+      ? rig.points[3] - unit(rig.points[3] - rig.points[2]) * min(rig.radius, rig.lengths[2] * 0.45)
+      : rig.points[segment + 1]
+  }
+  static func segmentDistance(_ p: SIMD3<Double>, _ a: SIMD3<Double>, _ b: SIMD3<Double>) -> Double
+  {
+    let d = b - a
+    let t = max(0, min(1, simd_dot(p - a, d) / max(1e-9, simd_length_squared(d))))
+    return simd_distance(p, a + d * t)
+  }
+  static func energy(_ r: GripFingerPose, center: SIMD3<Double>, others: [GripFingerPose]) -> Double
+  {
+    var value = r.targetError * r.targetError
+    for j in 0..<3 {
+      value +=
+        180
+        * pow(
+          max(0, ballRadius + r.radius - segmentDistance(center, r.points[j], capsuleEnd(r, j))), 2)
+      // Exposed joints should not pass through adjacent fingers. Webbing
+      // at the bases is intentionally shared by the connected palm mesh.
+      for other in others {
+        for k in 1..<4 {
+          let otherPoint = k == 3 ? capsuleEnd(other, 2) : other.points[k]
+          let gap = segmentDistance(otherPoint, r.points[j], capsuleEnd(r, j))
+          value +=
+            25
+            * pow(
+              max(0, r.radius * (j == 2 ? 0.8 : 1) + other.radius * (k == 3 ? 0.8 : 1) - gap), 2)
+        }
+      }
+    }
+    value += r.angles.enumerated().reduce(0) {
+      $0 + 0.5 * pow($1.element - ([0.3, 1.0, 0.7][$1.offset]), 2)
+    }
+    return value
+  }
+  static func cost(_ rigs: [GripFingerPose], center: SIMD3<Double>) -> Double {
+    rigs.reduce(0) { $0 + energy($1, center: center, others: []) }
+  }
+  static func optimize(
+    _ r: inout GripFingerPose, center: SIMD3<Double>, others: [GripFingerPose], multistart: Bool
+  ) {
+    var best = r
+    var bestCost = Double.infinity
+    let seeds =
+      multistart
+      ? [
+        [0.2, 0.9, 0.8], [0.6, 1.2, 1.0], [1.1, 0.5, 0.3], [1.45, 1.4, 0.2], [-0.2, 1.5, 1.2],
+        r.angles,
+      ] : [r.angles]
+    for (seedIndex, seed) in seeds.enumerated() {
+      r.angles = seed.enumerated().map { j, a in
+        max(
+          r.finger == .thumb && j == 0 ? 0.1 : (j == 0 ? -0.35 : 0),
+          min(r.finger == .thumb ? [1.1, 1.5, 1.4][j] : [1.5, 1.85, 1.7][j], a))
+      }
+      if multistart {
+        r.yaw = r.finger == .thumb ? [0.4, 1.1, 1.8, 2.1, 0.8, 1.5][seedIndex] : 0
+        if r.finger == .thumb { r.opposition = [0.4, 0.8, 1.0, 0.6, 1.2, 0.3][seedIndex] }
+      }
+      for step in [0.25, 0.09, 0.03, 0.01] {
+        for _ in 0..<12 {
+          var changed = false
+          for j in 0..<5 {
+            let original = j == 4 ? r.opposition : j == 3 ? r.yaw : r.angles[j]
+            var chosen = original
+            update(&r, center: center)
+            var score = energy(r, center: center, others: others)
+            for sign in [-1.0, 1.0] {
+              let freePlane = r.allowsOpposition
+              let lo =
+                j == 4
+                ? (r.finger == .thumb ? 0 : freePlane ? -1.35 : -0.15)
+                : j == 3
+                  ? (r.finger == .thumb ? 0.1 : -0.7)
+                  : (j == 0 ? (r.finger == .thumb ? 0.1 : -0.35) : 0)
+              let hi =
+                j == 4
+                ? (freePlane ? 1.35 : 0.15)
+                : j == 3
+                  ? (r.finger == .thumb ? 2.2 : 0.7)
+                  : (r.finger == .thumb ? [1.1, 1.5, 1.4][j] : [1.5, 1.85, 1.7][j])
+              let trial = max(lo, min(hi, original + sign * step))
+              if j == 4 {
+                r.opposition = trial
+              } else if j == 3 {
+                r.yaw = trial
+              } else {
+                r.angles[j] = trial
+              }
+              update(&r, center: center)
+              let next = energy(r, center: center, others: others)
+              if next < score {
+                score = next
+                chosen = trial
+                changed = true
+              }
+            }
+            if j == 4 {
+              r.opposition = chosen
+            } else if j == 3 {
+              r.yaw = chosen
+            } else {
+              r.angles[j] = chosen
+            }
+          }
+          if !changed { break }
+        }
+      }
+      update(&r, center: center)
+      let score = energy(r, center: center, others: others)
+      if score < bestCost {
+        best = r
+        bestCost = score
+      }
+    }
+    r = best
+    update(&r, center: center)
+  }
+}

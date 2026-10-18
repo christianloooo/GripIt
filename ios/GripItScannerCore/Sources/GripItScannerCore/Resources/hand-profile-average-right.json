@@ -6,7 +6,7 @@
   "units": "millimeters",
   "coordinateSystem": "gripit-hand-v1",
   "measurements": {
-    "palm": { "widthMm": 82, "lengthMm": 72, "thicknessMm": null },
+    "palm": { "widthMm": 62, "lengthMm": 82, "thicknessMm": null },
     "fingers": {
       "index": { "segmentsMm": [38, 24, 18], "diameterMm": null },
       "middle": { "segmentsMm": [42, 27, 20], "diameterMm": null },

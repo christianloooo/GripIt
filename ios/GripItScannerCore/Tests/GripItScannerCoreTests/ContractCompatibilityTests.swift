@@ -12,7 +12,7 @@ final class ContractCompatibilityTests: XCTestCase {
 
         XCTAssertEqual(profile.schemaVersion, "1.0.0")
         XCTAssertEqual(profile.profileId, "sample-average-right")
-        XCTAssertEqual(profile.measurements.palm.widthMm, 82)
+        XCTAssertEqual(profile.measurements.palm.widthMm, 62)
         XCTAssertEqual(try HandProfileCodec.decode(HandProfileCodec.encode(profile)), profile)
 
         let object = try XCTUnwrap(
