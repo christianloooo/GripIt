@@ -295,3 +295,60 @@ describe("two-seam rules", () => {
       .toBeNull();
   });
 });
+
+describe("slider rules", () => {
+  // Gyro slider: low efficiency is correct for this pitch.
+  function slider(overrides: Partial<DerivedMetrics> = {}): DerivedMetrics {
+    return metrics({
+      velocityMph: 84,
+      spinEfficiencyPercent: 8,
+      spinDirectionClock: 3,
+      horizontalBreakInches: -2,
+      verticalBreakInches: 2,
+      ...overrides,
+    });
+  }
+  const sliderTarget = targetFor("slider", "right")!;
+  const detectSlider = (id: string, m: DerivedMetrics) =>
+    rule(id).detect(m, sliderTarget, null);
+  const sliderRules = GRIP_RULES.filter((r) => r.pitchIds.includes("slider"));
+
+  it("has exactly the efficiency rule, since no spin-per-mph or break target exists", () => {
+    expect(sliderRules.map((r) => r.id)).toEqual(["slider-efficiency"]);
+  });
+
+  it("efficiency: fires above the ceiling and names the reading", () => {
+    const d = detectSlider(
+      "slider-efficiency",
+      slider({ spinEfficiencyPercent: 70 }),
+    )!;
+    expect(d).not.toBeNull();
+    expect(d.summary).toContain("70");
+    expect(
+      detectSlider("slider-efficiency", slider({ spinEfficiencyPercent: 36 })),
+    ).not.toBeNull();
+  });
+
+  it("efficiency: is silent at a genuine gyro slider reading and at the ceiling", () => {
+    expect(detectSlider("slider-efficiency", slider())).toBeNull();
+    expect(
+      detectSlider("slider-efficiency", slider({ spinEfficiencyPercent: 35 })),
+    ).toBeNull();
+    expect(
+      detectSlider("slider-efficiency", slider({ spinEfficiencyPercent: null })),
+    ).toBeNull();
+  });
+
+  it("targets the index pad and never the wrist", () => {
+    expect(rule("slider-efficiency").zones).toEqual(["index-pad"]);
+    for (const r of sliderRules) expect(r.zones).not.toContain("wrist");
+  });
+
+  it("never asks the index finger to drive, press or get purchase", () => {
+    for (const r of sliderRules) {
+      if (!/index/i.test(r.change)) continue;
+      expect(r.change).toMatch(/rest|relax/i);
+      expect(r.change).not.toMatch(/drive|press|squeeze|push|purchase|grip/i);
+    }
+  });
+});

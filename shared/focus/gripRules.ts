@@ -92,6 +92,7 @@ function deviation(
 
 const FOUR_SEAM = ["four-seam"] as const;
 const TWO_SEAM = ["two-seam"] as const;
+const SLIDER = ["slider"] as const;
 
 // Only the shortfall counts as weak run. A lefty's range is mirrored, so the
 // weak side is found from the range itself: a range centred above zero is
@@ -114,6 +115,8 @@ function runShortfall(
 const RAPSODO_SOURCE =
   "Rapsodo, 'Understanding the Three Fastball Movement Profiles' and the fastball spin-rate/efficiency profile article";
 const PRP_SOURCE = "PRP Baseball published pitch-grading cues";
+const RAPSODO_SLIDER_SOURCE =
+  "Rapsodo curveball/slider/changeup article: gyro sliders under 10 percent, topspin and sidespin sliders near 35 percent with 65 to 75 gyro degrees";
 
 export const GRIP_RULES: readonly GripRule[] = [
   {
@@ -292,5 +295,29 @@ export const GRIP_RULES: readonly GripRule[] = [
     zones: ["index-pad", "middle-pad"],
     expect: "Total spin rises.",
     source: `Spin per mph target from PitchLogic via targets.ts; ${PRP_SOURCE}; handInstructions.md (each upper finger follows its own seam).`,
+  },
+  // Only one slider rule. "Fingers too far apart" cannot be observed from ball
+  // flight or a static scan. "Not enough sweep" has no target because the app
+  // does not know whether a sweeper or a gyro slider was intended, and
+  // targetFor("slider") carries no break range. Spin per mph has no slider
+  // target either, so there is no purchase rule.
+  {
+    id: "slider-efficiency",
+    pitchIds: SLIDER,
+    detect(m, t) {
+      const eff = m.spinEfficiencyPercent;
+      if (eff === null) return null;
+      return deviation(
+        `Spin efficiency reads ${eff} percent, above the slider range. The index finger may be driving the ball like a fastball.`,
+        distanceOutside(eff, t.efficiencyPercent),
+        SCALE.efficiencyPoints,
+      );
+    },
+    // The index is named only to relax it. On a slider it parks on leather.
+    change:
+      "Let the index pad rest on the smooth leather beside the middle finger, and let the middle finger alone work the pinky-side seam.",
+    zones: ["index-pad"],
+    expect: "Spin efficiency drops and gyro degree rises.",
+    source: `${RAPSODO_SLIDER_SOURCE} (efficiency ceiling); ${PRP_SOURCE}; handInstructions.md (middle pad on the pinky-side seam, index pad resting on the adjacent smooth leather).`,
   },
 ];
