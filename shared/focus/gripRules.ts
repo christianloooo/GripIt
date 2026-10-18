@@ -184,6 +184,14 @@ export const GRIP_RULES: readonly GripRule[] = [
     id: "four-seam-cut",
     pitchIds: FOUR_SEAM,
     detect(m, t) {
+      // Horizontal break on a fastball is downstream of the spin axis: an
+      // axis at 1:56 rather than 12:00 produces arm-side run as a direct
+      // consequence, so closing the finger gap is the wrong change when the
+      // axis is what is off. Same shared-cause case as four-seam-buried, and
+      // correctness must not depend on ranking. Efficiency is deliberately
+      // not guarded against: it scales how large the break is, not which
+      // direction it goes, so it is not a shared cause here.
+      if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
       const h = m.horizontalBreakInches;
       if (h === null) return null;
       return deviation(

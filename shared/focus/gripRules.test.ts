@@ -120,6 +120,25 @@ describe("four-seam rules", () => {
       .toBeNull();
   });
 
+  it("cut: stays silent when the axis is off, which is what causes the run", () => {
+    // 1:56 with 18.6 inches of arm-side break: the break follows from the
+    // axis, so the axis rule owns this throw and the finger gap is not the
+    // problem to name.
+    const off = metrics({
+      spinDirectionClock: 1.9333,
+      horizontalBreakInches: 18.6,
+    });
+    expect(detect("four-seam-cut", off)).toBeNull();
+    expect(detect("four-seam-axis", off)).not.toBeNull();
+    // Same break with the axis on target still fires: the guard narrows the
+    // rule, it does not retire it.
+    const onAxis = metrics({
+      spinDirectionClock: 12.2,
+      horizontalBreakInches: 18.6,
+    });
+    expect(detect("four-seam-cut", onAxis)).not.toBeNull();
+  });
+
   it("buried: fires on low vertical break with good efficiency", () => {
     expect(detect("four-seam-buried", metrics({ verticalBreakInches: 10 })))
       .not.toBeNull();
