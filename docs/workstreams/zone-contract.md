@@ -131,6 +131,85 @@ replaced by middle and ring. The palm goes from clearance to contact, because a
 changeup is held deeper. Both are judgeable differences, which is why they live
 in the plan rather than the model.
 
+### Where the fingers actually go
+
+Pressure and role say how hard and why. Placement says where. Without it a
+solver has nothing to aim at.
+
+`surface` is which part of the finger touches. `region` is roughly where on the
+ball, in the frame of the hand's approach. `seam` is the relationship to the
+nearest stitching: `across` means it runs perpendicular to the finger and
+passes under the pad, `along` means parallel. That one distinction is the whole
+difference between a four-seam and a two-seam. `opposes` names the zones a
+contact sits opposite across the ball, and several entries mean it opposes
+their midpoint.
+
+A dash in `offset` means the source describes the relationship but gives no
+distance, so the solver picks a comfortable one.
+
+**four-seam** — horseshoe sideways across the fingers, rounded end toward the
+thumb, opening toward the pinky.
+
+| zone | surface | region | seam | offset | opposes |
+| --- | --- | --- | --- | --- | --- |
+| `index-pad` | pad | top | across | 0 mm | – |
+| `middle-pad` | pad | top | across | 0 mm | – |
+| `ring-side` | side | pinky-side | off | – | – |
+| `pinky` | none | off-ball | none | – | – |
+| `thumb-pad` | pad | underside | off | – | `index-pad`, `middle-pad` |
+
+The thumb opposes the *gap* between the two upper fingers, not either one.
+Index and middle keep a comfortable small separation.
+
+**two-seam** — the narrow seam pair running from wrist toward fingertips.
+
+| zone | surface | region | seam | offset | opposes |
+| --- | --- | --- | --- | --- | --- |
+| `index-pad` | pad | top | **along** | 0 mm | – |
+| `middle-pad` | pad | top | **along** | 0 mm | – |
+| `ring-side` | side | pinky-side | off | – | – |
+| `pinky` | none | off-ball | none | – | – |
+| `thumb-pad` | pad | underside | off | – | `index-pad`, `middle-pad` |
+
+Identical to the four-seam except the seam relation. Each upper finger follows
+its own seam of the pair rather than crossing a single one.
+
+**slider** — the two-seam narrow area, working the seam on the pinky side.
+
+| zone | surface | region | seam | offset | opposes |
+| --- | --- | --- | --- | --- | --- |
+| `index-pad` | pad | top | **beside** | – | – |
+| `middle-pad` | pad | top | along | 0 mm | – |
+| `ring-side` | side | pinky-side | off | – | – |
+| `pinky` | none | off-ball | none | – | – |
+| `thumb-pad` | pad | underside | off | – | `middle-pad` |
+
+Only the middle finger finds stitching. The index sits beside it on smooth
+leather toward the thumb side, and the two fingers may touch lightly. The thumb
+is allowed slightly off centre.
+
+**changeup** — circle-change version. The ball sits deeper in the hand.
+
+| zone | surface | region | seam | offset | opposes |
+| --- | --- | --- | --- | --- | --- |
+| `index-pad` | **curl** | **thumb-side** | off | – | `thumb-pad` |
+| `middle-pad` | pad | top | along | 0 mm | – |
+| `ring-side` | **pad** | **top** | **along** | 0 mm | – |
+| `pinky` | **curl** | **pinky-side** | off | – | – |
+| `thumb-pad` | pad | **thumb-side** | off | – | `index-pad` |
+
+Three things to watch here. The index does not go over the top at all; it curls
+around the side and meets the thumb to form a loop, which should not be forced
+into a perfect circle. The `ring-side` zone makes a **pad** contact despite its
+id, because the id is a stable key rather than a description of the surface.
+And the thumb wraps the lower thumb-side surface instead of sitting underneath.
+
+### Zones without placement
+
+`palm` and `wrist` carry no placement, because neither is a finger contact.
+They are expressed through `role` and `pressure` alone: `clear` with `none`
+means keep the gap, `support` with `light` means let the ball settle in.
+
 ### Sourcing
 
 - Unmarked rows come from `handInstructions.md`.

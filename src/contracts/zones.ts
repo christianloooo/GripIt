@@ -45,6 +45,55 @@ export type ZoneRole = "drive" | "support" | "clear";
  */
 export type ZoneReach = "comfortable" | "strained" | "unreachable";
 
+/** Which part of the finger makes the contact. */
+export type ContactSurface = "pad" | "tip" | "side" | "curl" | "none";
+
+/**
+ * Roughly where on the ball the contact sits, in the frame of the hand's
+ * approach rather than the ball's own axes. The ball is re-oriented per pitch,
+ * so an absolute ball coordinate would mean nothing without that orientation.
+ */
+export type BallRegion =
+  | "top"
+  | "underside"
+  | "thumb-side"
+  | "pinky-side"
+  | "off-ball";
+
+/**
+ * How the contact sits relative to the nearest seam.
+ *
+ * `across` means the stitching runs perpendicular to the finger and passes
+ * under the pad. `along` means the stitching runs parallel to the finger.
+ * That distinction is the whole difference between a four-seam and a two-seam.
+ */
+export type SeamRelation = "across" | "along" | "beside" | "off" | "none";
+
+/**
+ * Where to put the finger, as opposed to how hard to press. Null on zones that
+ * are not finger contacts, such as the palm and the wrist.
+ *
+ * This is a specification, not a solution. It says what the grip requires; the
+ * step 2 solver decides the actual joint angles and ball pose that satisfy it.
+ */
+export interface ZonePlacement {
+  surface: ContactSurface;
+  region: BallRegion;
+  seam: SeamRelation;
+  /**
+   * Millimetres from the seam centre line. `0` means directly on the
+   * stitching. Null where the source describes the relationship but gives no
+   * distance, leaving the solver to choose a comfortable one.
+   */
+  seamOffsetMm: number | null;
+  /**
+   * Zones this contact sits opposite across the ball. Several entries mean it
+   * opposes the midpoint between them: a four-seam thumb sits under the gap
+   * between the index and middle fingers, not under either one.
+   */
+  opposes: ZoneId[];
+}
+
 /**
  * Step 2 output, one per zone. Describes the intended grip for one pitch,
  * fitted to one hand. Carries no assessment: a zone reads the same whether or
@@ -68,6 +117,8 @@ export interface InstructionZone {
   role: ZoneRole;
   /** From fitting the pitch to this hand. This is where hand size lands. */
   reach: ZoneReach;
+  /** Where the contact goes. Null for the palm and wrist, which are not finger contacts. */
+  placement: ZonePlacement | null;
 }
 
 /**
