@@ -174,3 +174,124 @@ describe("magnitude", () => {
     expect(axis.magnitude).toBeGreaterThan(purchase.magnitude);
   });
 });
+
+describe("two-seam rules", () => {
+  // On-target two-seam reading for a right-handed pitcher.
+  function twoSeam(overrides: Partial<DerivedMetrics> = {}): DerivedMetrics {
+    return metrics({
+      spinEfficiencyPercent: 85,
+      spinPerMph: 24,
+      spinDirectionClock: 1.5,
+      horizontalBreakInches: 15,
+      verticalBreakInches: 12,
+      ...overrides,
+    });
+  }
+  const twoSeamRight = targetFor("two-seam", "right")!;
+  const twoSeamLeft = targetFor("two-seam", "left")!;
+
+  function detectTwo(
+    id: string,
+    m: DerivedMetrics,
+    t = twoSeamRight,
+  ) {
+    return rule(id).detect(m, t, null);
+  }
+
+  const TWO_SEAM_IDS = [
+    "two-seam-axis",
+    "two-seam-run",
+    "two-seam-efficiency",
+    "two-seam-purchase",
+  ];
+
+  it("is silent on every two-seam rule for on-target metrics", () => {
+    for (const id of TWO_SEAM_IDS) expect(detectTwo(id, twoSeam())).toBeNull();
+  });
+
+  it("names index and middle (or thumb for efficiency), never the wrist", () => {
+    for (const id of TWO_SEAM_IDS) {
+      const r = rule(id);
+      expect(r.pitchIds).toEqual(["two-seam"]);
+      expect(r.zones).not.toContain("wrist");
+    }
+    expect(rule("two-seam-axis").zones).toEqual(["index-pad", "middle-pad"]);
+    expect(rule("two-seam-run").zones).toEqual(["index-pad", "middle-pad"]);
+    expect(rule("two-seam-purchase").zones).toEqual(["index-pad", "middle-pad"]);
+    expect(rule("two-seam-efficiency").zones).toEqual(["thumb-pad"]);
+  });
+
+  it("axis: fires at a four-seam axis and not inside the range", () => {
+    expect(detectTwo("two-seam-axis", twoSeam({ spinDirectionClock: 12.2 })))
+      .not.toBeNull();
+    expect(detectTwo("two-seam-axis", twoSeam({ spinDirectionClock: 1.8 })))
+      .toBeNull();
+    expect(detectTwo("two-seam-axis", twoSeam({ spinDirectionClock: null })))
+      .toBeNull();
+  });
+
+  it("run: fires when break is low and axis is fine", () => {
+    const d = detectTwo("two-seam-run", twoSeam({ horizontalBreakInches: 4 }))!;
+    expect(d).not.toBeNull();
+    expect(d.summary).toContain("4");
+    expect(detectTwo("two-seam-run", twoSeam({ horizontalBreakInches: 15 })))
+      .toBeNull();
+    expect(detectTwo("two-seam-run", twoSeam({ horizontalBreakInches: null })))
+      .toBeNull();
+  });
+
+  it("run: defers to the axis rule when the axis is off", () => {
+    const m = twoSeam({ horizontalBreakInches: 4, spinDirectionClock: 12.2 });
+    expect(detectTwo("two-seam-run", m)).toBeNull();
+    expect(detectTwo("two-seam-axis", m)).not.toBeNull();
+  });
+
+  it("run: measures against the mirrored range for a left-handed pitcher", () => {
+    const weak = twoSeam({ horizontalBreakInches: -4, spinDirectionClock: 10.5 });
+    const good = twoSeam({ horizontalBreakInches: -15, spinDirectionClock: 10.5 });
+    expect(detectTwo("two-seam-run", weak, twoSeamLeft)).not.toBeNull();
+    expect(detectTwo("two-seam-run", good, twoSeamLeft)).toBeNull();
+    // +4 is the wrong way for a lefty, so the run is weak there too.
+    expect(
+      detectTwo(
+        "two-seam-run",
+        twoSeam({ horizontalBreakInches: 4, spinDirectionClock: 10.5 }),
+        twoSeamLeft,
+      ),
+    ).not.toBeNull();
+  });
+
+  it("run: does not tell a pitcher with plenty of run to add more", () => {
+    expect(detectTwo("two-seam-run", twoSeam({ horizontalBreakInches: 24 })))
+      .toBeNull();
+    expect(
+      detectTwo(
+        "two-seam-run",
+        twoSeam({ horizontalBreakInches: -24, spinDirectionClock: 10.5 }),
+        twoSeamLeft,
+      ),
+    ).toBeNull();
+  });
+
+  it("efficiency: fires when low and axis fine, defers when axis is off", () => {
+    expect(detectTwo("two-seam-efficiency", twoSeam({ spinEfficiencyPercent: 60 })))
+      .not.toBeNull();
+    expect(detectTwo("two-seam-efficiency", twoSeam({ spinEfficiencyPercent: 80 })))
+      .toBeNull();
+    const off = twoSeam({ spinEfficiencyPercent: 60, spinDirectionClock: 12.2 });
+    expect(detectTwo("two-seam-efficiency", off)).toBeNull();
+    expect(detectTwo("two-seam-axis", off)).not.toBeNull();
+  });
+
+  it("purchase: fires when spin per mph is low, regardless of axis", () => {
+    expect(detectTwo("two-seam-purchase", twoSeam({ spinPerMph: 19 })))
+      .not.toBeNull();
+    expect(
+      detectTwo("two-seam-purchase", twoSeam({ spinPerMph: 19, spinDirectionClock: 12.2 })),
+    ).not.toBeNull();
+    expect(detectTwo("two-seam-purchase", twoSeam({ spinPerMph: 23 })))
+      .toBeNull();
+    expect(detectTwo("two-seam-purchase", twoSeam({ spinPerMph: null })))
+      .toBeNull();
+  });
+});

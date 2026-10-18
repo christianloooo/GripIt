@@ -91,6 +91,25 @@ function deviation(
 }
 
 const FOUR_SEAM = ["four-seam"] as const;
+const TWO_SEAM = ["two-seam"] as const;
+
+// Only the shortfall counts as weak run. A lefty's range is mirrored, so the
+// weak side is found from the range itself: a range centred above zero is
+// weak below its min, one centred below zero is weak above its max. Too much
+// run is not a grip fault, so it never fires.
+function runShortfall(
+  value: number | null,
+  range: Range | undefined,
+): number {
+  if (value === null || !range) return 0;
+  const ends = [range.min, range.max].filter(
+    (end): end is number => end !== undefined,
+  );
+  if (!ends.length) return 0;
+  const mid = (Math.min(...ends) + Math.max(...ends)) / 2;
+  const nearZeroEnd = mid >= 0 ? { min: range.min } : { max: range.max };
+  return distanceOutside(value, nearZeroEnd);
+}
 
 const RAPSODO_SOURCE =
   "Rapsodo, 'Understanding the Three Fastball Movement Profiles' and the fastball spin-rate/efficiency profile article";
@@ -196,5 +215,82 @@ export const GRIP_RULES: readonly GripRule[] = [
     zones: ["palm"],
     expect: "Vertical break rises.",
     source: `${RAPSODO_SOURCE} (vertical break target); ${PRP_SOURCE}; handInstructions.md (without deliberately burying it in your palm).`,
+  },
+  {
+    id: "two-seam-axis",
+    pitchIds: TWO_SEAM,
+    detect(m, t) {
+      if (m.spinDirectionClock === null) return null;
+      const miss = axisDistance(m.spinDirectionClock, t.axisClock);
+      return deviation(
+        `Spin axis reads ${clockText(m.spinDirectionClock)}, off the target clock range. The ball may still be set like a four-seamer.`,
+        miss,
+        SCALE.axisHours,
+      );
+    },
+    change:
+      "Rotate the ball so the two close stretches of stitching run from your wrist toward your fingertips.",
+    zones: ["index-pad", "middle-pad"],
+    expect: "Axis moves into the arm-side range and the ball starts running.",
+    source: `${RAPSODO_SOURCE} (axis target); ${PRP_SOURCE}; handInstructions.md (rotate the ball until the seams run approximately from the wrist toward the fingertips).`,
+  },
+  {
+    id: "two-seam-run",
+    pitchIds: TWO_SEAM,
+    detect(m, t) {
+      // An off axis explains weak run better than seam placement does, and
+      // two-seam-axis owns that case. Correctness must not depend on ranking.
+      if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+      const h = m.horizontalBreakInches;
+      if (h === null) return null;
+      return deviation(
+        `Horizontal break reads ${h} inches, below target. The pitch is not running.`,
+        runShortfall(h, t.horizontalBreakInches),
+        SCALE.breakInches,
+      );
+    },
+    change:
+      "Set the index pad along the thumb-side seam and the middle pad along the other seam. Rotate the ball slightly until both pads engage stitching.",
+    zones: ["index-pad", "middle-pad"],
+    expect: "Horizontal run increases.",
+    source: `${RAPSODO_SOURCE} (horizontal break target); ${PRP_SOURCE}; handInstructions.md (index pad on the thumb-side seam, middle pad on the other seam, each following the stitching).`,
+  },
+  {
+    id: "two-seam-efficiency",
+    pitchIds: TWO_SEAM,
+    detect(m, t) {
+      // The axis rule owns an off-target axis. One fix at a time.
+      if (axisDistance(m.spinDirectionClock, t.axisClock) > 0) return null;
+      const eff = m.spinEfficiencyPercent;
+      if (eff === null) return null;
+      return deviation(
+        `Spin efficiency reads ${eff} percent, below target. The hand may have slipped to the side of the ball.`,
+        distanceOutside(eff, t.efficiencyPercent),
+        SCALE.efficiencyPoints,
+      );
+    },
+    change:
+      "Bring the thumb back under the two upper fingers, supporting the underside with its fleshy pad.",
+    zones: ["thumb-pad"],
+    expect: "Spin efficiency rises.",
+    source: `${RAPSODO_SOURCE} (75 to 100 percent efficiency, wide because different efficiencies suit different spin directions, arm slots and grips); ${PRP_SOURCE}; handInstructions.md (thumb supports the underside, approximately opposite the two upper fingers).`,
+  },
+  {
+    id: "two-seam-purchase",
+    pitchIds: TWO_SEAM,
+    detect(m, t) {
+      const spm = m.spinPerMph;
+      if (spm === null) return null;
+      return deviation(
+        `Spin per mph reads ${spm}, below target. The pads may be on smooth leather.`,
+        distanceOutside(spm, t.spinPerMph),
+        SCALE.spinPerMph,
+      );
+    },
+    change:
+      "Set both pads onto their seams so each follows its own stitching.",
+    zones: ["index-pad", "middle-pad"],
+    expect: "Total spin rises.",
+    source: `Spin per mph target from PitchLogic via targets.ts; ${PRP_SOURCE}; handInstructions.md (each upper finger follows its own seam).`,
   },
 ];
