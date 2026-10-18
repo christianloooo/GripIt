@@ -5,6 +5,7 @@ import type {
   ZoneReach,
 } from "../contracts/zones";
 import type { ThrowRecord } from "../throwEntry";
+import { rapsodo2Throws, sampleSessionThrows } from "./demoFixtures";
 import { plan } from "./fitFixtures";
 import { GRIP_RULES, GRIP_RULE_VERSION } from "./gripRules";
 import { gripFeedback } from "./gripFeedback";
@@ -430,6 +431,90 @@ describe("every outcome", () => {
     for (const { kind, result } of cases) {
       expect(result.zones, kind).not.toContain("wrist");
     }
+  });
+});
+
+describe("demo paths", () => {
+  // The three paths the demo is shown on. The property worth protecting is
+  // not any single rule id but that the three differ: one engine, three
+  // inputs, three different changes naming three different contacts.
+  const pathOne = gripFeedback({
+    pitchId: "four-seam",
+    throws: rapsodo2Throws("four-seam"),
+    zones: zonesWith(),
+  });
+  const pathTwo = gripFeedback({
+    pitchId: "two-seam",
+    throws: rapsodo2Throws("two-seam"),
+    zones: zonesWith(),
+  });
+  const pathThree = gripFeedback({
+    pitchId: "four-seam",
+    throws: sampleSessionThrows("four-seam"),
+    zones: zonesWith(),
+  });
+
+  it("path one: the rapsodo2 reading as a four-seam names the thumb", () => {
+    expect(pathOne.kind).toBe("change");
+    expect(pathOne.ruleId).toBe("four-seam-axis");
+    expect(pathOne.zones).toEqual(["thumb-pad"]);
+    expect(pathOne.change).toMatch(/thumb/i);
+  });
+
+  it("path two: the same reading as a two-seam cites seam purchase", () => {
+    expect(pathTwo.kind).toBe("change");
+    expect(pathTwo.ruleId).toBe("two-seam-purchase");
+    expect(pathTwo.zones).toContain("index-pad");
+    expect(pathTwo.zones).toContain("middle-pad");
+    expect(pathTwo.change).toMatch(/seam/i);
+    expect(pathTwo.change).toMatch(/pad/i);
+    // Same numbers, different intent, different change to try.
+    expect(pathTwo.ruleId).not.toBe(pathOne.ruleId);
+  });
+
+  // The design predicts this path fires the seam-orientation rule,
+  // four-seam-efficiency. It returns four-seam-cut instead, and the cause is
+  // the fixture rather than the rules.
+  //
+  // sampleThrowSession() originally carried no break values: its first row
+  // was ["82.4", "2180", "12:30", "84", "5.8"]. Commit f731f7a ("Add
+  // complete Rapsodo throw measurements") pasted 18.6 inches of horizontal
+  // and 13.8 of vertical break into all three rows. Those are rapsodo2.webp's
+  // break numbers, off a different pitch. A four-seam spinning at 12:30
+  // cannot produce 18.6 inches of arm-side run, so the sample fixture is
+  // physically self-contradictory and four-seam-cut is correctly flagging
+  // the largest symptom in it.
+  //
+  // This asserts what the engine actually does. Neither the sample rows nor
+  // any SCALE value is being bent to make the design's prediction come true:
+  // tuning a ranking constant so a demo matches a document would hide the
+  // bad fixture instead of fixing it. shared/throwEntry.ts is Carter's file.
+  // Change this assertion to four-seam-efficiency once those break values
+  // are corrected there.
+  it("path three: the sample session as a four-seam is a third rule", () => {
+    expect(pathThree.kind).toBe("change");
+    expect(pathThree.ruleId).toBe("four-seam-cut");
+  });
+
+  it("returns three different rule ids, which is the point of the demo", () => {
+    const ids = [pathOne.ruleId, pathTwo.ruleId, pathThree.ruleId];
+    expect(ids.every((id) => id !== null)).toBe(true);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it("never names the wrist on any demo path", () => {
+    for (const result of [pathOne, pathTwo, pathThree]) {
+      expect(result.zones).not.toContain("wrist");
+    }
+  });
+
+  it("is deterministic across rebuilt fixtures", () => {
+    const again = gripFeedback({
+      pitchId: "four-seam",
+      throws: rapsodo2Throws("four-seam"),
+      zones: zonesWith(),
+    });
+    expect(again).toEqual(pathOne);
   });
 });
 
