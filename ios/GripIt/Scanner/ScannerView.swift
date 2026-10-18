@@ -10,6 +10,7 @@ struct ScannerView: View {
     @StateObject private var model = ScannerViewModel()
     @State private var showGrips = false
     @State private var importProfile = false
+    @State private var showProfileDetails = false
     @State private var importError: String?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -21,12 +22,11 @@ struct ScannerView: View {
     private let landingCanvas = Color(red: 0.969, green: 0.976, blue: 0.969)
     private let landingMuted = Color(red: 0.945, green: 0.961, blue: 0.949)
     private let landingBorder = Color(red: 0.886, green: 0.910, blue: 0.894)
-    private let landingOutline = Color(red: 0.796, green: 0.835, blue: 0.808)
     private let landingInk = Color(red: 0.059, green: 0.118, blue: 0.086)
     private let landingMutedInk = Color(red: 0.322, green: 0.388, blue: 0.345)
 
     private var usesLightLandingTheme: Bool {
-        model.phase == .chooseHand || model.phase == .requestingPermission
+        model.phase == .chooseHand || model.phase == .requestingPermission || model.phase == .complete
     }
 
     var body: some View {
@@ -56,7 +56,16 @@ struct ScannerView: View {
         .fullScreenCover(isPresented: $showGrips) {
             if let profile = model.profile { GripViewerView(profile: profile).id(try? HandProfileCodec.encode(profile)) }
         }
+        .sheet(isPresented: $showProfileDetails) { profileDetails }
         .preferredColorScheme(usesLightLandingTheme ? .light : .dark)
+        #if DEBUG
+        .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("--scan-results-preview"), model.phase == .chooseHand {
+                model.loadSample()
+                showProfileDetails = ProcessInfo.processInfo.arguments.contains("--profile-details-preview")
+            }
+        }
+        #endif
         .animation(.easeInOut(duration: 0.2), value: model.phase)
         .onChange(of: scenePhase) { _, phase in
             // Permission and share dialogs can make the scene temporarily inactive.
@@ -70,272 +79,143 @@ struct ScannerView: View {
     private var handSelection: some View {
         ZStack {
             landingCanvas.ignoresSafeArea()
-
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack(spacing: 10) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(pinePrimary)
-                                .frame(width: 8, height: 8)
-                            Text("gripit.")
-                                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                .foregroundStyle(landingInk)
-                        }
-
-                        Spacer()
-
-                        HStack(spacing: 6) {
-                            Image(systemName: "camera.metering.matrix")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("TrueDepth Scan")
-                                .font(.caption2.weight(.semibold))
-                        }
-                        .foregroundStyle(pinePrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(pineTint, in: Capsule())
-                        .overlay {
-                            Capsule().stroke(pineTintBorder, lineWidth: 1)
-                        }
-                    }
-                    .padding(.top, 8)
-
-                    VStack(alignment: .leading, spacing: 22) {
-                        HStack(alignment: .top) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(pineTint)
-                                    .frame(width: 46, height: 46)
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(pineTintBorder, lineWidth: 1)
-                                    }
-                                Image(systemName: "hand.raised.fill")
-                                    .font(.system(size: 21, weight: .semibold))
-                                    .foregroundStyle(pinePrimary)
-                            }
-
-                            Spacer()
-
-                            Text("STEP 01 · HAND PROFILE")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(landingMutedInk)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(landingMuted, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(landingBorder, lineWidth: 1)
-                                }
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Which hand do you throw with?")
-                                .font(.system(size: 28, weight: .bold))
-                                .tracking(-0.6)
-                                .foregroundStyle(landingInk)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Text("Select your throwing hand to calibrate your 3D grip model and start the front-camera measurement scan.")
-                                .font(.subheadline)
-                                .foregroundStyle(landingMutedInk)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("SETUP CHECKLIST")
-                                .font(.system(size: 11, weight: .semibold))
-                                .tracking(0.8)
-                                .foregroundStyle(pinePrimary)
-
-                            setupStepRow(
-                                icon: "iphone",
-                                text: "Prop up your phone with the screen facing you."
-                            )
-                            setupStepRow(
-                                icon: "viewfinder",
-                                text: "Hold your hand 30–40 cm in front of the selfie camera."
-                            )
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(landingMuted, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(landingBorder, lineWidth: 1)
-                        }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("CHOOSE THROWING HAND")
-                                .font(.system(size: 11, weight: .semibold))
-                                .tracking(0.8)
-                                .foregroundStyle(landingMutedInk)
-
-                            HStack(spacing: 12) {
-                                handButton("Left", subtitle: "Left-handed", hand: .left)
-                                handButton("Right", subtitle: "Right-handed", hand: .right)
-                            }
-                        }
-
-                        HStack(spacing: 10) {
-                            Rectangle()
-                                .fill(landingBorder)
-                                .frame(height: 1)
-                            Text("OR EXPLORE WITHOUT CAMERA")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.7)
-                                .foregroundStyle(landingMutedInk)
-                                .lineLimit(1)
-                                .fixedSize()
-                            Rectangle()
-                                .fill(landingBorder)
-                                .frame(height: 1)
-                        }
-
-                        VStack(spacing: 10) {
-                            Button {
-                                model.loadSample()
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "cube.transparent")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(pinePrimary)
-                                    Text("Load sample profile")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(landingInk)
-                                    Spacer()
-                                    Text("Instant")
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(pinePrimary)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(pineTint, in: Capsule())
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(maxWidth: .infinity, minHeight: 46)
-                                .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(landingOutline, lineWidth: 1)
-                                }
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                importProfile = true
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "square.and.arrow.down")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(pinePrimary)
-                                    Text("Import hand profile JSON")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(landingInk)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(landingMutedInk)
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(maxWidth: .infinity, minHeight: 46)
-                                .background(landingMuted, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(landingBorder, lineWidth: 1)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(22)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(landingBorder, lineWidth: 1)
-                    }
-                    .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 6)
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "lock.shield")
-                            .font(.caption)
-                            .foregroundStyle(pinePrimary)
-                        Text("Sample mode does not use the camera. All TrueDepth scans stay on-device.")
-                            .font(.caption)
+                VStack(alignment: .leading, spacing: 24) {
+                    pageHeader
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("A better grip starts here.")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(pineSecondary)
+                        Text("Your hand.\nYour grip.")
+                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            .tracking(-1)
+                            .foregroundStyle(landingInk)
+                        Text("Scan your throwing hand to find your fit.")
+                            .font(.body)
                             .foregroundStyle(landingMutedInk)
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 8)
+                    handIllustration
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Throwing hand")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(landingInk)
+                        HStack(spacing: 4) {
+                            handChoice("Left", hand: .left)
+                            handChoice("Right", hand: .right)
+                        }
+                        .padding(4)
+                        .background(landingMuted, in: RoundedRectangle(cornerRadius: 14))
+                        Text("Prop up your phone. Keep your whole hand in view.")
+                            .font(.footnote)
+                            .foregroundStyle(landingMutedInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(24)
                 .frame(maxWidth: 500)
                 .frame(maxWidth: .infinity)
             }
         }
-    }
-
-    private func setupStepRow(icon: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(pinePrimary)
-                .frame(width: 26, height: 26)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(landingBorder, lineWidth: 1)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 14) {
+                Button { model.start(hand: model.selectedHand) } label: {
+                    primaryLabel("Scan my hand", icon: "scan-line")
                 }
-
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(landingInk)
-                .fixedSize(horizontal: false, vertical: true)
+                .buttonStyle(ScanPrimaryButtonStyle())
+                .accessibilityIdentifier("start-hand-scan")
+                Button {
+                    model.loadSample()
+                } label: {
+                    Text("Try a sample hand").font(.subheadline.weight(.medium))
+                        .frame(minHeight: 44)
+                }
+                .foregroundStyle(landingMutedInk)
+                .accessibilityIdentifier("load-sample-hand")
+            }
+            .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 8)
+            .frame(maxWidth: 500).frame(maxWidth: .infinity)
+            .background(landingCanvas)
         }
     }
 
-    private func handButton(_ title: String, subtitle: String, hand: Handedness) -> some View {
-        Button {
-            model.start(hand: hand)
-        } label: {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.14))
-                            .frame(width: 34, height: 34)
-                        Image(systemName: "hand.raised.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .scaleEffect(x: hand == .left ? -1 : 1, y: 1)
+    private var pageHeader: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Circle().fill(pinePrimary).frame(width: 9, height: 9)
+                Text("gripit.").font(.system(.title3, design: .rounded, weight: .heavy))
+                    .foregroundStyle(landingInk)
+            }
+            Spacer()
+            Menu {
+                Button("Import saved hand", systemImage: "square.and.arrow.down") {
+                    importProfile = true
+                }
+                if model.phase == .complete {
+                    if let url = model.exportURL {
+                        ShareLink(item: url) { Label("Export hand profile", systemImage: "square.and.arrow.up") }
                     }
-                    Spacer()
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.78))
+                    Button("Scan again", systemImage: "arrow.clockwise") { model.reset() }
                 }
+            } label: {
+                lucide("ellipsis", size: 22)
+                    .foregroundStyle(landingMutedInk)
+                    .frame(width: 44, height: 44)
+                    .background(.white, in: Circle())
+                    .overlay(Circle().stroke(landingBorder, lineWidth: 1))
+            }
+            .accessibilityLabel("Hand profile options")
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.title3.bold())
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.78))
-                }
+    private var handIllustration: some View {
+        ZStack {
+            Circle().fill(pineTint.opacity(0.65)).frame(width: 136, height: 136)
+            Circle().stroke(pineTintBorder.opacity(0.6), lineWidth: 1).frame(width: 158, height: 158)
+            lucide("hand", size: 76)
+                .foregroundStyle(pinePrimary)
+                .scaleEffect(x: model.selectedHand == .left ? -1 : 1, y: 1)
+            lucide("scan-line", size: 132).foregroundStyle(pinePrimary.opacity(0.16))
+        }
+        .frame(height: 160)
+        .animation(.easeInOut(duration: 0.2), value: model.selectedHand)
+    }
+
+    private func handChoice(_ title: String, hand: Handedness) -> some View {
+        let selected = model.selectedHand == hand
+        return Button { model.selectedHand = hand } label: {
+            HStack(spacing: 8) {
+                lucide("hand", size: 18).scaleEffect(x: hand == .left ? -1 : 1, y: 1)
+                Text(title).font(.subheadline.weight(.semibold))
+                if selected { lucide("check", size: 16) }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
-            .background(pinePrimary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(pineSecondary, lineWidth: 1)
-            }
-            .shadow(color: pinePrimary.opacity(0.18), radius: 8, x: 0, y: 4)
+            .foregroundStyle(selected ? pinePrimary : landingMutedInk)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(selected ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 10))
+            .shadow(color: .black.opacity(selected ? 0.04 : 0), radius: 3, y: 1)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        .accessibilityLabel("\(title) throwing hand")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("select-\(hand.rawValue)-hand")
+    }
+
+    private func lucide(_ name: String, size: CGFloat = 20) -> some View {
+        Image("lucide-\(name)").renderingMode(.template)
+            .resizable().scaledToFit().frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+
+    private func primaryLabel(_ title: String, icon: String = "arrow-right") -> some View {
+        HStack(spacing: 12) {
+            Text(title).font(.headline)
+            Spacer(minLength: 8)
+            lucide(icon)
+        }
+        .frame(maxWidth: .infinity, minHeight: 24)
+        .padding(.horizontal, 20).padding(.vertical, 16)
     }
 
     private var permissionCheck: some View {
@@ -357,7 +237,7 @@ struct ScannerView: View {
                 Text("Checking camera…")
                     .font(.title3.bold())
                     .foregroundStyle(landingInk)
-                Text("GripIt uses the front TrueDepth camera to measure your hand. Images and depth data stay on this iPhone.")
+                Text("Allow camera access to scan your hand.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(landingMutedInk)
@@ -512,79 +392,133 @@ struct ScannerView: View {
     }
 
     private var results: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if isSampleProfile {
-                        Text("SAMPLE PROFILE")
-                            .font(.caption.bold())
-                            .foregroundStyle(accent)
-                    }
-                    Label("Scan complete", systemImage: "checkmark.circle.fill")
-                        .font(.largeTitle.bold())
-                        .foregroundStyle(accent)
-                    Text(isSampleProfile ? "Sample measurements are ready." : "Your hand profile is ready.")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                    Text("Experimental measurements. Check against a ruler. Thickness is unavailable.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let profile = model.profile {
-                    Button { showGrips = true } label: {
-                        actionLabel("Explore my grips", systemImage: "baseball")
-                    }
-                    .buttonStyle(.borderedProminent).tint(accent).foregroundStyle(.black)
-                    measurementSection(profile)
-                    qualitySection(profile)
-                } else {
-                    Text("No hand profile is available.")
-                        .foregroundStyle(.secondary)
-                }
-
-                VStack(spacing: 12) {
-                    if let exportURL = model.exportURL {
-                        ShareLink(item: exportURL) {
-                            actionLabel("Export JSON", systemImage: "square.and.arrow.up")
+        ZStack {
+            landingCanvas.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 28) {
+                    pageHeader
+                    VStack(alignment: .leading, spacing: 16) {
+                        lucide("check", size: 28)
+                            .foregroundStyle(pinePrimary)
+                            .frame(width: 60, height: 60)
+                            .background(pineTint, in: RoundedRectangle(cornerRadius: 18))
+                        if isSampleProfile {
+                            Text("SAMPLE HAND").font(.caption2.weight(.semibold))
+                                .tracking(1).foregroundStyle(pineSecondary)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(accent)
-                        .foregroundStyle(.black)
+                        Text(isSampleProfile ? "Meet your sample hand." : "Your hand is ready.")
+                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            .tracking(-0.8).foregroundStyle(landingInk)
+                        Text("Next, find a grip that fits.")
+                            .font(.body).foregroundStyle(landingMutedInk)
+                    }
+                    if let profile = model.profile {
+                        VStack(alignment: .leading, spacing: 22) {
+                            HStack(spacing: 10) {
+                                lucide("hand").foregroundStyle(pinePrimary)
+                                Text("\(profile.handedness.rawValue.capitalized) hand")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text(isSampleProfile ? "Sample" : "Profile ready")
+                                    .font(.caption).foregroundStyle(landingMutedInk)
+                            }
+                            Divider().overlay(landingBorder)
+                            HStack(alignment: .top, spacing: 20) {
+                                summaryMetric("Palm span", value: profile.measurements.palm.widthMm)
+                                summaryMetric("Palm length", value: profile.measurements.palm.lengthMm)
+                            }
+                        }
+                        .padding(22)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(landingBorder, lineWidth: 1))
+                        Button { showProfileDetails = true } label: {
+                            HStack(spacing: 10) {
+                                lucide("ruler", size: 18)
+                                Text("View measurements").font(.subheadline.weight(.medium))
+                                Spacer()
+                                lucide("chevron-right", size: 18)
+                            }
+                            .foregroundStyle(landingMutedInk)
+                            .frame(minHeight: 48).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("view-hand-measurements")
+                        if isSampleProfile {
+                            Text("Example measurements, not a scan of your hand.")
+                                .font(.footnote).foregroundStyle(landingMutedInk)
+                        }
                     } else {
-                        Button {
-                            model.exportProfile()
-                        } label: {
-                            actionLabel("Prepare JSON export", systemImage: "doc.badge.gearshape")
+                        Text("No hand profile is available.").foregroundStyle(landingMutedInk)
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: 500).frame(maxWidth: .infinity)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 10) {
+                Button { showGrips = true } label: { primaryLabel("Explore my grips") }
+                    .buttonStyle(ScanPrimaryButtonStyle())
+                    .disabled(model.profile == nil)
+                    .accessibilityIdentifier("explore-my-grips")
+                Button("Scan again") { model.reset() }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(landingMutedInk).frame(minHeight: 44)
+            }
+            .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 8)
+            .frame(maxWidth: 500).frame(maxWidth: .infinity).background(landingCanvas)
+        }
+        .onAppear {
+            if model.profile != nil && model.exportURL == nil { model.exportProfile() }
+        }
+    }
+
+    private func summaryMetric(_ title: String, value: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.caption).foregroundStyle(landingMutedInk)
+            Text(millimeters(value)).font(.title3.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(landingInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var profileDetails: some View {
+        NavigationStack {
+            ScrollView {
+                if let profile = model.profile {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if isSampleProfile {
+                            Label("Sample hand", systemImage: "info.circle")
+                                .font(.subheadline).foregroundStyle(pineSecondary)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(accent)
-                        .foregroundStyle(.black)
-                        .disabled(model.profile == nil)
-                    }
-
-                    Button {
-                        model.reset()
-                    } label: {
-                        actionLabel("Scan again", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.white)
-
-                    Button("Load sample profile") {
-                        model.loadSample()
-                    }
-                    .font(.subheadline.weight(.semibold))
+                        Text("Approximate measurements. Check against a ruler. Thickness is estimated in the grip model.")
+                            .font(.footnote).foregroundStyle(landingMutedInk)
+                        measurementSection(profile)
+                        qualitySection(profile)
+                        if let url = model.exportURL {
+                            ShareLink(item: url) {
+                                primaryLabel("Export hand profile", icon: "upload")
+                            }
+                            .buttonStyle(ScanPrimaryButtonStyle())
+                        } else {
+                            Button("Prepare export") { model.exportProfile() }
+                                .buttonStyle(.bordered)
+                        }
+                    }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
                 }
             }
-            .padding(24)
-        }
-        .background(Color.black.ignoresSafeArea())
-        .onAppear {
-            if model.profile != nil && model.exportURL == nil {
-                model.exportProfile()
+            .foregroundStyle(landingInk)
+            .background(landingCanvas.ignoresSafeArea())
+            .navigationTitle("Hand measurements")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showProfileDetails = false }.tint(pinePrimary)
+                }
             }
         }
+        .preferredColorScheme(.light)
+        .presentationDragIndicator(.visible)
     }
 
     private func measurementSection(_ profile: HandProfile) -> some View {
@@ -796,7 +730,8 @@ struct ScannerView: View {
     private func valueCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 12, content: content)
             .padding(16)
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(landingBorder, lineWidth: 1))
     }
 
     private func measurementRow(_ label: String, value: Double?) -> some View {
@@ -824,4 +759,16 @@ private struct FingerResult: Identifiable {
     let name: String
     let measurement: FingerMeasurements
     var id: String { name }
+}
+
+/// A single primary action, shared by the scan and completion screens.
+private struct ScanPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(Color(red: 0.106, green: 0.263, blue: 0.196),
+                        in: RoundedRectangle(cornerRadius: 14))
+            .opacity(enabled ? (configuration.isPressed ? 0.84 : 1) : 0.45)
+    }
 }
