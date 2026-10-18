@@ -209,6 +209,9 @@ struct ScannerView: View {
                 Text("Accepted \(model.acceptedViewFrames)/8 frames")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+                Text(model.trackingStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             .padding(14)
             .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 16))
@@ -344,7 +347,7 @@ struct ScannerView: View {
                 )
                 Divider()
                 textRow(
-                    "Hand label confidence",
+                    "Initial hand identity confidence",
                     value: "\(Int((profile.capture.confidence * 100).rounded()))%"
                 )
                 if !model.diagnostics.isEmpty {
@@ -422,9 +425,9 @@ struct ScannerView: View {
         }
         switch model.currentView {
         case .palm: return "Face your palm toward the camera."
-        case .thumbSide: return "Turn until your thumb side faces the camera."
+        case .thumbSide: return "Turn your thumb slightly toward the camera. Keep every finger visible."
         case .back: return "Show the back of your hand."
-        case .pinkySide: return "Turn until your pinky side faces the camera."
+        case .pinkySide: return "Turn your pinky slightly toward the camera. Keep every finger visible."
         case nil: return "Center your full hand."
         }
     }

@@ -19,6 +19,7 @@ final class ScannerViewModel: ObservableObject {
     @Published var jointFractions: [HandLandmarkName: Double] = [:]
     @Published var validDepthCount = 0
     @Published var acceptedViewFrames = 0
+    @Published var trackingStatus = "Identifying hand"
     @Published var distanceCm: Double?
     @Published var profile: HandProfile?
     @Published var diagnostics = ""
@@ -98,6 +99,7 @@ final class ScannerViewModel: ObservableObject {
         jointFractions = [:]
         validDepthCount = 0
         acceptedViewFrames = 0
+        trackingStatus = "Identifying hand"
         distanceCm = nil
         profile = nil
         diagnostics = ""
@@ -141,6 +143,7 @@ final class ScannerViewModel: ObservableObject {
         sensorSize = update.sensorSize
         validDepthCount = update.validDepthCount
         acceptedViewFrames = update.coverage.acceptedFramesInCurrentView
+        trackingStatus = update.trackingStatus
         distanceCm = update.distanceMeters.map { $0 * 100 }
         currentView = update.coverage.currentView
         progress = update.coverage.fraction
@@ -179,6 +182,7 @@ private struct ScannerFrameUpdate: Sendable {
     let diagnostics: String
     let profile: HandProfile?
     let initializationFailed: Bool
+    let trackingStatus: String
 }
 
 /// All mutable processing state is confined to the capture service's serial queue.
@@ -193,8 +197,12 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
     private var counts: [ScanView: Int] = [:]
     private var stability = MeasurementStabilityGate()
     private var recentDepth = RecentDepthLandmarks()
+    private var identity: HandIdentityTracker
 
-    init(hand: Handedness) { self.hand = hand }
+    init(hand: Handedness) {
+        self.hand = hand
+        identity = HandIdentityTracker(hand: hand)
+    }
 
     func process(_ frame: SynchronizedCaptureFrame) -> ScannerFrameUpdate {
         var points: [CGPoint] = []
@@ -214,8 +222,14 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             guard let detection = try landmarker?.detect(
                 pixelBuffer: frame.pixelBuffer, orientation: frame.imageOrientation,
                 timestampMilliseconds: timestamp
-            ) else { throw Guidance("No hand found. Show your full hand.") }
-            guard detection.handCount == 1 else { throw Guidance("Show one hand only.") }
+            ) else {
+                identity.noteMissing(timestamp: CMTimeGetSeconds(frame.timestamp))
+                throw Guidance("No hand found. Bring your hand back into view.")
+            }
+            guard detection.handCount == 1 else {
+                identity.reset()
+                throw Guidance("Show one hand only, then face your palm toward the camera.")
+            }
             let mapped = try DepthLandmarkMapper.map(
                 modelPoints: detection.points, depth: frame.depthData,
                 orientation: frame.imageOrientation, confidence: detection.confidence,
@@ -226,26 +240,42 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             depthCount = mapped.landmarks.count
             distance = mapped.distanceMeters
             let depthMap = frame.depthData.depthDataMap
-            diagnostics = "RGB \(CVPixelBufferGetWidth(frame.pixelBuffer))×\(CVPixelBufferGetHeight(frame.pixelBuffer)) · Depth \(CVPixelBufferGetWidth(depthMap))×\(CVPixelBufferGetHeight(depthMap)) · Detected \(detection.label)"
-            guard detection.confidence >= 0.8 else { throw Guidance("Hold still with your fingers spread.") }
-            guard ScannerAdapterGeometry.physicalHandedness(label: detection.label, convention: .subjectHand) == hand else {
-                throw Guidance("Show your \(hand.rawValue) hand. Detected \(detection.label.lowercased()).")
-            }
+            diagnostics = "RGB \(CVPixelBufferGetWidth(frame.pixelBuffer))×\(CVPixelBufferGetHeight(frame.pixelBuffer)) · Depth \(CVPixelBufferGetWidth(depthMap))×\(CVPixelBufferGetHeight(depthMap)) · Label \(detection.label) \(Int(detection.confidence * 100))%"
             guard detection.points.allSatisfy({ (0.03...0.97).contains($0.x) && (0.03...0.97).contains($0.y) }) else {
                 throw Guidance("Center your full hand inside the camera.")
             }
             guard let meters = distance else { throw Guidance("Depth is missing. Change the hand angle slightly.") }
             if meters < 0.20 { throw Guidance("Move farther away.") }
             if meters > 0.65 { throw Guidance("Move closer.") }
-            let classifiedView = classify(detection.worldPoints)
+            let identityScore: Double
+            switch identity.update(
+                detectedHand: ScannerAdapterGeometry.physicalHandedness(label: detection.label, convention: .subjectHand),
+                labelConfidence: detection.confidence, observedView: classify(detection.worldPoints),
+                sensorPoints: mapped.sensorPoints.map { PixelPoint(x: Double($0.x), y: Double($0.y)) },
+                timestamp: CMTimeGetSeconds(frame.timestamp), palmNormalZ: palmNormal(detection.worldPoints)?.z
+            ) {
+            case .tracked(let score): identityScore = score
+            case .wrongHand:
+                throw Guidance("Show your \(hand.rawValue) palm to identify the correct hand.")
+            case .confirmingPalm:
+                throw Guidance("Recognizing your \(hand.rawValue) hand. Keep your palm facing the camera briefly.")
+            case .showPalm:
+                throw Guidance(session.coverage.snapshot.capturedViews.isEmpty
+                    ? "Face your palm toward the camera in even light so we can identify your hand."
+                    : "Show your palm briefly to reconnect tracking. Your completed views are saved.")
+            }
+            let expectedView = session.coverage.snapshot.currentView
+            let classifiedView = classify(detection.worldPoints, requested: expectedView)
             diagnostics += " · View seen: \(classifiedView?.rawValue ?? "between views")"
             guard let observedView = classifiedView else {
                 consecutiveViewFrames = 0
                 stability.reset()
                 recentDepth.reset()
-                throw Guidance(session.coverage.snapshot.nextInstruction)
+                let sideRequested = expectedView == .thumbSide || expectedView == .pinkySide
+                throw Guidance(sideRequested
+                    ? "Turn back slightly until every finger is visible. Don’t hold your hand fully edge-on."
+                    : session.coverage.snapshot.nextInstruction)
             }
-            let expectedView = session.coverage.snapshot.currentView
             guard observedView == expectedView else {
                 consecutiveViewFrames = 0
                 stability.reset()
@@ -256,8 +286,14 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             else { previousView = observedView; consecutiveViewFrames = 1 }
             guard consecutiveViewFrames >= 3 else { throw Guidance("Hold still.", preserveHistory: true) }
             joints.record(validLandmarks: Set(mapped.landmarks.keys), view: observedView)
+            // Confidence describes the acquired palm identity, not the ambiguous
+            // current side-view label and not measurement accuracy. Metric checks
+            // below independently decide whether measured geometry is acceptable.
+            let identifiedLandmarks = mapped.landmarks.mapValues {
+                NamedLandmark(name: $0.name, point: $0.point, confidence: identityScore)
+            }
             let measured = recentDepth.record(
-                mapped.landmarks, view: observedView, timestamp: CMTimeGetSeconds(frame.timestamp)
+                identifiedLandmarks, view: observedView, timestamp: CMTimeGetSeconds(frame.timestamp)
             )
             guard measured.count == 21 else {
                 stability.reset()
@@ -267,11 +303,19 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                 throw Guidance("Missing depth: \(missing). Spread your fingers and tilt slightly.", preserveHistory: true)
             }
             guard stability.accept(measured) else {
-                throw Guidance("Hold still while measurements settle.", preserveHistory: true)
+                let reason: String
+                switch stability.status {
+                case .moving: reason = "Keep the phone steady and rest your arm while we capture."
+                case .overlappingFingers: reason = "Your fingers overlap in this angle. Turn slightly back until each finger is visible."
+                case .noisyDepth: reason = "Depth is fluctuating. Hold your hand still at 30–40 cm."
+                case .incompleteDepth: reason = "Some finger depth is missing. Tilt your hand slightly."
+                case .settling, .ready: reason = "Angle found. Pause briefly while we capture."
+                }
+                throw Guidance(reason, preserveHistory: true)
             }
             try session.accept(ScanObservation(
                 view: observedView, handedness: hand,
-                landmarks: measured, frameConfidence: detection.confidence
+                landmarks: measured, frameConfidence: identityScore
             ))
             counts[observedView, default: 0] += 1
             message = session.coverage.snapshot.currentView == observedView
@@ -286,7 +330,8 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                     "validation": .string("experimental; compare with physical measurements"),
                     "depthSource": .string("synchronized-front-truedepth"),
                     "depthHoleHandling": .string("measured-only; same view; maximum age 350ms; resets on motion"),
-                    "landmarkConfidenceSource": .string("MediaPipe handedness score; not metric accuracy"),
+                    "landmarkConfidenceSource": .string("initial palm identity score retained only across continuous tracking; not metric accuracy"),
+                    "sideViewPolicy": .string("oblique side views with visible fingers; edge-on poses rejected"),
                     "orientationSource": .string("MediaPipe model world landmarks; not metric measurements")
                 ])
                 result = HandProfile(
@@ -321,20 +366,32 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             validDepthCount: depthCount, distanceMeters: distance,
             coverage: session.coverage.snapshot, jointFractions: fractions,
             message: message, diagnostics: diagnostics, profile: result,
-            initializationFailed: initializationFailed
+            initializationFailed: initializationFailed,
+            trackingStatus: identity.identityConfidence == nil ? "Identifying hand" : "\(hand.rawValue.capitalized) hand tracked"
         )
     }
 
-    private func classify(_ world: [SIMD3<Double>]) -> ScanView? {
+    private func classify(_ world: [SIMD3<Double>], requested: ScanView? = nil) -> ScanView? {
+        guard let normal = palmNormal(world) else { return nil }
+        if let requested, ScannerAdapterGeometry.matchesView(
+            normalX: normal.x, normalZ: normal.z, handedness: hand, requested: requested
+        ) { return requested }
+        let observed = ScannerAdapterGeometry.classifyView(
+            normalX: normal.x, normalZ: normal.z, handedness: hand
+        )
+        // A requested side must satisfy the measurable oblique range. Do not
+        // accidentally accept the old classifier's fully edge-on side result.
+        return requested != nil && observed == requested ? nil : observed
+    }
+
+    private func palmNormal(_ world: [SIMD3<Double>]) -> SIMD3<Double>? {
         guard world.count == 21 else { return nil }
         let lateral = world[5] - world[17]
         let fingers = world[9] - world[0]
         let cross = simd_cross(lateral, fingers)
-        guard simd_length(cross) > 0.000001 else { return nil }
-        let normal = simd_normalize(cross)
-        return ScannerAdapterGeometry.classifyView(
-            normalX: normal.x, normalZ: normal.z, handedness: hand
-        )
+        let length = simd_length(cross)
+        guard length.isFinite, length > 0.000001 else { return nil }
+        return cross / length
     }
 
     private struct Guidance: Error {

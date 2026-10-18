@@ -58,7 +58,20 @@ Keep both `ios/GripItScannerCore` and `ios/MediaPipeTasks` beside `GripIt.xcodep
 
 The small skeleton shows valid depth samples for the current view, including individual joints from a frame that is incomplete elsewhere. Overall progress advances only after 21 measured joints pass view and metric stability checks. Brief depth holes may use a real sample from the same steady view within the previous 350 milliseconds. Historical points expire and reset on motion or tracking loss; hidden points are never predicted. The accepted-frame counter shows actual progress through the current view. A filled skeleton alone does not mean the scan is finished.
 
-Thickness is currently unavailable and remains `null`. Hand label confidence is a tracking score, not measurement accuracy. Validate measurements against a ruler before using the profile elsewhere.
+The initial palm establishes hand identity using three confident observations.
+During spatially continuous tracking, uncertain left/right labels at side angles
+do not block capture. A tracking gap over 750 milliseconds, multiple hands, a
+large position/scale jump, or a reliable opposite-hand frontal label requires
+palm reacquisition. Completed views remain saved. This continuity heuristic is
+not biometric identification.
+
+For the side steps, make a partial turn, roughly 30–60 degrees, while keeping
+every finger visible. Do not turn fully edge-on. The accepted normal range is
+oblique, and all original metric stability and bone-length checks remain active.
+The app distinguishes overlapping fingers, motion, and fluctuating depth instead
+of calling every rejection “hold still.”
+
+Thickness is currently unavailable and remains `null`. Exported confidence is the initial palm identity score retained during continuous tracking, not measurement accuracy. This meaning is also recorded in the profile extensions. Validate measurements against a ruler before using the profile elsewhere.
 
 RGB and depth outputs explicitly use native rotation 0. Apple's camera rotation coordinator determines the required analysis and preview angles rather than assuming every sensor needs a fixed 90-degree turn. RGB pixels are explicitly rotated upright before MediaPipe inference with `.up` orientation. Output points are then mapped once back to the original unmirrored sensor space for depth lookup. The overlay uses the preview's actual rotation, mirroring, and aspect-fill crop. Calibration lens-distortion correction is applied before metric projection.
 

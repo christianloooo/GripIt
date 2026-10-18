@@ -109,8 +109,8 @@ public struct CoverageTracker: Sendable {
         switch view {
         case .palm: "Show your palm and spread your fingers."
         case .back: "Rotate until the back of your hand faces the camera."
-        case .thumbSide: "Rotate until the thumb side faces the camera."
-        case .pinkySide: "Rotate until the pinky side faces the camera."
+        case .thumbSide: "Turn your thumb slightly toward the camera. Keep all fingers visible, not edge-on."
+        case .pinkySide: "Turn your pinky slightly toward the camera. Keep all fingers visible, not edge-on."
         case nil: "Scan complete."
         }
     }

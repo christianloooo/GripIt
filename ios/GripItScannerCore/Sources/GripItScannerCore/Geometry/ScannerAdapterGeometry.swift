@@ -124,4 +124,19 @@ public enum ScannerAdapterGeometry {
         if thumbFacing <= -0.65 { return .pinkySide }
         return nil
     }
+
+    /// Side views are oblique captures. Fully edge-on poses hide the finger
+    /// joints and cannot provide trustworthy measurements of all fingers.
+    public static func matchesView(
+        normalX: Double, normalZ: Double, handedness: Handedness, requested: ScanView
+    ) -> Bool {
+        guard normalX.isFinite, normalZ.isFinite else { return false }
+        let palmFacing = normalZ * (handedness == .right ? -1.0 : 1.0)
+        switch requested {
+        case .palm: return palmFacing >= 0.65
+        case .back: return palmFacing <= -0.65
+        case .thumbSide: return normalX <= -0.45 && (0.25...0.90).contains(abs(normalZ))
+        case .pinkySide: return normalX >= 0.45 && (0.25...0.90).contains(abs(normalZ))
+        }
+    }
 }

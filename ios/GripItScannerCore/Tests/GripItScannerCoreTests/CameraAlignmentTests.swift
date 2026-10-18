@@ -2,6 +2,14 @@ import XCTest
 @testable import GripItScannerCore
 
 final class CameraAlignmentTests: XCTestCase {
+    func testSideCaptureAcceptsAnObliqueHandButNotAnEdgeOnSilhouette() {
+        XCTAssertTrue(ScannerAdapterGeometry.matchesView(normalX: -0.5, normalZ: -0.866, handedness: .right, requested: .thumbSide))
+        XCTAssertTrue(ScannerAdapterGeometry.matchesView(normalX: 0.5, normalZ: 0.866, handedness: .right, requested: .pinkySide))
+        XCTAssertFalse(ScannerAdapterGeometry.matchesView(normalX: -1, normalZ: 0, handedness: .right, requested: .thumbSide))
+        XCTAssertFalse(ScannerAdapterGeometry.matchesView(normalX: 0, normalZ: -1, handedness: .right, requested: .thumbSide))
+        XCTAssertFalse(ScannerAdapterGeometry.matchesView(normalX: 0.5, normalZ: -0.866, handedness: .right, requested: .thumbSide))
+    }
+
     func testCameraReportedRotationReplacesFixedPortraitAssumption() {
         XCTAssertEqual(SensorImageRotation(clockwiseDegrees: 0), .up)
         XCTAssertEqual(SensorImageRotation(clockwiseDegrees: 90), .right)
