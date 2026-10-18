@@ -35,6 +35,19 @@ The project intentionally has no committed development team. Its default bundle 
 
 The simulator has no TrueDepth camera. Use it only for non-camera UI checks. Final validation must run on the physical device.
 
+## Package resolution troubleshooting
+
+If Xcode reports **Missing package product `GripItScannerCore`** or **`MediaPipeTasksVision`**, let package resolution finish before building. The first MediaPipe checkout downloads a large repository and binary frameworks; canceling it can leave both products unresolved even though their declarations are correct.
+
+Choose **File > Packages > Resolve Package Versions**, or run from the repository root:
+
+```sh
+xcodebuild -resolvePackageDependencies -skipPackageUpdates \
+  -project ios/GripIt.xcodeproj -scheme GripIt
+```
+
+Keep the complete `ios/GripItScannerCore` folder beside `GripIt.xcodeproj`. Avoid resetting package caches while a download is running: that discards progress. The shared `Package.resolved` file pins the MediaPipe revision. Debug builds use only the selected device's architecture so the app and its local Swift package agree on the simulator architecture.
+
 ## Scan flow
 
 1. Choose the physical hand being scanned.

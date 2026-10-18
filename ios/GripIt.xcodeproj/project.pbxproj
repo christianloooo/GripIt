@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -40,7 +40,6 @@
 		3088441B6FE7960C118A2671 /* GripItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripItApp.swift; sourceTree = "<group>"; };
 		7B594B6DB375E1BF3F23CDD6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8BCD5BC4CDFDF0918087C782 /* GripIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = GripIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		F219C0274590DA45E4BEF1EA /* GripItTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = GripItTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB0000010000000000000001 /* TrueDepthCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueDepthCaptureService.swift; sourceTree = "<group>"; };
 		AB0000010000000000000002 /* HandLandmarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandLandmarkerService.swift; sourceTree = "<group>"; };
 		AB0000010000000000000003 /* DepthLandmarkMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthLandmarkMapper.swift; sourceTree = "<group>"; };
@@ -50,6 +49,7 @@
 		AB0000010000000000000007 /* SkeletonCoverageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonCoverageView.swift; sourceTree = "<group>"; };
 		AB0000010000000000000008 /* ScannerAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerAdapterTests.swift; sourceTree = "<group>"; };
 		AB0000010000000000000009 /* hand_landmarker.task */ = {isa = PBXFileReference; lastKnownFileType = file; name = hand_landmarker.task; path = ../../public/mediapipe/hand_landmarker.task; sourceTree = "<group>"; };
+		F219C0274590DA45E4BEF1EA /* GripItTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = GripItTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -264,6 +264,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7L2S82588R;
 				INFOPLIST_FILE = GripIt/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jyshum.gripit.scanner;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -282,6 +283,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				SDKROOT = iphoneos;
@@ -330,6 +332,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7L2S82588R;
 				INFOPLIST_FILE = GripIt/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jyshum.gripit.scanner;
 				PRODUCT_NAME = "$(TARGET_NAME)";

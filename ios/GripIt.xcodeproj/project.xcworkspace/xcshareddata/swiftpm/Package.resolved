@@ -1,0 +1,14 @@
+{
+  "originHash" : "c0e3da17c783504af152433b4a3487e84e01cf6091057f72e84516b15622a484",
+  "pins" : [
+    {
+      "identity" : "mediapipe",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/google-ai-edge/mediapipe.git",
+      "state" : {
+        "revision" : "50505c8312c7eacb1bd411cecdc4cc9fd08d53cb"
+      }
+    }
+  ],
+  "version" : 3
+}
