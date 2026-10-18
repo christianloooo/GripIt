@@ -15,7 +15,7 @@ import {
   isUsableFit,
   MAX_FIT_LENGTH,
 } from "./fitPrompt";
-import { buildAskInput, isAskableQuestion, isUsableAnswer } from "./askPrompt";
+import { isAskableQuestion } from "./askPrompt";
 
 const context = {
   assessment: assessmentFixture as FocusAssessment,
@@ -106,35 +106,13 @@ describe("fit explanation guard", () => {
 });
 
 describe("follow-up questions", () => {
+  // All that survives of the ask prompt. The question box still calls a model,
+  // but through INTERPRET_SYSTEM_PROMPT and isUsableInterpretation, which
+  // interpretation.test.ts covers. This guard runs before the key is read.
   it("rejects an empty or oversized question before spending anything", () => {
     expect(isAskableQuestion("")).toBe(false);
     expect(isAskableQuestion("  ")).toBe(false);
     expect(isAskableQuestion("x".repeat(301))).toBe(false);
     expect(isAskableQuestion("Why is my wrist red?")).toBe(true);
-  });
-
-  it("gives the model the question plus both halves of the context", () => {
-    const input = buildAskInput(context, "Why is my wrist red?");
-    expect(input).toContain("Why is my wrist red?");
-    expect(input).toContain("palmWidthMm");
-    expect(input).toContain("72");
-  });
-
-  it("holds answers to the same number discipline", () => {
-    const question = "Why is my wrist red?";
-    expect(
-      isUsableAnswer(
-        "Your spin efficiency came in at 72%, under the 90% this grip wants, and the wrist is the first place that shows up.",
-        context,
-        question,
-      ),
-    ).toBe(true);
-    expect(
-      isUsableAnswer(
-        "Your wrist angle was 47 degrees off, which caused the drop.",
-        context,
-        question,
-      ),
-    ).toBe(false);
   });
 });

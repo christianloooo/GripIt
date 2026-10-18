@@ -36,11 +36,16 @@ describe("coaching HTTP boundary", () => {
       undefined,
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    const payload = await response.json();
+    // The detail is the engine's sentence whether or not a key exists, so a
+    // missing key is no longer a reason for anything. Without a hand and a
+    // grip there is nothing to explain either, which fitReason says.
+    expect(payload).toMatchObject({
       detail: assessment.nextAction.detail,
       rewritten: false,
-      reason: "no-api-key",
+      fitReason: "no-hand-data",
     });
+    expect(payload).not.toHaveProperty("reason");
     expect(response.headers.get("server-timing")).toMatch(/total;dur=/);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-request-id")).toBeTruthy();

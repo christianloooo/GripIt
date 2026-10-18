@@ -34,10 +34,14 @@ const records: ThrowRecord[] = [82, 83, 84].map((velocityMph, i) => ({
   },
 }));
 
+// Every call carries a question now. The coaching rewrite was the only
+// caller that built this input without one, and it is gone.
+const QUESTION = "What should I try next with this grip?";
+
 describe("AI interpretation boundary", () => {
   it("provides raw readings and computed summaries rather than just preset advice", () => {
     const input = JSON.parse(
-      buildInterpretationInput({ assessment, throws: records }),
+      buildInterpretationInput({ assessment, throws: records }, QUESTION),
     );
     expect(input.observations.throwCount).toBe(3);
     expect(input.observations.medians.velocityMph).toBe(83);
@@ -50,7 +54,10 @@ describe("AI interpretation boundary", () => {
   });
 
   it("accepts computed numbers and explanations without forcing a preset zone", () => {
-    const input = buildInterpretationInput({ assessment, throws: records });
+    const input = buildInterpretationInput(
+      { assessment, throws: records },
+      QUESTION,
+    );
     expect(
       isUsableInterpretation(
         "Your median was 83 mph. Spin efficiency describes the ball, so it cannot identify which finger caused this result.",
@@ -71,7 +78,7 @@ describe("AI interpretation boundary", () => {
       throwId: `t${i}`,
     }));
     const input = JSON.parse(
-      buildInterpretationInput({ assessment, throws: many }),
+      buildInterpretationInput({ assessment, throws: many }, QUESTION),
     );
     expect(input.observations.throwCount).toBe(30);
     expect(input.observations.recentThrows).toHaveLength(10);
@@ -105,7 +112,10 @@ describe("AI interpretation boundary", () => {
         spinEfficiencyPercent: null,
       },
     };
-    const input = buildInterpretationInput({ assessment, throws: [record] });
+    const input = buildInterpretationInput(
+      { assessment, throws: [record] },
+      QUESTION,
+    );
     expect(
       isUsableInterpretation("Your entered gyro angle was -25 degrees.", input),
     ).toBe(true);

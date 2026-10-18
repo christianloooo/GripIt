@@ -34,7 +34,6 @@ const RESEARCH_CONTEXT = {
 export const INTERPRET_SYSTEM_PROMPT = `You are GripIt's baseball pitching assistant.
 Interpret the player's measured throws and fitted grip. You are not a rewrite engine.
 You may disagree with the prototype rule suggestion when the available data does not justify it.
-For coaching, give one useful observation, its limitation, and one optional experiment or next measurement in at most three short sentences, under 850 characters.
 For a question, answer it directly in up to four short sentences, under 850 characters. A general explanation grounded in the supplied research context is allowed even if this player's data cannot answer the personal part. State the difference clearly.
 Use the observations and computed summaries as facts. Treat prototype rules as unvalidated suggestions, not diagnoses or calibrated confidence.
 Never claim that one finger, wrist position, or pressure caused a reading. A static authored hand model does not observe release motion or force.
@@ -56,9 +55,14 @@ function median(values: number[]): number | null {
   );
 }
 
+/**
+ * The question box is the only caller. The coaching rewrite used to share this
+ * with no question attached, and that mode went out with it, so the question is
+ * required rather than optional.
+ */
 export function buildInterpretationInput(
   context: InterpretationContext,
-  question?: string,
+  question: string,
 ): string {
   const records = context.throws ?? [];
   const keys = [
@@ -79,7 +83,7 @@ export function buildInterpretationInput(
     ]),
   );
   return JSON.stringify({
-    question: question?.trim(),
+    question: question.trim(),
     pitch: context.plan?.pitchId ?? records[0]?.pitchId ?? "not provided",
     observations: {
       throwCount: records.length,

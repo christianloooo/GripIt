@@ -1,10 +1,5 @@
 import { jsonEndpoint } from "./_http";
 import { isCoachRequest } from "./_validation";
-import {
-  INTERPRET_SYSTEM_PROMPT,
-  buildInterpretationInput,
-  isUsableInterpretation,
-} from "../shared/focus/interpretation";
 import type { ThrowRecord } from "../shared/throwEntry";
 import {
   FIT_SYSTEM_PROMPT,
@@ -32,57 +27,67 @@ export interface CoachRequestBody {
   /** Both optional: without them the fit explanation is simply absent. */
   profile?: HandProfile;
   plan?: GripPlan;
+  /** Still accepted because the phone sends it. Fit reads the hand, not throws. */
   throws?: ThrowRecord[];
 }
 
 export interface CoachResponse {
+  /** The engine's own sentence, passed through untouched. */
   detail: string;
-  rewritten: boolean;
+  /**
+   * Permanently false, and typed as such.
+   *
+   * Nothing rewrites `detail` any more, but the field has to keep being sent:
+   * Swift's `CoachReply.rewritten` is a non-optional `Bool` with a synthesised
+   * decoder, so dropping the key makes the whole reply fail to decode and the
+   * fit explanation below would be lost with it. Retiring the field is the
+   * Swift side's call, not ours.
+   */
+  rewritten: false;
   /** How this hand meets this grip. Absent when there is nothing to say. */
   fit?: string;
-  /** Why a part was not produced. Absent on full success. */
-  reason?: string;
+  /** Why the fit explanation was not produced. Absent on success. */
   fitReason?: string;
 }
 
-export async function rewriteCoaching(
+/**
+ * Explains the hand fit. Nothing here writes coaching text.
+ *
+ * The coaching sentence used to be a model rewrite of a finding the engine had
+ * already made. The engine now writes that sentence in full, so a rewrite can
+ * only damage it, and the guard meant to protect it selected for vagueness: it
+ * rejected a spin figure for carrying a comma, rejected the rule's own target,
+ * and accepted a paragraph containing no numbers at all.
+ *
+ * Fit is a different question and keeps its call. It reads this player's
+ * measured hand against this grip, which differs for every hand, pitch and
+ * throw combination and is not something a rule table can hold.
+ */
+export async function explainFit(
   body: CoachRequestBody,
   apiKey: string | undefined,
 ): Promise<CoachResponse> {
   const { assessment, profile, plan } = body;
-  const fallback = assessment.nextAction.detail;
-  const coachInput = buildInterpretationInput(body);
+  const detail = assessment.nextAction.detail;
 
   const fitContext: FitInput | null =
     profile && plan ? { assessment, profile, plan } : null;
-  const fitInput = fitContext ? buildFitInput(fitContext) : null;
+  if (!fitContext) {
+    return { detail, rewritten: false, fitReason: "no-hand-data" };
+  }
 
-  // Both calls read the same already-decided assessment, so running them
-  // together costs one round trip instead of two.
-  const [rewrite, fit] = await Promise.all([
-    generate({
-      apiKey,
-      system: INTERPRET_SYSTEM_PROMPT,
-      input: coachInput,
-      maxTokens: 400,
-      reject: (text) =>
-        isUsableInterpretation(text, coachInput) ? null : "rejected",
-    }),
-    fitContext && fitInput
-      ? generate({
-          apiKey,
-          system: FIT_SYSTEM_PROMPT,
-          input: fitInput,
-          maxTokens: 300,
-          reject: (text) => fitRejection(text, fitContext, fitInput),
-        })
-      : Promise.resolve({ ok: false as const, reason: "no-hand-data" }),
-  ]);
+  const fitInput = buildFitInput(fitContext);
+  const fit = await generate({
+    apiKey,
+    system: FIT_SYSTEM_PROMPT,
+    input: fitInput,
+    maxTokens: 300,
+    reject: (text) => fitRejection(text, fitContext, fitInput),
+  });
 
   return {
-    detail: rewrite.ok ? rewrite.text : fallback,
-    rewritten: rewrite.ok,
-    reason: rewrite.ok ? undefined : rewrite.reason,
+    detail,
+    rewritten: false,
     fit: fit.ok ? fit.text : undefined,
     fitReason: fit.ok ? undefined : fit.reason,
   };
@@ -93,7 +98,7 @@ export function handleCoachRequest(
   apiKey: string | undefined,
 ): Promise<Response> {
   return jsonEndpoint(request, isCoachRequest, (body: CoachRequestBody) =>
-    rewriteCoaching(body, apiKey),
+    explainFit(body, apiKey),
   );
 }
 
