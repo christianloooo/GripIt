@@ -35,11 +35,11 @@ Steps 2 and 4 show short, plain-English actions in the interactive nodes. Step 4
 
 ## Git and opening the right project
 
-Current working branch: `main`. The Step 2 integration was committed as `993e57c`, with consumer polish in `e154abf`. The native theme work was developed on `codex/pine-glass-ui`, including merge `a3859d9` for PR #5, then promoted to main after checks and review. `jared/feedback-rules` retains the same app code. The previous local main pointer is preserved at `backup/main-local-before-mvp-20261018`.
+`main` is now the only local branch and the only branch on origin. Cleanup removed 11 local branches and 7 remote branches after verifying a full recovery bundle. App code is unchanged by this cleanup. The Step 2 integration (`993e57c`), consumer polish (`e154abf`), pine/glass theme (`1aca7c7`) and two-second photo timing (`9f55a6b`) remain on main.
 
-Open `/Users/jshum/Desktop/code-folders/gripit/ios/GripIt.xcodeproj` for the integration. Avoid the similarly named older worktree projects in Xcode's recent list.
+Open `/Users/jshum/Desktop/code-folders/gripit/ios/GripIt.xcodeproj` for the current app. Avoid the similarly named older worktree projects in Xcode's recent list.
 
-The original Step 2 remains at `backup/step-2-original-20261018` and `.worktrees/step-2-original`, with a remote backup. The recovered feedback engine also has a remote `backup/feedback-before-step2-20261018`. Do not overwrite either fallback.
+All previous branch tips, including the original Step 2 and older unmerged local work, are recoverable from the verified local bundle `recovery-checkpoint-20261018/branch-cleanup-20261018-063843/branches.bundle`. The README and manifest beside it list the saved references and restoration steps. The four old working folders under `.worktrees/` are preserved at their original commits in detached mode. Their files, including the staged Step 1 work, were verified unchanged; the staged work also has an extra patch backup beside the bundle.
 
 The project index includes required incoming source references and optimization settings with repository signing values. Jared's local signing settings exist only in the working copy. Never stage the current project file wholesale. Stage all other files by exact path; never use `git add -A`.
 
