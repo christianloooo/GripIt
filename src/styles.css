@@ -1374,3 +1374,23 @@ footer > span:first-child {
   place-items: center;
   color: #d8e9be8c;
 }
+
+.failure-log {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.failure-entries {
+  padding-left: 22px;
+}
+.failure-entries li {
+  padding: 16px 0;
+  border-bottom: 1px solid #d7d9cd;
+}
+.failure-entries small {
+  color: #697163;
+}
+.failure-entries pre {
+  max-width: 100%;
+  overflow: auto;
+  font-size: 11px;
+}
