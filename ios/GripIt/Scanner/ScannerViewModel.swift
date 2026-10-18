@@ -151,7 +151,7 @@ final class ScannerViewModel: ObservableObject {
     }
 }
 
-private struct ScannerFrameUpdate {
+private struct ScannerFrameUpdate: Sendable {
     let points: [CGPoint]
     let validDepthCount: Int
     let distanceMeters: Double?
@@ -163,7 +163,7 @@ private struct ScannerFrameUpdate {
 }
 
 /// All mutable processing state is confined to the capture service's serial queue.
-private final class ScannerFrameProcessor {
+private final class ScannerFrameProcessor: @unchecked Sendable {
     let hand: Handedness
     private var landmarker: HandLandmarkerService?
     private var session = ScannerSession(minimumFramesPerView: 8, minimumConfidence: 0.8)

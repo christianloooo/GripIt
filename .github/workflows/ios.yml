@@ -36,11 +36,11 @@ jobs:
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
       - name: Build and test Swift app
         shell: bash
-        run: xcodebuild test -project ios/GripIt.xcodeproj -scheme GripIt -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/scanner-xcodebuild.log
+        run: xcodebuild test -project ios/GripIt.xcodeproj -scheme GripIt -destination "platform=iOS Simulator,id=$DEVICE_ID,arch=arm64" -derivedDataPath ios/build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/scanner-xcodebuild.log
       - name: Build for physical iPhone without signing
         shell: bash
         if: github.ref_name == 'feature/truedepth-scanner-demo'
-        run: xcodebuild build -project ios/GripIt.xcodeproj -scheme GripIt -destination 'generic/platform=iOS' -derivedDataPath ios/device-build CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/scanner-device-build.log
+        run: xcodebuild build -project ios/GripIt.xcodeproj -scheme GripIt -destination 'generic/platform=iOS' -derivedDataPath ios/device-build ARCHS=arm64 CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/scanner-device-build.log
       - name: Report compiler diagnostics
         if: failure()
         run: |

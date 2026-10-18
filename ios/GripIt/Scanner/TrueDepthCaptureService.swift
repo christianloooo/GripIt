@@ -19,20 +19,20 @@ final class TrueDepthCaptureService: NSObject {
     let session = AVCaptureSession()
 
     /// Called on the serial capture queue. The frame is valid only for immediate processing.
-    var onFrame: ((SynchronizedCaptureFrame) -> Void)? {
+    var onFrame: (@Sendable (SynchronizedCaptureFrame) -> Void)? {
         get { callbackLock.withLock { frameHandler } }
         set { callbackLock.withLock { frameHandler = newValue } }
     }
 
     /// Called on the serial capture queue.
-    var onError: ((String) -> Void)? {
+    var onError: (@Sendable (String) -> Void)? {
         get { callbackLock.withLock { errorHandler } }
         set { callbackLock.withLock { errorHandler = newValue } }
     }
 
     private let callbackLock = NSLock()
-    private var frameHandler: ((SynchronizedCaptureFrame) -> Void)?
-    private var errorHandler: ((String) -> Void)?
+    private var frameHandler: (@Sendable (SynchronizedCaptureFrame) -> Void)?
+    private var errorHandler: (@Sendable (String) -> Void)?
 
     private let captureQueue = DispatchQueue(
         label: "com.gripit.truedepth.capture",
