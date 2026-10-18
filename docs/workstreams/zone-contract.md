@@ -52,27 +52,97 @@ problem and an alternative, not a technique correction.
 ### Roles are per pitch, not per finger
 
 A `GripPlan` carries its own zone set. The same finger changes job between
-pitches, so this cannot be baked into the model:
+pitches, so this cannot be baked into the model.
 
-| zone | four-seam | circle change |
-| --- | --- | --- |
-| `index-pad` | drive, medium | support, light. Curls around the side into a loop with the thumb |
-| `middle-pad` | drive, firm | drive, medium |
-| `ring-side` | support, light | drive, medium. A primary contact here |
-| `pinky` | clear, none | support, light. Wraps the far side to stabilise |
-| `thumb-pad` | support, light | support, light. Closes the loop with the index |
+Role and pressure for all four pitches, derived from `handInstructions.md`
+except where marked. A dash means the pitch does not constrain that zone, so it
+is omitted from `instructionZones` and stays untinted.
 
-Four-seam in full, derived from `handInstructions.md`:
+| zone | four-seam | two-seam | slider | changeup |
+| --- | --- | --- | --- | --- |
+| `index-pad` | drive, medium | drive, medium | **support, light** | **support, light** |
+| `middle-pad` | drive, firm † | drive, medium | **drive, firm** | drive, medium |
+| `ring-side` | support, light | support, light | support, light | **drive, medium** |
+| `pinky` | clear, none | clear, none | clear, none | **support, light** |
+| `thumb-pad` | support, light | support, light | support, light | support, light |
+| `palm` | clear, none | clear, none | **–** | **support, light** |
+| `wrist` | drive, firm ‡ | drive, firm ‡ | drive, firm ‡ | ‡ unspecified |
 
-| zone | instruction | pressure | role |
-| --- | --- | --- | --- |
-| `index-pad` | Pad across the stitching | medium | drive |
-| `middle-pad` | Beside the index, pad across the stitching | firm | drive |
-| `thumb-pad` | Fleshy pad underneath, on smooth leather | light | support |
-| `ring-side` | Side of the finger against the ball | light | support |
-| `pinky` | Relaxed beside the ring, off the ball | none | clear |
-| `palm` | Small gap of air, do not bury the ball | none | clear |
-| `wrist` | Stay behind the ball | firm | drive |
+Bold marks a change from the four-seam baseline.
+
+### Per-pitch instruction text
+
+**four-seam** — horseshoe sideways across the fingers, rounded end toward the
+thumb.
+
+| zone | instruction |
+| --- | --- |
+| `index-pad` | Pad across the raised stitching, seam crossing underneath |
+| `middle-pad` | Beside the index, pad also crossing the stitching |
+| `ring-side` | Side of the finger curled against the ball for light support |
+| `pinky` | Relaxed beside the ring finger, clear of the ball |
+| `thumb-pad` | Fleshy pad underneath, on smooth leather |
+| `palm` | Do not bury the ball. Leave a small gap |
+| `wrist` | Stay behind the ball ‡ |
+
+**two-seam** — the narrow seam pair running from wrist toward fingertips. Seams
+run *along* the fingers rather than across them.
+
+| zone | instruction |
+| --- | --- |
+| `index-pad` | Pad along the thumb-side seam, following its direction |
+| `middle-pad` | Pad along the other seam, toward the pinky side |
+| `ring-side` | Curled lightly against the pinky-side surface |
+| `pinky` | Relaxed beside the ring finger, off the ball |
+| `thumb-pad` | Fleshy pad underneath, opposite the two upper fingers |
+| `palm` | Similar depth to the four-seam. Do not bury the ball |
+| `wrist` | Stay behind the ball ‡ |
+
+**slider** — the two-seam narrow area, working the seam on the pinky side.
+
+| zone | instruction |
+| --- | --- |
+| `index-pad` | Rests on smooth leather beside the middle finger, stabilising |
+| `middle-pad` | Pad along the pinky-side seam with definite purchase |
+| `ring-side` | Curled against the surface below the middle finger |
+| `pinky` | Relaxed beside the ring finger, clear of the ball |
+| `thumb-pad` | Underneath and opposite, slightly off-centre, no hard pinch |
+| `palm` | No compulsory gap. Choose a comfortable depth |
+| `wrist` | Release decides whether this behaves like a slider ‡ |
+
+The palm row is deliberately unconstrained. `handInstructions.md` states there
+is no compulsory palm gap for this grip, so step 2 omits the zone and step 4
+says nothing about it.
+
+**changeup** — circle-change version. The ball sits deeper in the hand.
+
+| zone | instruction |
+| --- | --- |
+| `index-pad` | Curled around the thumb-side surface, forming a loop with the thumb |
+| `middle-pad` | Pad along the thumb-side seam |
+| `ring-side` | Pad along the pinky-side seam. A principal contact here |
+| `pinky` | Wrapped lightly around the far side to stabilise |
+| `thumb-pad` | Wrapped around the lower thumb-side surface, closing the loop |
+| `palm` | Let the ball settle comfortably into the hand |
+| `wrist` | Not specified ‡ |
+
+Note the two reversals. The index and middle pair that drives both fastballs is
+replaced by middle and ring. The palm goes from clearance to contact, because a
+changeup is held deeper. Both are judgeable differences, which is why they live
+in the plan rather than the model.
+
+### Sourcing
+
+- Unmarked rows come from `handInstructions.md`.
+- † The firmer middle finger on the four-seam comes from `PRODUCT.md`, not from
+  `handInstructions.md`.
+- ‡ `handInstructions.md` never describes the wrist. These rows come from the
+  worked example in `PRODUCT.md`, which colours the wrist on a four-seam. The
+  changeup wrist has no source at all and is left unspecified rather than
+  invented.
+
+Every pressure value is a first pass. The workstream brief already requires
+coach review before any of this is presented as validated advice.
 
 ## What step 4 provides, per zone
 
