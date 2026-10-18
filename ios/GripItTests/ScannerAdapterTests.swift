@@ -75,8 +75,17 @@ final class ScannerAdapterTests: XCTestCase {
     }
 
     func testMirroredHandsClassifyPalmConsistently() {
-        XCTAssertEqual(ScannerAdapterGeometry.classifyView(normalX: 0, normalZ: -1, handedness: .right), .palm)
-        XCTAssertEqual(ScannerAdapterGeometry.classifyView(normalX: 0, normalZ: 1, handedness: .left), .palm)
+        // Palm at the camera, fingertips up. The radial axis mirrors between hands.
+        let right = ScannerAdapterGeometry.handFacing(
+            radial: Vector3D(x: 1, y: 0, z: 0), distal: Vector3D(x: 0, y: -1, z: 0),
+            handedness: .right
+        )
+        let left = ScannerAdapterGeometry.handFacing(
+            radial: Vector3D(x: -1, y: 0, z: 0), distal: Vector3D(x: 0, y: -1, z: 0),
+            handedness: .left
+        )
+        XCTAssertEqual(right.flatMap(ScannerAdapterGeometry.classifyView), .palm)
+        XCTAssertEqual(left.flatMap(ScannerAdapterGeometry.classifyView), .palm)
     }
 
     func testCoverageDoesNotFillAnUnobservedView() {

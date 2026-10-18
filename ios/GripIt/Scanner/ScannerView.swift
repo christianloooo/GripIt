@@ -120,6 +120,7 @@ struct ScannerView: View {
 
             VStack(spacing: 14) {
                 scanHeader
+                if model.showGatePanel { gatePanel }
                 Spacer()
                 instructionCard
                 scanFooter
@@ -127,6 +128,33 @@ struct ScannerView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+    }
+
+    /// Shows which gate is holding the scan and the values it decided on. The
+    /// guidance line alone could not distinguish "wrong pose" from "pose fine,
+    /// depth missing", which is what made the device stall hard to pin down.
+    private var gatePanel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(model.gate.rows, id: \.0) { label, value in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(label)
+                        .frame(width: 66, alignment: .leading)
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .foregroundStyle(label == "blocked by" ? accent : .white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .font(.system(size: 10, weight: .regular, design: .monospaced))
+        .padding(10)
+        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.14), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Scan gate diagnostics")
+        .accessibilityValue(model.gate.rows.map { "\($0.0) \($0.1)" }.joined(separator: ", "))
     }
 
     private var scanHeader: some View {
@@ -140,6 +168,17 @@ struct ScannerView: View {
                         .font(.title2.bold())
                 }
                 Spacer()
+                Button {
+                    model.showGatePanel.toggle()
+                } label: {
+                    Image(systemName: model.showGatePanel
+                        ? "stethoscope.circle.fill" : "stethoscope.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .accessibilityLabel(model.showGatePanel
+                    ? "Hide scan gate diagnostics" : "Show scan gate diagnostics")
                 Button("Start over") {
                     model.reset()
                 }

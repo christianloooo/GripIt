@@ -109,34 +109,67 @@ public enum ScannerAdapterGeometry {
         return CameraIntrinsics(fx: fx * sx, fy: fy * sy, cx: cx * sx, cy: cy * sy)
     }
 
-    /// Input normal uses model image axes (x right, y down, z away).
-    /// The sign follows index-to-pinky crossed with wrist-to-middle.
-    public static func classifyView(
-        normalX: Double, normalZ: Double, handedness: Handedness
-    ) -> ScanView? {
-        guard normalX.isFinite, normalZ.isFinite else { return nil }
-        let palmSign = handedness == .right ? -1.0 : 1.0
-        let palmFacing = normalZ * palmSign
-        if palmFacing >= 0.65 { return .palm }
-        if palmFacing <= -0.65 { return .back }
-        let thumbFacing = normalX * palmSign * (handedness == .right ? 1.0 : -1.0)
-        if thumbFacing >= 0.65 { return .thumbSide }
-        if thumbFacing <= -0.65 { return .pinkySide }
+    /// A face counts as frontal at or above this cosine.
+    public static let frontalFacing = 0.65
+    /// A requested side view needs at least this much of the hand's radial axis
+    /// aimed at the camera.
+    public static let sideFacing = 0.45
+    /// A requested side view must also keep at least this much palm or back in
+    /// view. A fully edge-on silhouette hides the finger joints behind one
+    /// another, so its segment lengths cannot be trusted.
+    public static let sideObliqueFloor = 0.20
+    /// Fingertips aimed down the lens foreshorten every segment, whichever face
+    /// of the hand the camera nominally sees.
+    public static let fingertipFacingLimit = 0.70
+
+    /// Resolves the hand's own orthonormal basis and reports how much of each
+    /// face points at the camera.
+    ///
+    /// `radial` runs pinkyMCP to indexMCP, `distal` runs wrist to middleMCP, both
+    /// in the analysis image frame. Returns nil when the two axes are degenerate
+    /// or parallel and define no basis.
+    public static func handFacing(
+        radial: Vector3D, distal: Vector3D, handedness: Handedness
+    ) -> HandFacing? {
+        guard let across = radial.unit, let along = distal.unit,
+              let normal = across.cross(along).unit,
+              let upward = normal.cross(across).unit
+        else { return nil }
+        // radial crossed with distal gives the outward palm normal for a right
+        // hand and the inward one for a left hand, because the radial axis
+        // reverses between the two. The camera lies toward negative z, so an axis
+        // points at it exactly when its own z is negative.
+        let outward = handedness == .right ? 1.0 : -1.0
+        return HandFacing(
+            palm: -outward * normal.z,
+            thumb: -across.z,
+            fingers: -upward.z
+        )
+    }
+
+    /// The nearest canonical view, or nil when the hand sits between views.
+    public static func classifyView(_ facing: HandFacing) -> ScanView? {
+        guard [facing.palm, facing.thumb, facing.fingers].allSatisfy(\.isFinite) else { return nil }
+        if facing.palm >= frontalFacing { return .palm }
+        if facing.palm <= -frontalFacing { return .back }
+        if facing.thumb >= frontalFacing { return .thumbSide }
+        if facing.thumb <= -frontalFacing { return .pinkySide }
         return nil
     }
 
-    /// Side views are oblique captures. Fully edge-on poses hide the finger
-    /// joints and cannot provide trustworthy measurements of all fingers.
-    public static func matchesView(
-        normalX: Double, normalZ: Double, handedness: Handedness, requested: ScanView
-    ) -> Bool {
-        guard normalX.isFinite, normalZ.isFinite else { return false }
-        let palmFacing = normalZ * (handedness == .right ? -1.0 : 1.0)
+    /// Whether this pose is measurable for the view the scanner is asking for.
+    /// Side views are deliberately oblique captures, wider than `classifyView`'s
+    /// bands, because an oblique side still shows every finger joint.
+    public static func matchesView(_ facing: HandFacing, requested: ScanView) -> Bool {
+        guard [facing.palm, facing.thumb, facing.fingers].allSatisfy(\.isFinite) else { return false }
+        guard abs(facing.fingers) <= fingertipFacingLimit else { return false }
         switch requested {
-        case .palm: return palmFacing >= 0.65
-        case .back: return palmFacing <= -0.65
-        case .thumbSide: return normalX <= -0.45 && (0.25...0.90).contains(abs(normalZ))
-        case .pinkySide: return normalX >= 0.45 && (0.25...0.90).contains(abs(normalZ))
+        case .palm: return facing.palm >= frontalFacing
+        case .back: return facing.palm <= -frontalFacing
+        case .thumbSide:
+            return facing.thumb >= sideFacing && abs(facing.palm) >= sideObliqueFloor
+        case .pinkySide:
+            return facing.thumb <= -sideFacing && abs(facing.palm) >= sideObliqueFloor
         }
     }
 }

@@ -65,11 +65,29 @@ large position/scale jump, or a reliable opposite-hand frontal label requires
 palm reacquisition. Completed views remain saved. This continuity heuristic is
 not biometric identification.
 
-For the side steps, make a partial turn, roughly 30–60 degrees, while keeping
-every finger visible. Do not turn fully edge-on. The accepted normal range is
-oblique, and all original metric stability and bone-length checks remain active.
-The app distinguishes overlapping fingers, motion, and fluctuating depth instead
-of calling every rejection “hold still.”
+For the side steps, make a partial turn, roughly 30–75 degrees, while keeping
+every finger visible. Do not turn fully edge-on. All original metric stability
+and bone-length checks remain active. The app distinguishes overlapping fingers,
+motion, and fluctuating depth instead of calling every rejection “hold still.”
+
+View orientation is resolved in the hand's own basis: the radial axis from the
+pinky MCP to the index MCP, and the distal axis from the wrist to the middle
+MCP. It reports how much of the palm, the thumb side, and the fingertips point
+at the camera. Those three cosines are invariant to image-plane roll, so tilting
+the hand in frame, or an analysis buffer that is not upright, cannot change which
+view the scanner believes it sees. Reading a side view off the palm normal's x
+component in image axes did depend on that roll, which left palm and back
+reachable while the side views were not. Fingertips aimed down the lens are
+rejected for every view because they foreshorten every finger segment.
+
+A diagnostic panel is shown during scanning and can be toggled with the
+stethoscope button. It names the gate currently blocking capture along with the
+values that gate decided on: identity lock, label confidence, the three facing
+cosines, requested versus observed view, consecutive pose frames, valid and
+bridged depth counts, stability status with motion and bone-change in
+millimetres, accepted frames, and the frame size and analysis rotation. The same
+line is written to the unified log under subsystem `com.gripit.scanner`,
+category `gates`, whenever the blocking gate changes.
 
 Thickness is currently unavailable and remains `null`. Exported confidence is the initial palm identity score retained during continuous tracking, not measurement accuracy. This meaning is also recorded in the profile extensions. Validate measurements against a ruler before using the profile elsewhere.
 

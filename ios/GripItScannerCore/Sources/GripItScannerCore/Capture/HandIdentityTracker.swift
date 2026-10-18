@@ -36,10 +36,10 @@ public struct HandIdentityTracker: Sendable {
 
     public mutating func update(
         detectedHand: Handedness?, labelConfidence: Double, observedView: ScanView?,
-        sensorPoints: [PixelPoint], timestamp: Double, palmNormalZ: Double? = nil
+        sensorPoints: [PixelPoint], timestamp: Double, palmFacing: Double? = nil
     ) -> HandIdentityDecision {
         guard timestamp.isFinite, labelConfidence.isFinite, (0...1).contains(labelConfidence),
-              palmNormalZ.map(\.isFinite) != false,
+              palmFacing.map(\.isFinite) != false,
               sensorPoints.count == 21,
               sensorPoints.allSatisfy({ $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) })
         else { reset(); return .showPalm }
@@ -56,7 +56,9 @@ public struct HandIdentityTracker: Sendable {
         lastTimestamp = timestamp
 
         if let identityConfidence {
-            let frontal = palmNormalZ.map { abs($0) > 0.90 }
+            // Only a near-frontal palm or back carries a trustworthy left/right
+            // label. Side angles routinely read as the other hand.
+            let frontal = palmFacing.map { abs($0) > 0.90 }
                 ?? (observedView == .palm || observedView == .back)
             if frontal, labelConfidence >= 0.9, let detectedHand, detectedHand != hand {
                 reset()

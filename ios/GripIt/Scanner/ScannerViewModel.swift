@@ -1,7 +1,9 @@
 import AVFoundation
 import Combine
+import OSLog
 import GripItScannerCore
 import SwiftUI
+import UIKit
 import simd
 
 enum ScannerPhase: String { case chooseHand, requestingPermission, scanning, complete, failed }
@@ -23,8 +25,11 @@ final class ScannerViewModel: ObservableObject {
     @Published var distanceCm: Double?
     @Published var profile: HandProfile?
     @Published var diagnostics = ""
+    @Published var gate = ScanGateReport()
+    @Published var showGatePanel = true
     @Published var exportURL: URL?
 
+    private static let log = Logger(subsystem: "com.gripit.scanner", category: "gates")
     private let capture = TrueDepthCaptureService()
     private var generation = UUID()
     var captureSession: AVCaptureSession { capture.session }
@@ -103,6 +108,7 @@ final class ScannerViewModel: ObservableObject {
         distanceCm = nil
         profile = nil
         diagnostics = ""
+        gate = ScanGateReport()
         message = "Choose the hand you want to scan."
     }
 
@@ -150,6 +156,12 @@ final class ScannerViewModel: ObservableObject {
         jointFractions = update.jointFractions
         message = update.message
         diagnostics = update.diagnostics
+        if gate.gate != update.gate.gate {
+            Self.log.info("""
+                gate=\(update.gate.gate, privacy: .public)                 identity=\(update.gate.identity, privacy: .public)                 label=\(update.gate.label, privacy: .public)                 facing=\(update.gate.facing, privacy: .public)                 pose=\(update.gate.poseMatch, privacy: .public)                 held=\(update.gate.poseFrames, privacy: .public)                 depth=\(update.gate.depth, privacy: .public)                 steady=\(update.gate.stability, privacy: .public)                 accepted=\(update.gate.accepted, privacy: .public)                 frame=\(update.gate.frame, privacy: .public)
+                """)
+        }
+        gate = update.gate
         if update.initializationFailed {
             generation = UUID()
             capture.onFrame = nil
@@ -171,6 +183,38 @@ final class ScannerViewModel: ObservableObject {
     }
 }
 
+
+/// Every number the scan gates actually decided on, for the on-screen panel.
+/// Built fresh each frame so a stalled scan names its own blocking gate instead
+/// of leaving the cause to be guessed at.
+struct ScanGateReport: Sendable, Equatable {
+    var gate = "starting camera"
+    var identity = "unlocked"
+    var label = "—"
+    var facing = "—"
+    var poseMatch = "—"
+    var poseFrames = "—"
+    var depth = "—"
+    var stability = "—"
+    var accepted = "—"
+    var frame = "—"
+
+    var rows: [(String, String)] {
+        [
+            ("blocked by", gate),
+            ("identity", identity),
+            ("label", label),
+            ("facing", facing),
+            ("pose", poseMatch),
+            ("held", poseFrames),
+            ("depth", depth),
+            ("steady", stability),
+            ("accepted", accepted),
+            ("frame", frame),
+        ]
+    }
+}
+
 private struct ScannerFrameUpdate: Sendable {
     let points: [CGPoint]
     let sensorSize: CGSize
@@ -183,6 +227,7 @@ private struct ScannerFrameUpdate: Sendable {
     let profile: HandProfile?
     let initializationFailed: Bool
     let trackingStatus: String
+    let gate: ScanGateReport
 }
 
 /// All mutable processing state is confined to the capture service's serial queue.
@@ -199,6 +244,8 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
     private var recentDepth = RecentDepthLandmarks()
     private var identity: HandIdentityTracker
 
+    private static let requiredPoseFrames = 3
+
     init(hand: Handedness) {
         self.hand = hand
         identity = HandIdentityTracker(hand: hand)
@@ -212,6 +259,9 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
         var message = "Show your whole hand with fingers comfortably spread."
         var diagnostics = ""
         var initializationFailed = false
+        var gate = ScanGateReport()
+        gate.accepted = "\(session.coverage.snapshot.acceptedFramesInCurrentView)/8"
+            + " · \(session.coverage.snapshot.currentView?.rawValue ?? "done")"
         do {
             if landmarker == nil {
                 do { landmarker = try HandLandmarkerService() }
@@ -224,11 +274,15 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                 timestampMilliseconds: timestamp
             ) else {
                 identity.noteMissing(timestamp: CMTimeGetSeconds(frame.timestamp))
-                throw Guidance("No hand found. Bring your hand back into view.")
+                throw Guidance("No hand found. Bring your hand back into view.", gate: "no hand detected")
             }
+            gate.label = "\(detection.label) \(Int((detection.confidence * 100).rounded()))%"
             guard detection.handCount == 1 else {
                 identity.reset()
-                throw Guidance("Show one hand only, then face your palm toward the camera.")
+                throw Guidance(
+                    "Show one hand only, then face your palm toward the camera.",
+                    gate: "\(detection.handCount) hands in view"
+                )
             }
             let mapped = try DepthLandmarkMapper.map(
                 modelPoints: detection.points, depth: frame.depthData,
@@ -240,51 +294,80 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             depthCount = mapped.landmarks.count
             distance = mapped.distanceMeters
             let depthMap = frame.depthData.depthDataMap
-            diagnostics = "RGB \(CVPixelBufferGetWidth(frame.pixelBuffer))×\(CVPixelBufferGetHeight(frame.pixelBuffer)) · Depth \(CVPixelBufferGetWidth(depthMap))×\(CVPixelBufferGetHeight(depthMap)) · Label \(detection.label) \(Int(detection.confidence * 100))%"
+            gate.frame = "RGB \(CVPixelBufferGetWidth(frame.pixelBuffer))×\(CVPixelBufferGetHeight(frame.pixelBuffer))"
+                + " · depth \(CVPixelBufferGetWidth(depthMap))×\(CVPixelBufferGetHeight(depthMap))"
+                + " · rot \(frame.imageOrientation.rotationLabel)"
+            gate.depth = "\(depthCount)/21 now"
+            diagnostics = gate.frame + " · Label \(gate.label)"
             guard detection.points.allSatisfy({ (0.03...0.97).contains($0.x) && (0.03...0.97).contains($0.y) }) else {
-                throw Guidance("Center your full hand inside the camera.")
+                throw Guidance("Center your full hand inside the camera.", gate: "hand touches frame edge")
             }
-            guard let meters = distance else { throw Guidance("Depth is missing. Change the hand angle slightly.") }
-            if meters < 0.20 { throw Guidance("Move farther away.") }
-            if meters > 0.65 { throw Guidance("Move closer.") }
+            guard let meters = distance else {
+                throw Guidance("Depth is missing. Change the hand angle slightly.", gate: "no valid depth")
+            }
+            gate.depth += " · \(Int((meters * 100).rounded())) cm"
+            if meters < 0.20 { throw Guidance("Move farther away.", gate: "too close (\(Int((meters * 100).rounded())) cm)") }
+            if meters > 0.65 { throw Guidance("Move closer.", gate: "too far (\(Int((meters * 100).rounded())) cm)") }
+
+            // Orientation is read in the hand's own basis, so tilting the hand in
+            // the frame cannot change which view the scanner thinks it sees.
+            let facing = handFacing(detection.worldPoints)
+            gate.facing = facing.map {
+                String(format: "palm %+.2f · thumb %+.2f · tips %+.2f", $0.palm, $0.thumb, $0.fingers)
+            } ?? "no hand basis"
+
             let identityScore: Double
             switch identity.update(
                 detectedHand: ScannerAdapterGeometry.physicalHandedness(label: detection.label, convention: .subjectHand),
-                labelConfidence: detection.confidence, observedView: classify(detection.worldPoints),
+                labelConfidence: detection.confidence,
+                observedView: facing.flatMap(ScannerAdapterGeometry.classifyView),
                 sensorPoints: mapped.sensorPoints.map { PixelPoint(x: Double($0.x), y: Double($0.y)) },
-                timestamp: CMTimeGetSeconds(frame.timestamp), palmNormalZ: palmNormal(detection.worldPoints)?.z
+                timestamp: CMTimeGetSeconds(frame.timestamp), palmFacing: facing?.palm
             ) {
             case .tracked(let score): identityScore = score
             case .wrongHand:
-                throw Guidance("Show your \(hand.rawValue) palm to identify the correct hand.")
+                throw Guidance(
+                    "Show your \(hand.rawValue) palm to identify the correct hand.",
+                    gate: "identity: reads as the other hand"
+                )
             case .confirmingPalm:
-                throw Guidance("Recognizing your \(hand.rawValue) hand. Keep your palm facing the camera briefly.")
+                throw Guidance(
+                    "Recognizing your \(hand.rawValue) hand. Keep your palm facing the camera briefly.",
+                    gate: "identity: confirming palm"
+                )
             case .showPalm:
                 throw Guidance(session.coverage.snapshot.capturedViews.isEmpty
                     ? "Face your palm toward the camera in even light so we can identify your hand."
-                    : "Show your palm briefly to reconnect tracking. Your completed views are saved.")
+                    : "Show your palm briefly to reconnect tracking. Your completed views are saved.",
+                    gate: "identity: needs a palm to lock on")
             }
+            gate.identity = "locked \(Int((identityScore * 100).rounded()))%"
+
             let expectedView = session.coverage.snapshot.currentView
-            let classifiedView = classify(detection.worldPoints, requested: expectedView)
+            let classifiedView = classify(facing, requested: expectedView)
+            gate.poseMatch = "want \(expectedView?.rawValue ?? "done")"
+                + " · see \(classifiedView?.rawValue ?? "between views")"
             diagnostics += " · View seen: \(classifiedView?.rawValue ?? "between views")"
             guard let observedView = classifiedView else {
                 consecutiveViewFrames = 0
                 stability.reset()
                 recentDepth.reset()
-                let sideRequested = expectedView == .thumbSide || expectedView == .pinkySide
-                throw Guidance(sideRequested
-                    ? "Turn back slightly until every finger is visible. Don’t hold your hand fully edge-on."
-                    : session.coverage.snapshot.nextInstruction)
+                throw Guidance(betweenViewsGuidance(expectedView, facing: facing),
+                               gate: "pose: between views")
             }
             guard observedView == expectedView else {
                 consecutiveViewFrames = 0
                 stability.reset()
                 recentDepth.reset()
-                throw Guidance(session.coverage.snapshot.nextInstruction)
+                throw Guidance(session.coverage.snapshot.nextInstruction,
+                               gate: "pose: showing \(observedView.rawValue)")
             }
             if previousView == observedView { consecutiveViewFrames += 1 }
             else { previousView = observedView; consecutiveViewFrames = 1 }
-            guard consecutiveViewFrames >= 3 else { throw Guidance("Hold still.", preserveHistory: true) }
+            gate.poseFrames = "\(min(consecutiveViewFrames, Self.requiredPoseFrames))/\(Self.requiredPoseFrames) pose frames"
+            guard consecutiveViewFrames >= Self.requiredPoseFrames else {
+                throw Guidance("Hold still.", preserveHistory: true, gate: "pose: settling")
+            }
             joints.record(validLandmarks: Set(mapped.landmarks.keys), view: observedView)
             // Confidence describes the acquired palm identity, not the ambiguous
             // current side-view label and not measurement accuracy. Metric checks
@@ -295,14 +378,21 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             let measured = recentDepth.record(
                 identifiedLandmarks, view: observedView, timestamp: CMTimeGetSeconds(frame.timestamp)
             )
+            gate.depth = "\(depthCount)/21 now · \(measured.count)/21 bridged"
+                + " · \(Int((meters * 100).rounded())) cm"
             guard measured.count == 21 else {
                 stability.reset()
                 let missing = Set(HandLandmarkName.allCases.filter { measured[$0] == nil }.map {
                     String($0.rawValue.prefix(while: { $0.isLowercase }))
                 }).sorted().joined(separator: ", ")
-                throw Guidance("Missing depth: \(missing). Spread your fingers and tilt slightly.", preserveHistory: true)
+                throw Guidance(
+                    "Missing depth: \(missing). Spread your fingers and tilt slightly.",
+                    preserveHistory: true, gate: "depth holes: \(missing)"
+                )
             }
-            guard stability.accept(measured) else {
+            let steady = stability.accept(measured)
+            gate.stability = stabilitySummary()
+            guard steady else {
                 let reason: String
                 switch stability.status {
                 case .moving: reason = "Keep the phone steady and rest your arm while we capture."
@@ -311,13 +401,16 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                 case .incompleteDepth: reason = "Some finger depth is missing. Tilt your hand slightly."
                 case .settling, .ready: reason = "Angle found. Pause briefly while we capture."
                 }
-                throw Guidance(reason, preserveHistory: true)
+                throw Guidance(reason, preserveHistory: true, gate: "steady: \(stability.status.label)")
             }
             try session.accept(ScanObservation(
                 view: observedView, handedness: hand,
                 landmarks: measured, frameConfidence: identityScore
             ))
             counts[observedView, default: 0] += 1
+            gate.gate = "none · capturing \(observedView.rawValue)"
+            gate.accepted = "\(session.coverage.snapshot.acceptedFramesInCurrentView)/8"
+                + " · \(session.coverage.snapshot.currentView?.rawValue ?? "done")"
             message = session.coverage.snapshot.currentView == observedView
                 ? "Hold still. Capturing this view…" : session.coverage.snapshot.nextInstruction
             if session.coverage.snapshot.isComplete {
@@ -332,7 +425,7 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                     "depthHoleHandling": .string("measured-only; same view; maximum age 350ms; resets on motion"),
                     "landmarkConfidenceSource": .string("initial palm identity score retained only across continuous tracking; not metric accuracy"),
                     "sideViewPolicy": .string("oblique side views with visible fingers; edge-on poses rejected"),
-                    "orientationSource": .string("MediaPipe model world landmarks; not metric measurements")
+                    "orientationSource": .string("MediaPipe model world landmarks resolved in the hand's own basis; invariant to image-plane roll; not metric measurements")
                 ])
                 result = HandProfile(
                     profileId: profile.profileId, createdAt: profile.createdAt, handedness: profile.handedness,
@@ -340,10 +433,12 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
                     capture: profile.capture, extensions: extensions
                 )
                 message = "Scan complete. Compare these measurements with a ruler."
+                gate.gate = "none · scan complete"
                 diagnostics += " · " + ScanView.requiredOrder.map { "\($0.rawValue): \(counts[$0, default: 0])" }.joined(separator: " · ")
             }
         } catch let guidance as Guidance {
             message = guidance.text
+            gate.gate = guidance.gate
             if !guidance.preserveHistory {
                 stability.reset()
                 recentDepth.reset()
@@ -355,6 +450,7 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             recentDepth.reset()
             consecutiveViewFrames = 0
             message = error.localizedDescription
+            gate.gate = "error: \(error.localizedDescription)"
         }
         let view = session.coverage.snapshot.currentView
         let fractions = Dictionary(uniqueKeysWithValues: HandLandmarkName.allCases.map { name in
@@ -367,39 +463,109 @@ private final class ScannerFrameProcessor: @unchecked Sendable {
             coverage: session.coverage.snapshot, jointFractions: fractions,
             message: message, diagnostics: diagnostics, profile: result,
             initializationFailed: initializationFailed,
-            trackingStatus: identity.identityConfidence == nil ? "Identifying hand" : "\(hand.rawValue.capitalized) hand tracked"
+            trackingStatus: identity.identityConfidence == nil ? "Identifying hand" : "\(hand.rawValue.capitalized) hand tracked",
+            gate: gate
         )
     }
 
-    private func classify(_ world: [SIMD3<Double>], requested: ScanView? = nil) -> ScanView? {
-        guard let normal = palmNormal(world) else { return nil }
-        if let requested, ScannerAdapterGeometry.matchesView(
-            normalX: normal.x, normalZ: normal.z, handedness: hand, requested: requested
-        ) { return requested }
-        let observed = ScannerAdapterGeometry.classifyView(
-            normalX: normal.x, normalZ: normal.z, handedness: hand
+    private func stabilitySummary() -> String {
+        var parts = ["\(stability.status.label) \(stability.stableComparisons)/\(MeasurementStabilityGate.requiredStableComparisons)"]
+        if let motion = stability.motionRms {
+            parts.append(String(format: "motion %.1f/%.0f mm", motion, MeasurementStabilityGate.motionLimitMm))
+        }
+        if let change = stability.worstBoneChangeMm {
+            parts.append(String(format: "bone Δ%.1f mm", change))
+        }
+        if let shortest = stability.shortestBoneMm {
+            parts.append(String(format: "min bone %.0f mm", shortest))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Reads orientation from the hand's own axes rather than from image axes.
+    /// MediaPipe landmark 0 is the wrist, 5 the index MCP, 9 the middle MCP and
+    /// 17 the pinky MCP.
+    private func handFacing(_ world: [SIMD3<Double>]) -> HandFacing? {
+        guard world.count == 21 else { return nil }
+        func vector(_ from: Int, _ to: Int) -> Vector3D {
+            let delta = world[to] - world[from]
+            return Vector3D(x: delta.x, y: delta.y, z: delta.z)
+        }
+        return ScannerAdapterGeometry.handFacing(
+            radial: vector(17, 5), distal: vector(0, 9), handedness: hand
         )
-        // A requested side must satisfy the measurable oblique range. Do not
-        // accidentally accept the old classifier's fully edge-on side result.
+    }
+
+    private func classify(_ facing: HandFacing?, requested: ScanView? = nil) -> ScanView? {
+        guard let facing else { return nil }
+        if let requested, ScannerAdapterGeometry.matchesView(facing, requested: requested) {
+            return requested
+        }
+        let observed = ScannerAdapterGeometry.classifyView(facing)
+        // A requested view must satisfy the measurable window above. Never let the
+        // nearest-view classifier wave through a pose that window rejected.
         return requested != nil && observed == requested ? nil : observed
     }
 
-    private func palmNormal(_ world: [SIMD3<Double>]) -> SIMD3<Double>? {
-        guard world.count == 21 else { return nil }
-        let lateral = world[5] - world[17]
-        let fingers = world[9] - world[0]
-        let cross = simd_cross(lateral, fingers)
-        let length = simd_length(cross)
-        guard length.isFinite, length > 0.000001 else { return nil }
-        return cross / length
+    /// Names the one thing to change, using the component that fell short.
+    private func betweenViewsGuidance(_ requested: ScanView?, facing: HandFacing?) -> String {
+        guard let requested, let facing else {
+            return session.coverage.snapshot.nextInstruction
+        }
+        if abs(facing.fingers) > ScannerAdapterGeometry.fingertipFacingLimit {
+            return "Your fingertips point at the camera. Raise your fingers so the camera sees their length."
+        }
+        switch requested {
+        case .palm, .back:
+            return session.coverage.snapshot.nextInstruction
+        case .thumbSide, .pinkySide:
+            let side = requested == .thumbSide ? "thumb" : "pinky"
+            if abs(facing.palm) < ScannerAdapterGeometry.sideObliqueFloor {
+                return "Too edge-on. Turn back slightly until some of your palm shows again."
+            }
+            // The thumb component is signed, so it says whether they are turning
+            // toward the requested side or away from it.
+            let wanted = requested == .thumbSide ? facing.thumb : -facing.thumb
+            if wanted < 0 {
+                return "You are turning the wrong way. Rotate back the other way to bring your \(side) side toward the camera."
+            }
+            return "Turn a little further until your \(side) side faces the camera. Keep every finger visible."
+        }
     }
 
     private struct Guidance: Error {
         let text: String
         let preserveHistory: Bool
-        init(_ text: String, preserveHistory: Bool = false) {
+        let gate: String
+        init(_ text: String, preserveHistory: Bool = false, gate: String) {
             self.text = text
             self.preserveHistory = preserveHistory
+            self.gate = gate
+        }
+    }
+}
+
+private extension MeasurementStabilityStatus {
+    var label: String {
+        switch self {
+        case .settling: "settling"
+        case .incompleteDepth: "incomplete depth"
+        case .overlappingFingers: "fingers overlap"
+        case .noisyDepth: "noisy depth"
+        case .moving: "moving"
+        case .ready: "ready"
+        }
+    }
+}
+
+private extension UIImage.Orientation {
+    var rotationLabel: String {
+        switch self {
+        case .up: "0°"
+        case .right: "90°"
+        case .down: "180°"
+        case .left: "270°"
+        default: "mirrored"
         }
     }
 }

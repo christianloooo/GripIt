@@ -57,10 +57,25 @@ func checkMetricGeometry() throws {
     try expect(ScannerAdapterGeometry.medianValidDepth([.nan, 0, 2]) == nil, "Invalid depth must not create a measurement")
     let scaled = try expectValue(ScannerAdapterGeometry.scaledIntrinsics(fx: 500, fy: 600, cx: 320, cy: 240, referenceWidth: 640, referenceHeight: 480, depthWidth: 320, depthHeight: 240), "Valid intrinsic scale must exist")
     try expect(scaled.fx == 250 && scaled.fy == 300 && scaled.cx == 160 && scaled.cy == 120, "Intrinsics must scale to depth resolution")
-    try expect(ScannerAdapterGeometry.classifyView(normalX: 0, normalZ: -1, handedness: .right) == .palm, "Right palm orientation")
-    try expect(ScannerAdapterGeometry.classifyView(normalX: 0, normalZ: 1, handedness: .left) == .palm, "Left palm orientation")
-    try expect(ScannerAdapterGeometry.classifyView(normalX: -1, normalZ: 0, handedness: .right) == .thumbSide, "Thumb-side orientation")
-    try expect(ScannerAdapterGeometry.classifyView(normalX: .nan, normalZ: 0, handedness: .right) == nil, "Invalid view normal must fail")
+    // A right hand with its palm at the camera puts the thumb at image right; a
+    // left hand mirrors that. Both must read as the palm view.
+    let rightPalm = try expectValue(ScannerAdapterGeometry.handFacing(
+        radial: Vector3D(x: 1, y: 0, z: 0), distal: Vector3D(x: 0, y: -1, z: 0),
+        handedness: .right), "Right palm facing must resolve")
+    let leftPalm = try expectValue(ScannerAdapterGeometry.handFacing(
+        radial: Vector3D(x: -1, y: 0, z: 0), distal: Vector3D(x: 0, y: -1, z: 0),
+        handedness: .left), "Left palm facing must resolve")
+    try expect(ScannerAdapterGeometry.classifyView(rightPalm) == .palm, "Right palm orientation")
+    try expect(ScannerAdapterGeometry.classifyView(leftPalm) == .palm, "Left palm orientation")
+    // Tilting the same hand inside the image plane must not move the decision.
+    let rolledPalm = try expectValue(ScannerAdapterGeometry.handFacing(
+        radial: Vector3D(x: 0, y: 1, z: 0), distal: Vector3D(x: 1, y: 0, z: 0),
+        handedness: .right), "Rolled palm facing must resolve")
+    try expect(ScannerAdapterGeometry.classifyView(rolledPalm) == .palm, "Image-plane roll must not change the view")
+    try expect(ScannerAdapterGeometry.classifyView(HandFacing(palm: 0, thumb: 1, fingers: 0)) == .thumbSide, "Thumb-side orientation")
+    try expect(ScannerAdapterGeometry.classifyView(HandFacing(palm: .nan, thumb: 0, fingers: 0)) == nil, "Invalid facing must fail")
+    try expect(!ScannerAdapterGeometry.matchesView(HandFacing(palm: 0, thumb: 1, fingers: 0), requested: .thumbSide), "Edge-on side must be rejected")
+    try expect(ScannerAdapterGeometry.matchesView(HandFacing(palm: 0.5, thumb: 0.866, fingers: 0), requested: .thumbSide), "Oblique thumb side must be accepted")
 
     let point = try DepthProjector.project(
         pixel: PixelPoint(x: 420, y: 290),

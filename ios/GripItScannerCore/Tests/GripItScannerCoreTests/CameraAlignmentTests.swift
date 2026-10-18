@@ -3,11 +3,19 @@ import XCTest
 
 final class CameraAlignmentTests: XCTestCase {
     func testSideCaptureAcceptsAnObliqueHandButNotAnEdgeOnSilhouette() {
-        XCTAssertTrue(ScannerAdapterGeometry.matchesView(normalX: -0.5, normalZ: -0.866, handedness: .right, requested: .thumbSide))
-        XCTAssertTrue(ScannerAdapterGeometry.matchesView(normalX: 0.5, normalZ: 0.866, handedness: .right, requested: .pinkySide))
-        XCTAssertFalse(ScannerAdapterGeometry.matchesView(normalX: -1, normalZ: 0, handedness: .right, requested: .thumbSide))
-        XCTAssertFalse(ScannerAdapterGeometry.matchesView(normalX: 0, normalZ: -1, handedness: .right, requested: .thumbSide))
-        XCTAssertFalse(ScannerAdapterGeometry.matchesView(normalX: 0.5, normalZ: -0.866, handedness: .right, requested: .thumbSide))
+        XCTAssertTrue(ScannerAdapterGeometry.matchesView(
+            HandFacing(palm: 0.866, thumb: 0.5, fingers: 0), requested: .thumbSide))
+        XCTAssertTrue(ScannerAdapterGeometry.matchesView(
+            HandFacing(palm: 0.866, thumb: -0.5, fingers: 0), requested: .pinkySide))
+        // Fully edge-on: no palm or back left in view, so the finger joints hide.
+        XCTAssertFalse(ScannerAdapterGeometry.matchesView(
+            HandFacing(palm: 0, thumb: 1, fingers: 0), requested: .thumbSide))
+        // Palm on, nothing of the thumb side turned toward the camera.
+        XCTAssertFalse(ScannerAdapterGeometry.matchesView(
+            HandFacing(palm: 1, thumb: 0, fingers: 0), requested: .thumbSide))
+        // The opposite side must never satisfy the thumb-side request.
+        XCTAssertFalse(ScannerAdapterGeometry.matchesView(
+            HandFacing(palm: 0.866, thumb: -0.5, fingers: 0), requested: .thumbSide))
     }
 
     func testCameraReportedRotationReplacesFixedPortraitAssumption() {

@@ -74,10 +74,10 @@ final class HandIdentityTrackerTests: XCTestCase {
                                sensorPoints: points, timestamp: Double(index) * 0.125)
         }
         XCTAssertEqual(tracker.update(detectedHand: .left, labelConfidence: 0.99, observedView: .palm,
-                                      sensorPoints: points, timestamp: 0.375, palmNormalZ: -0.866),
+                                      sensorPoints: points, timestamp: 0.375, palmFacing: 0.866),
                        .tracked(identityConfidence: 0.95), "A three-quarter side can overlap the palm classifier")
         XCTAssertEqual(tracker.update(detectedHand: .left, labelConfidence: 0.99, observedView: .back,
-                                      sensorPoints: points, timestamp: 0.5, palmNormalZ: 1), .wrongHand)
+                                      sensorPoints: points, timestamp: 0.5, palmFacing: 1), .wrongHand)
         XCTAssertNil(tracker.identityConfidence)
     }
 
@@ -101,13 +101,19 @@ final class HandIdentityTrackerTests: XCTestCase {
             var stability = MeasurementStabilityGate()
             var depthHistory = RecentDepthLandmarks()
             var timestamp = 0.0
-            let palmZ = hand == .right ? -1.0 : 1.0
-            let normals: [(Double, Double)] = [(0, palmZ), (-0.5, palmZ * 0.866), (0, -palmZ), (0.5, -palmZ * 0.866)]
+            // Facings are measured in the hand's own basis, so the same four
+            // poses describe either hand: palm, oblique thumb side, back,
+            // oblique pinky side.
+            let facings = [
+                HandFacing(palm: 1, thumb: 0, fingers: 0),
+                HandFacing(palm: 0.5, thumb: 0.866, fingers: 0),
+                HandFacing(palm: -1, thumb: 0, fingers: 0),
+                HandFacing(palm: -0.5, thumb: -0.866, fingers: 0),
+            ]
             for (index, view) in ScanView.requiredOrder.enumerated() {
                 stability.reset()
                 depthHistory.reset()
-                XCTAssertTrue(ScannerAdapterGeometry.matchesView(
-                    normalX: normals[index].0, normalZ: normals[index].1, handedness: hand, requested: view))
+                XCTAssertTrue(ScannerAdapterGeometry.matchesView(facings[index], requested: view))
                 for frame in 0..<20 where session.coverage.snapshot.currentView == view {
                     timestamp += 0.125
                     let rawScore = view == .palm ? 0.95 : 0.55
