@@ -15,5 +15,5 @@
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["src", "shared", "api", "vite.config.ts"]
+  "include": ["src", "shared", "api", "services", "scripts/photo-demo-server.ts", "scripts/photo-demo-server.test.ts", "vite.config.ts"]
 }

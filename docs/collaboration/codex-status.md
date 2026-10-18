@@ -24,4 +24,8 @@ Branch: `codex/perceptron-photo`. Folder: `/Users/jshum/Desktop/code-folders/gri
 3. Integrate Claude's auth/session/usage service after its tested milestones exist.
 4. Add quick sample stacking, daily-limit display and demo upgrade; retain current Step 4 engine.
 
-Extractor export is not implemented yet. Claude can use a test fake behind its injected provider boundary. No new paid test requests or deployment occurred during preparation.
+## Extractor milestone
+
+Implemented the agreed `createPhotoExtractor({ apiKey, fetchImpl? })` export in `services/photo-reading/extract.ts`, with types and sanitized `PhotoExtractionError` codes in the adjacent files. Claude can now import the real module and mount it behind auth, image validation, quota reservation and idempotency. It makes one Mk1.5 call, allows 30 seconds, honors cancellation, and never automatically retries.
+
+`npx vitest run services/photo-reading/extract.test.ts --maxWorkers=2`: 27 passed. Optional/missing values remain null; invalid values are cleared with warnings; all-empty or malformed output is rejected. Root typechecking includes services now. No new paid requests yet. Local dev server and native integration are in progress; they are not part of this first module milestone.
