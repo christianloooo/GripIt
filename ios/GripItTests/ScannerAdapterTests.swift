@@ -28,4 +28,20 @@ final class ScannerAdapterTests: XCTestCase {
         XCTAssertEqual(coverage.snapshot.fraction(for: .wrist, in: .palm), 0.5)
         XCTAssertEqual(coverage.snapshot.fraction(for: .wrist, in: .back), 0)
     }
+
+    @MainActor
+    func testSampleFlowProducesExportWithoutStartingCamera() throws {
+        let model = ScannerViewModel()
+        model.loadSample()
+        XCTAssertEqual(model.phase, .complete)
+        XCTAssertEqual(model.progress, 1)
+        XCTAssertFalse(model.captureSession.isRunning)
+        let file = try XCTUnwrap(model.exportURL)
+        let exported = try HandProfileCodec.decode(Data(contentsOf: file))
+        XCTAssertEqual(exported.profileId, "sample-average-right")
+        model.reset()
+        XCTAssertEqual(model.phase, .chooseHand)
+        XCTAssertNil(model.profile)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
 }
